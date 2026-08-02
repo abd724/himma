@@ -65,6 +65,8 @@ Home's eight-tile grid (docs/11) remains the approved subset; All Categories sho
 | Provider storefront (HMA-014) | `/provider/[providerId]` | **Contract only — not built**; entry points inert per docs/09 §17.2 until it ships |
 | Program details (HMA-015) | `/program/[programId]` | **Contract only — not built**; entry points inert per docs/09 §17.2 until it ships |
 
+Concrete-path note: catalogue browsing surfaces (Results, All Categories, category, activity type) are implemented inside the Discover tab stack, so their concrete paths carry a `/discover/` prefix (e.g. `/discover/category/[categoryId]`). This is what keeps the floating dock visible on browsing surfaces per docs/16 §6. The logical contracts above are otherwise unchanged; `/search` and `/map` are root-level and match exactly.
+
 ### 4.2 Connections (exact)
 
 From **Home** (activating previously inert entries as their destinations ship):

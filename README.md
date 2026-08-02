@@ -52,8 +52,9 @@ Claude must read these files in order before changing code:
 13. `docs/14_DISCOVER_AND_SEARCH_SPEC.md`
 14. `docs/15_DISCOVER_INFORMATION_ARCHITECTURE.md`
 15. `docs/16_DISCOVER_STATE_AND_INTERACTION_MATRIX.md`
-16. `CLAUDE.md`
-17. `FIRST_PROMPT.md`
+16. `docs/17_DISCOVER_AND_SEARCH_IMPLEMENTATION_PLAN.md`
+17. `CLAUDE.md`
+18. `FIRST_PROMPT.md`
 
 ## Starting the project
 
