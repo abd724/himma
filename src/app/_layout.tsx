@@ -1,3 +1,6 @@
+import { AreaProvider } from '@/state/area-context';
+import { FavouritesProvider } from '@/state/favourites-context';
+import { ParticipantProvider } from '@/state/participant-context';
 import { colors } from '@/theme';
 import {
   Manrope_400Regular,
@@ -33,10 +36,27 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <View style={{ flex: 1, backgroundColor: colors.background.main }}>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background.main } }} />
-      </View>
+      <ParticipantProvider>
+        <AreaProvider>
+          <FavouritesProvider>
+            <View style={{ flex: 1, backgroundColor: colors.background.main }}>
+              <StatusBar style="dark" />
+              {/* Search and Map are root-level pushes: the dock (owned by the
+                  tab navigator) is hidden on them structurally — docs/16 §6. */}
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: colors.background.main },
+                }}
+              >
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="search" />
+                <Stack.Screen name="map" />
+              </Stack>
+            </View>
+          </FavouritesProvider>
+        </AreaProvider>
+      </ParticipantProvider>
     </SafeAreaProvider>
   );
 }

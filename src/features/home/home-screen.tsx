@@ -1,7 +1,6 @@
 import { CategoryGrid } from '@/components/domain/category-grid';
 import { CreditStrip } from '@/components/domain/credit-strip';
 import { EmptyFeedCard } from '@/components/domain/empty-feed-card';
-import { FloatingDock } from '@/components/domain/floating-dock';
 import { HeroCard } from '@/components/domain/hero-card';
 import { HomeHeader } from '@/components/domain/home-header';
 import { LocationSheet } from '@/components/domain/location-sheet';
@@ -15,9 +14,11 @@ import { providers } from '@/data/mock/catalogue';
 import { HomeSkeleton } from '@/features/home/home-skeleton';
 import type { HomeFeed, QuickFilterId } from '@/services/contracts/home-feed';
 import { homeFeedService } from '@/services/mock/mock-home-feed-service';
+import { useAreaContext } from '@/state/area-context';
+import { useFavourites } from '@/state/favourites-context';
+import { useParticipantContext } from '@/state/participant-context';
 import { colors, dockTokens, pagePadding, spacing } from '@/theme';
-import type { AreaId, ParticipantId } from '@/types/domain';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,20 +27,14 @@ const providerNameById = new Map(providers.map((provider) => [provider.id, provi
 export function HomeScreen() {
   const insets = useSafeAreaInsets();
 
-  const participants = useMemo(() => homeFeedService.getParticipants(), []);
-  const areas = useMemo(() => homeFeedService.getAreas(), []);
-  const quickFilters = useMemo(() => homeFeedService.getQuickFilters(), []);
-  const areaLabelById = useMemo(
-    () => new Map(areas.map((area) => [area.id, area.label])),
-    [areas],
-  );
+  const quickFilters = homeFeedService.getQuickFilters();
+  const { participants, participantId, setParticipantId } = useParticipantContext();
+  const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
+  const { favourites, toggleFavourite } = useFavourites();
 
-  const [areaId, setAreaId] = useState<AreaId>('khalifa-city');
-  const [participantId, setParticipantId] = useState<ParticipantId>('everyone');
   const [quickFilterId, setQuickFilterId] = useState<QuickFilterId | undefined>(undefined);
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   const [locationSheetOpen, setLocationSheetOpen] = useState(false);
-  const [favourites, setFavourites] = useState<ReadonlySet<string>>(new Set());
 
   // Previous feed stays visible while a context change reloads, so filter and
   // participant switches never flash back to the skeleton.
@@ -52,15 +47,6 @@ export function HomeScreen() {
       cancelled = true;
     };
   }, [areaId, participantId, quickFilterId]);
-
-  const toggleFavourite = (programId: string) => {
-    setFavourites((current) => {
-      const next = new Set(current);
-      if (next.has(programId)) next.delete(programId);
-      else next.add(programId);
-      return next;
-    });
-  };
 
   const toggleFilter = (id: QuickFilterId) => {
     setQuickFilterId((current) => (current === id ? undefined : id));
@@ -160,8 +146,6 @@ export function HomeScreen() {
           )}
         </ScrollView>
       </SafeAreaView>
-
-      <FloatingDock activeId="home" />
 
       <LocationSheet
         visible={locationSheetOpen}
