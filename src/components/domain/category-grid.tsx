@@ -2,14 +2,14 @@ import { AppImage } from '@/components/ui/app-image';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { demoImage } from '@/data/mock/images';
 import { colors, pagePadding, radii, spacing, typography } from '@/theme';
-import type { Category } from '@/types/domain';
+import type { BrowseEntry } from '@/types/domain';
 import { StyleSheet, Text, View } from 'react-native';
 
 /**
  * Fixed four-column grid: all eight categories visible with zero interaction
  * cost — chosen over a scrolling grid for scanability at 390 pt (docs/11 §4.6).
  */
-export function CategoryGrid({ categories }: { categories: Category[] }) {
+export function CategoryGrid({ categories }: { categories: BrowseEntry[] }) {
   return (
     <View style={styles.grid}>
       {categories.map((category) => (

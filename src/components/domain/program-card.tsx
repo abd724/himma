@@ -4,6 +4,7 @@ import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { demoImage } from '@/data/mock/images';
 import { colors, fontFamily, radii, shadows, spacing, typography } from '@/theme';
 import type { PriceModel, Program } from '@/types/domain';
+import { isLadiesOnly } from '@/utils/eligibility';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -38,7 +39,7 @@ export function ProgramCard({ program, providerName, areaLabel, isFavourite, onT
   const price = formatPrice(program.price);
   const badge = program.offer
     ? { label: program.offer.label, variant: 'offer' as const }
-    : program.eligibility.ladiesOnly
+    : isLadiesOnly(program.eligibility)
       ? { label: 'Ladies only', variant: 'eligibility' as const }
       : undefined;
 

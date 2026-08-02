@@ -1,7 +1,7 @@
 /**
- * Frontend domain types — docs/08 §9.
- * Enough structure to keep the mock frontend coherent; deliberately not the
- * production data model.
+ * Frontend domain types — docs/08 §9, eligibility model per docs/05 §7 and
+ * docs/17 §5. Enough structure to keep the mock frontend coherent;
+ * deliberately not the production data model.
  */
 
 export type ParticipantId = 'everyone' | 'me' | string;
@@ -11,7 +11,8 @@ export interface Participant {
   /** Customer-facing label, e.g. "Me", "Adam". */
   label: string;
   kind: 'everyone' | 'self' | 'child';
-  age?: number;
+  /** ISO date; children only. Age derives from this against the fixed mock today. */
+  dateOfBirth?: string;
 }
 
 export type AreaId =
@@ -29,20 +30,30 @@ export interface Area {
   nearby: AreaId[];
 }
 
+/** Full customer-visible taxonomy — docs/15 §3. */
 export type CategoryId =
   | 'fitness'
-  | 'boxing'
-  | 'pilates'
+  | 'martial-arts'
   | 'swimming'
-  | 'padel'
+  | 'padel-racquet'
+  | 'pilates-yoga'
+  | 'team-outdoor'
   | 'wellness'
   | 'learning'
-  | 'kids-teens';
+  | 'quran'
+  | 'tech-stem'
+  | 'arts-creativity';
 
 export interface Category {
   id: CategoryId;
   label: string;
   imageKey: string;
+}
+
+export interface ActivityType {
+  id: string;
+  label: string;
+  categoryId: CategoryId;
 }
 
 export interface Provider {
@@ -62,14 +73,24 @@ export type PriceModel =
   | { kind: 'package'; amount: number; sessions: number }
   | { kind: 'freeTrial' };
 
-export type Audience = 'adults' | 'kids' | 'teens' | 'all';
+export type GenderEligibility = 'men' | 'ladies' | 'mixed';
 
+export type SkillLevel = 'beginner' | 'intermediate' | 'advanced' | 'all-levels';
+
+/**
+ * Provider-defined structured eligibility — docs/05 §7 (owner-confirmed).
+ * Adults see all classes by default; "Ladies only" is an optional customer
+ * filter over genderEligibility === 'ladies'; child suitability is purely
+ * age-based against minimumAge/maximumAge/allAges.
+ */
 export interface Eligibility {
-  audience: Audience;
-  minAge?: number;
-  maxAge?: number;
-  /** True when the program has ladies-only sessions. */
-  ladiesOnly?: boolean;
+  minimumAge?: number;
+  /** null = open-ended upper bound ("Ages 12+"). */
+  maximumAge?: number | null;
+  allAges: boolean;
+  genderEligibility: GenderEligibility;
+  skillLevel?: SkillLevel;
+  eligibilityNotes?: string;
 }
 
 export interface Offer {
@@ -82,7 +103,7 @@ export interface Program {
   title: string;
   providerId: string;
   categoryId: CategoryId;
-  activityType: string;
+  activityTypeId: string;
   areaId: AreaId;
   imageKey: string;
   /** Customer-facing schedule line, e.g. "Tue & Thu · 5:00 PM". */
@@ -91,11 +112,42 @@ export interface Program {
   todayTime?: string;
   availableToday: boolean;
   runsOnWeekend: boolean;
+  runsAfterSchool?: boolean;
   isCamp: boolean;
   price: PriceModel;
   eligibility: Eligibility;
   rating: number;
   offer?: Offer;
+}
+
+/** Editorial grouping over the shared catalogue — docs/15 §2. */
+export interface Collection {
+  id: string;
+  title: string;
+  imageKey: string;
+  /** Simple deterministic preset resolved by services. */
+  preset: {
+    ladiesOnly?: boolean;
+    childRelevant?: boolean;
+    camps?: boolean;
+    offers?: boolean;
+    availableToday?: boolean;
+    afterSchool?: boolean;
+  };
+}
+
+/**
+ * A Home/Discover browse tile. Keeps the approved Home grid visuals while
+ * targets may be a category, an activity type, or a collection lens.
+ */
+export interface BrowseEntry {
+  id: string;
+  label: string;
+  imageKey: string;
+  target:
+    | { kind: 'category'; categoryId: CategoryId }
+    | { kind: 'activityType'; activityTypeId: string }
+    | { kind: 'collection'; collectionId: string };
 }
 
 export interface CreditSummary {

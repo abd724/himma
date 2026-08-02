@@ -1,7 +1,7 @@
 import type {
   Area,
   AreaId,
-  Category,
+  BrowseEntry,
   CreditSummary,
   Participant,
   ParticipantId,
@@ -46,7 +46,8 @@ export interface HeroContent {
 
 export interface HomeFeed {
   hero: HeroContent;
-  categories: Category[];
+  /** Home's approved eight browse tiles (labels/images unchanged). */
+  categories: BrowseEntry[];
   /** Program-first sections in display order; empty sections are omitted. */
   programSections: ProgramSection[];
   /** Provider-first content; empty when nothing matches. */

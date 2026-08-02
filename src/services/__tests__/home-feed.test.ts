@@ -1,4 +1,5 @@
 import { MockHomeFeedService } from '@/services/mock/mock-home-feed-service';
+import { isLadiesOnly, suitsAdult, suitsChild } from '@/utils/eligibility';
 import { describe, expect, test } from '@jest/globals';
 
 const service = new MockHomeFeedService(0);
@@ -14,26 +15,24 @@ describe('Home feed — participant context (docs/11 §5)', () => {
     expect(result.isEmpty).toBe(false);
   });
 
-  test('Me hides the child section and only contains adult-suitable programs', () => {
+  test('Me hides the child section and only contains adult-suitable programs (never gender-filtered)', () => {
     const result = feed('me');
     expect(result.programSections.some((s) => s.id === 'recommended-adam')).toBe(false);
-    for (const section of result.programSections) {
-      for (const program of section.programs) {
-        expect(['adults', 'all']).toContain(program.eligibility.audience);
-      }
+    const all = result.programSections.flatMap((s) => s.programs);
+    for (const program of all) {
+      expect(suitsAdult(program.eligibility)).toBe(true);
     }
+    // Adults see ladies-classified classes by default — no automatic gender filter.
+    expect(all.some((p) => p.eligibility.genderEligibility === 'ladies')).toBe(true);
   });
 
-  test('Selecting Adam leads with his section and filters everything to age 8', () => {
+  test('Selecting Adam leads with his section and filters everything to the provider-defined age range', () => {
     const result = feed('adam');
     expect(result.programSections[0].id).toBe('recommended-adam');
     expect(result.programSections.some((s) => s.id === 'recommended-me')).toBe(false);
     for (const section of result.programSections) {
       for (const program of section.programs) {
-        const { minAge, maxAge, audience } = program.eligibility;
-        expect(audience).not.toBe('adults');
-        if (minAge !== undefined) expect(minAge).toBeLessThanOrEqual(8);
-        if (maxAge !== undefined) expect(maxAge).toBeGreaterThanOrEqual(8);
+        expect(suitsChild(program.eligibility, 8)).toBe(true);
       }
     }
   });
@@ -63,10 +62,10 @@ describe('Home feed — quick filters (docs/11 §6)', () => {
     expect(all.every((p) => p.runsOnWeekend)).toBe(true);
   });
 
-  test('Ladies only keeps only ladies-only programs', () => {
+  test('Ladies only keeps only provider-classified ladies programs', () => {
     const all = feed('everyone', 'ladies-only').programSections.flatMap((s) => s.programs);
     expect(all.length).toBeGreaterThan(0);
-    expect(all.every((p) => p.eligibility.ladiesOnly)).toBe(true);
+    expect(all.every((p) => isLadiesOnly(p.eligibility))).toBe(true);
   });
 
   test('Camps keeps only camps and Offers keeps only offers', () => {

@@ -1,11 +1,12 @@
 import {
   areas,
-  categories,
+  homeBrowseEntries,
   participants,
   programs,
   providers,
   recommendationOrder,
 } from '@/data/mock/catalogue';
+import { isLadiesOnly, participantAge, suitsAdult, suitsChild } from '@/utils/eligibility';
 import type {
   HeroContent,
   HomeFeed,
@@ -40,21 +41,19 @@ function participantById(id: ParticipantId): Participant {
   return participants.find((p) => p.id === id) ?? participants[0];
 }
 
-/** Docs/11 §5 — who a program suits under the selected browsing context. */
+/**
+ * Docs/11 §5 — who a program suits under the selected browsing context.
+ * Age-based only (docs/05 §7): adults are never gender-filtered; children
+ * are checked against the provider-defined age range.
+ */
 function suitsParticipant(program: Program, participant: Participant): boolean {
-  const { audience, minAge, maxAge } = program.eligibility;
   switch (participant.kind) {
     case 'everyone':
       return true;
     case 'self':
-      return audience === 'adults' || audience === 'all';
-    case 'child': {
-      if (audience === 'adults') return false;
-      const age = participant.age ?? 0;
-      if (minAge !== undefined && age < minAge) return false;
-      if (maxAge !== undefined && age > maxAge) return false;
-      return true;
-    }
+      return suitsAdult(program.eligibility);
+    case 'child':
+      return suitsChild(program.eligibility, participantAge(participant) ?? 0);
   }
 }
 
@@ -69,7 +68,7 @@ function passesFilter(program: Program, filter?: QuickFilterId): boolean {
     case 'weekend':
       return program.runsOnWeekend;
     case 'ladies-only':
-      return program.eligibility.ladiesOnly === true;
+      return isLadiesOnly(program.eligibility);
     case 'camps':
       return program.isCamp;
     case 'offers':
@@ -188,7 +187,7 @@ export class MockHomeFeedService implements HomeFeedService {
 
     return {
       hero,
-      categories,
+      categories: homeBrowseEntries,
       programSections: sections,
       providers: visibleProviders.slice(0, SECTION_CAPS.providers),
       credit: { availableCredit: 65 },
