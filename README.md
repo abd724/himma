@@ -46,8 +46,11 @@ Claude must read these files in order before changing code:
 7. `docs/07_PROVISIONAL_BRAND_SYSTEM.md`
 8. `docs/08_FRONTEND_ENGINEERING_CONTRACT.md`
 9. `docs/09_OPEN_DECISIONS.md`
-10. `CLAUDE.md`
-11. `FIRST_PROMPT.md`
+10. `docs/11_HOME_SCREEN_SPEC.md`
+11. `docs/12_NATIVE_MOBILE_COMPATIBILITY.md`
+12. `docs/13_DEPENDENCY_ADVISORIES.md`
+13. `CLAUDE.md`
+14. `FIRST_PROMPT.md`
 
 ## Starting the project
 
@@ -70,6 +73,8 @@ When documents appear to conflict, use this priority:
 7. `docs/07_PROVISIONAL_BRAND_SYSTEM.md`
 8. `docs/08_FRONTEND_ENGINEERING_CONTRACT.md`
 9. `docs/09_OPEN_DECISIONS.md`
-10. Task-specific prompts
+10. `docs/12_NATIVE_MOBILE_COMPATIBILITY.md`
+11. Approved screen specifications (`docs/11_HOME_SCREEN_SPEC.md` and successors)
+12. Task-specific prompts
 
 Claude must not silently resolve a real contradiction. It must report the conflict and propose the smallest safe resolution.

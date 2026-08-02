@@ -17,5 +17,7 @@ export const typography = {
   caption: { fontFamily: fontFamily.semiBold, fontSize: 12, lineHeight: 16 },
   price: { fontFamily: fontFamily.extraBold, fontSize: 15, lineHeight: 20 },
   chip: { fontFamily: fontFamily.semiBold, fontSize: 14, lineHeight: 18 },
+  /** Slightly smaller than body so the full placeholder fits 360-pt phones. */
+  searchInput: { fontFamily: fontFamily.medium, fontSize: 14, lineHeight: 19 },
   dockLabel: { fontFamily: fontFamily.semiBold, fontSize: 11, lineHeight: 14 },
 } as const;

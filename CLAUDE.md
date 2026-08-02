@@ -60,6 +60,20 @@ All of the following happen inside Himma:
 
 Do not design redirects to external providers to complete a purchase.
 
+## Native mobile compatibility (permanent rule)
+
+Himma is an iOS and Android phone app. Expo web is only a preview and automated-review surface.
+
+Every screen and shared component in every milestone must follow `docs/12_NATIVE_MOBILE_COMPATIBILITY.md`: React Native / Expo-compatible APIs only, safe-area insets top and bottom (notches, Dynamic Island, home indicator), dock position derived from safe-area insets (never fixed offsets), Dynamic Type and font-scaling tolerance, native Pressable interactions with ≥ 44 × 44 touch targets, no hover/DOM/browser-storage/CSS-only dependencies, keyboard avoidance on input screens, carousels that work inside native vertical scrolling, platform-appropriate navigation/sheets/modals/back behavior, and readiness for Sign in with Apple, Apple Pay, calendar export, deep links, and contextual permission prompts.
+
+Report every screen against the three approval levels defined in `docs/12`:
+
+1. Design approved
+2. Frontend implementation approved
+3. Native validated
+
+Never claim "native validated" without an iOS Simulator or physical-iPhone check. If Xcode is unavailable, implement native-safe, review on web, and mark native validation as pending.
+
 ## Mobile and design rules
 
 - Primary target: approximately 390 × 844 logical pixels
