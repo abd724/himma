@@ -35,7 +35,7 @@ Do not compress all thirteen sections above the fold.
 3. **Participant context chips** — `Everyone` (default) · `Me` · `Adam` · `Lina`. Single-select. Not a Netflix-style profile switch.
 4. **Quick filters** — `Today` · `This weekend` · `Near me` · `Ladies only` · `Camps` · `Offers`. Single-select toggle; tapping the active chip clears it.
 5. **Hero** — one image-led seasonal feature relevant to adults and families together. Working concept: *"Indoor this August"* — beat-the-heat indoor fitness, swimming, and holiday camps for you and the family. One concise title, one support line, one CTA button (inert). No startup slogans. Must not read as children-only.
-6. **Popular categories** — 8 image-backed tiles in a horizontally scrolling two-row grid: Fitness, Boxing, Pilates, Swimming, Padel, Wellness, Learning, Kids & Teens. Short labels, no text inside images. `View all` action (inert).
+6. **Popular categories** — 8 image-backed tiles: Fitness, Boxing, Pilates, Swimming, Padel, Wellness, Learning, Kids & Teens. Short labels, no text inside images. `View all` action (inert). Layout is a design hypothesis: implementation may use a horizontally scrolling two-row grid, a fixed four-column grid, or a single-row carousel with larger tiles — whichever scans best at 390 × 844. The chosen approach and rationale must be documented in the milestone report.
 7. **Recommended for you** — horizontal carousel of program cards for Sarah.
 8. **Recommended for Adam** — default child section (see §5 for participant behavior). Serious, age-appropriate development content: swimming, football, Quran, robotics, martial arts.
 9. **Available today or tonight** — program cards with time emphasis first (e.g., `Today, 7:30 PM`).
@@ -103,7 +103,7 @@ Compact single-row card using `brand.reward` surface with dark text; icon + `AED
 | Favourite heart | Local toggle with accessible state. |
 | Carousels | Smooth horizontal scroll, no clipping. |
 | Hero CTA, View all, category tiles, program cards, provider cards, credit strip, notification, avatar | Inert with visible press feedback (opacity/scale). |
-| Dock: Discover, Bookings, Saved, Profile | Inert with press feedback; Home stays active. |
+| Dock: Discover, Bookings, Saved, Profile | Inert with subtle press feedback only. Home remains visibly active at all times; the active pill never moves to another destination. |
 
 Inert actions must not show alerts, Coming Soon messages, disabled styling, phase labels, placeholder screens, or developer text.
 
@@ -121,6 +121,7 @@ Inert actions must not show alerts, Coming Soon messages, disabled styling, phas
 - Typed contract, e.g. `HomeFeedService.getHomeFeed({ area, participant, quickFilter }): Promise<HomeFeed>` returning ordered, typed sections.
 - One deterministic mock implementation; route screen never imports raw mock arrays directly.
 - Catalogue sized for one screen: roughly 18–24 programs across the 8 fictional providers from `FIRST_PROMPT.md`, with attributes covering every filter dimension (today/weekend availability, area, ladies-only sessions, camp format, offers/trials, age suitability 6–adult) so every §5/§6 combination is demonstrable.
+- Feed length budget (rich but not exhausting): recommended sections ≈ 3–5 cards; available today or tonight ≈ 3–4; offers and trials ≈ 3–4; popular providers ≈ 3–4; popular categories 6–8 visible.
 - Realistic AED prices and Abu Dhabi areas; fictional providers only.
 
 ## 11. Accessibility checklist
