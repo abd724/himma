@@ -49,8 +49,11 @@ Claude must read these files in order before changing code:
 10. `docs/11_HOME_SCREEN_SPEC.md`
 11. `docs/12_NATIVE_MOBILE_COMPATIBILITY.md`
 12. `docs/13_DEPENDENCY_ADVISORIES.md`
-13. `CLAUDE.md`
-14. `FIRST_PROMPT.md`
+13. `docs/14_DISCOVER_AND_SEARCH_SPEC.md`
+14. `docs/15_DISCOVER_INFORMATION_ARCHITECTURE.md`
+15. `docs/16_DISCOVER_STATE_AND_INTERACTION_MATRIX.md`
+16. `CLAUDE.md`
+17. `FIRST_PROMPT.md`
 
 ## Starting the project
 
