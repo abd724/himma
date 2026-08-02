@@ -72,7 +72,7 @@ Discover stays strongly participant-personalized; Search must never become an in
 
 - **Android back priority:** open sheet → close sheet; else map mode → return to list; else keyboard open on Search → dismiss and return; else pop the route stack.
 - **iOS swipe-back** enabled on every pushed route (`/search`, results, categories, category, activity, map); no gesture traps from horizontal carousels (verify in native validation).
-- **Sheets:** bottom sheet with top radius `radii.sheet`, drag handle, backdrop tap and swipe-down to dismiss (reduced-motion: fade, no slide); content padded by bottom inset.
+- **Sheets:** bottom sheet with top radius `radii.sheet`, dismissed by backdrop tap and Android back (reduced-motion: fade, no slide); content padded by bottom inset, internally scrollable, Dynamic-Type tolerant. Swipe-down dismissal is deferred and must not be claimed unless genuinely implemented and tested (docs/17 §10).
 - **Dock visibility:** the dock stays visible on browsing surfaces (Discover root, All Categories, category, activity type, Results list) with the Discover pill active, because browsing is not a focused flow (docs/04 §2). It hides while any sheet is open, on `/search` (keyboard-focused flow), in map mode (full-bleed), and on future transactional/detail flows per docs/04 §2.
 - **Carousels inside the vertical feed:** horizontal `ScrollView`/`FlatList` with no `pagingEnabled` traps; vertical scroll must win diagonal gestures (native validation checklist item).
 - **Touch targets:** every chip, tab, suggestion row, pin, and toolbar control ≥ 44 × 44 pt (docs/12 §7).

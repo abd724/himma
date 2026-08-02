@@ -78,7 +78,7 @@ State ownership (single sources of truth):
 
 ## 7. Navigation and back behavior
 
-- Tabs navigator: dock taps switch tabs (Home/Discover) natively; per-tab stacks preserved; Bookings/Saved/Provider dock items inert with feedback (unchanged behavior).
+- Tabs navigator: dock taps switch tabs (Home/Discover) natively; per-tab stacks preserved; Bookings/Saved/Profile dock items inert with feedback (unchanged behavior).
 - Push order per docs/15 §4.2; `/search` and `/map` are root-level pushes (dock hidden by structure, not per-screen hacks).
 - Android back priority (16 §6): sheet → map (pop to Results) → keyboard/Search → stack pop; implemented via `onRequestClose` on sheets, standard stack pops elsewhere. iOS swipe-back enabled on all pushed routes.
 - Back always returns to exact origin; no resets to Discover root (15 §4.3).
@@ -103,6 +103,7 @@ State ownership (single sources of truth):
 1. `FilterSelection` type + `ResultsSessionProvider` + apply/count/clear logic in `SearchService.search` (unit-tested first, incl. Ladies-only semantics and child age exclusion).
 2. Results screen: tabs (All 3/3/3 + See all; Programs/Providers compact rows, 10–12 + Load more; Categories tiles), participant chips visible, quick chips, ActiveFilterChips, sort.
 3. FilterSheet: groups per 14 §4.1 (Ladies only pinned; conditional activity-type/skill rows), live `Show N results`, `Clear all`, dock hidden while open.
+   **Sheet gesture policy (owner-confirmed):** the hand-built Modal sheet supports backdrop-tap dismissal, Android back dismissal, bottom safe-area insets, internal scrolling, Dynamic Type, and fully accessible actions. **Swipe-down dismissal is deferred** — it must never be described or reported as supported unless genuinely implemented and tested without gesture or accessibility regressions. No bottom-sheet dependency is added for visual imitation. If the hand-built approach proves inadequate during native testing, document it and revisit.
 4. Zero-result recovery states wired (16 §2).
 
 ## 11. Category and activity-type implementation sequence
