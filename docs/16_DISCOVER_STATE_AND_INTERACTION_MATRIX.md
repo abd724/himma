@@ -25,8 +25,8 @@ Surfaces: **D** Discover feed · **S** Search · **R** Results (incl. category/a
 | Provider unavailable | R, D | Unavailable providers and their programs are excluded from all mock lists. If a stale entry is ever opened (deep link, future), the detail surface owns the state — contract: `This provider is no longer on Himma.` + back to Results. |
 | Program no longer available | R, D | Same exclusion rule; detail-surface contract: `This program is no longer offered.` + provider's other programs. List surfaces never render dead cards. |
 | Selected filters | D, R, F, M | Chips filled + check icon + context line (Home rule); count badge on `Filters`; removable active-filter chips above Results; `Clear all` in sheet. Never color-only. |
-| Participant-specific results | D, S, R | Discover feed follows Home §5 exactly (child context excludes adult-audience programs and re-ranks). Search and Results follow the §4 table: personalization ranks, and only hard-ineligible content under a child context is excluded — "Me" never hides child programs. |
-| Ladies-only results | D, S, R, M | Ladies-only filter shows only `women-only` programs; context line `Showing ladies-only activities`; badges on cards where the program is ladies-only; collection entry behaves identically to the filter. |
+| Participant-specific results | D, S, R | Discover feed follows Home §5 (child context shows only programs whose provider-defined age range includes the child, and re-ranks). Search and Results follow the §4 table: personalization ranks; only out-of-age-range content under a child context is excluded — "Me" never hides child programs, and nothing is gender-filtered automatically. |
+| Ladies-only results | D, S, R, M | Filter off: all relevant classes shown (men/ladies/mixed alike — no automatic gender filtering). Filter on: only provider-classified ladies-only programs/sessions (`genderEligibility: ladies`); context line `Showing ladies-only activities`; badges on ladies-only cards; collection entry behaves identically to the filter. |
 
 Every state must be demonstrable in the milestone with deterministic data (docs/14 §8) or explicitly marked contract-level in the milestone report.
 
@@ -35,7 +35,7 @@ Every state must be demonstrable in the milestone with deterministic data (docs/
 1. **One source of truth.** A single typed `FilterSelection` drives quick chips, sheet, Results, and map; identical state everywhere, counts never disagree (docs/15 §5).
 2. **Quick chips on Discover** mirror Home exactly: single-select toggle, in-place feed refiltering, tap active chip to clear (docs/09 §17.4).
 3. **Quick chips on Results** set the equivalent sheet field and may combine (e.g. Today + Ladies only). The chip row and sheet stay in sync both directions.
-4. **Mutually exclusive groups** (session eligibility: Ladies only / Girls only / Men only / Boys only / Mixed) are radio-style — selecting one replaces the other, announced via the chip state change.
+4. **Single gender control.** The only customer-facing gender filter is the optional Ladies-only toggle: off = all relevant classes regardless of the provider's men/ladies/mixed classification; on = provider-classified ladies-only only. No Men, Mixed, Girls-only, or Boys-only controls exist in this version; the provider-side `genderEligibility` values remain in data for future rules.
 5. **Cross-field conflicts are allowed, explained, and recoverable** — zero-result state names the conflict when knowable; nothing is silently disabled or hidden (docs/04 HMA-019 principle).
 6. **Counts:** sheet footer shows `Show N results` live; N is deterministic; N = 0 keeps the button enabled and lands on recovery.
 7. **Clearing:** sheet `Clear all`; per-group clears; removable chips above Results; empty-state `Clear filters`.
@@ -49,10 +49,12 @@ Every state must be demonstrable in the milestone with deterministic data (docs/
 
 | Context | Discover feed | Search suggestions | Results |
 |---|---|---|---|
-| Everyone | Full breadth | All | Full catalogue, eligibility-ranked |
-| Me | Adult-suitable emphasis; kids-only sections collapse | Adult-relevant biased first, none hidden | Adult-suitable rank first; child-only programs still appear lower in relevant searches — never invisibly excluded |
-| Adam (8) | Kid-suitable (age 8) only; adult-only sections collapse | Age-8-suitable biased first | Hard-ineligible adult-only excluded; age-suitable rank first |
-| Lina (12) | Kid/teen-suitable (age 12) only | Age-12-suitable biased first | Hard-ineligible adult-only excluded; age-suitable rank first |
+| Everyone | Full breadth, age and session labels visible where relevant | All | Full catalogue, eligibility-ranked, labels visible |
+| Me | Adult-suitable emphasis; kids-only sections collapse | Adult-relevant biased first, none hidden | Adult-suitable rank first; child-relevant programs still appear lower in relevant searches — never invisibly excluded. No automatic gender filtering. |
+| Adam (8) | Age-suitable (8 within provider-defined range) only; out-of-range sections collapse | Age-8-suitable biased first | Programs outside the provider-defined age range hard-excluded; age matches rank first |
+| Lina (12) | Age-suitable (12 within provider-defined range) only | Age-12-suitable biased first | Programs outside the provider-defined age range hard-excluded; age matches rank first |
+
+Child suitability is computed from the child's age (from date of birth) against `minimumAge`/`maximumAge`/`allAges`; there is no boys/girls customer filter. Provider-defined age ranges are displayed on children's cards (`Ages 6–9`, `Ages 12+`, `All ages`).
 
 Discover stays strongly participant-personalized; Search must never become an invisible restrictive filter. The participant control is always visible on Results (docs/14 §3.2), so a parent browsing as "Me" can still find and switch to a child's activities in one tap. Suggestions bias by context; they do not hide.
 

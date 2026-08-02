@@ -18,7 +18,7 @@ Ten concepts stay distinct. The customer never sees these terms (docs/06 §3); t
 | Program | One bookable offering of an activity type by a provider | Junior Kickboxing Belts, U12 |
 | Session | A dated/timed occurrence or recurring slot of a program | Tue 5:30 PM |
 | Program format | The commercial shape | drop-in, monthly, term, package, membership, camp, private, group |
-| Eligibility | Who may attend, per program or session | ages 6–12; `women-only` (shown as "Ladies only") |
+| Eligibility | Who may attend, per program or session — provider-defined structured fields: `minimumAge`, `maximumAge` (nullable), `allAges`, `genderEligibility: men \| ladies \| mixed`, `skillLevel`, optional notes | Ages 6–12; `genderEligibility: ladies` (shown as "Ladies only") |
 | Location | Area and branch | Khalifa City · Branch 1 |
 | Availability | Places/date reality | 4 places left, available today |
 | Collection | Editorial grouping defined by a filter preset | "After school", "Ladies only" |
@@ -27,7 +27,7 @@ Rules:
 
 - **One catalogue for everyone.** Kickboxing is a single activity type; adult and junior kickboxing are different *programs* differing in eligibility, skill level, schedule, price, and format — never a duplicated "kids kickboxing" activity type (docs/05 §5).
 - "Kids & Teens" and "Camps & seasonal" are **collections/browse lenses over the shared catalogue**, not parallel taxonomies (docs/05 §5).
-- Eligibility attaches to programs and can vary per session (docs/06 §9).
+- Eligibility attaches to programs and can vary per session (docs/06 §9). Adults see all classifications (men/ladies/mixed) by default; the optional Ladies-only filter is the only customer-facing gender control, and children's suitability is computed from age versus the provider-defined range (docs/05 §7).
 - Collections are data (`id`, title, image, filter preset) resolving to Results — deletable without schema change.
 
 ## 3. Customer-visible taxonomy

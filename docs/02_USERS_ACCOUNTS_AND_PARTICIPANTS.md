@@ -132,12 +132,13 @@ The app may allow the customer to browse with a participant context such as:
 The selected context influences:
 
 - Recommendations
-- Age eligibility
+- Age eligibility (a child's age, calculated from date of birth, is compared with provider-defined minimum and maximum ages; out-of-range programs are excluded from that child's recommendations and results)
 - Relevant categories
 - Schedule emphasis
-- Gender or session eligibility
 - Program formats
 - Pricing emphasis
+
+The selected context must not silently filter the catalogue by gender. Adults see all otherwise relevant classes (men, ladies, or mixed provider classifications) by default; "Ladies only" exists only as an optional customer filter. Children's suitability is age-based, not gender-filter-based.
 
 It must not become a restrictive Netflix-style profile session.
 

@@ -326,23 +326,32 @@ Examples:
 
 ### Participant and eligibility
 
+Customer-visible filters in the first version:
+
 - Me
 - Specific child
 - Age range
 - Adults
 - Children
-- Ladies only
-- Girls only
-- Men only
-- Boys only
-- Mixed
+- Ladies only (optional filter)
 - Family where relevant
 
-The customer-facing label **Ladies only** must be prominent and easy to use.
+**Ladies only** must be prominent and easy to use. When it is not selected, adults see every otherwise relevant class regardless of the provider's men / ladies / mixed classification — the catalogue is never automatically filtered by the account holder's gender. When it is selected, only provider-classified ladies-only programs or sessions are shown.
 
-Internally, eligibility may use structured canonical values, but the UI wording must be natural for the UAE audience.
+Provider-side structured values per program or session remain:
 
-Eligibility can vary by session even when the provider is mixed.
+- `minimumAge`
+- `maximumAge` (nullable)
+- `allAges`
+- `genderEligibility`: `men` | `ladies` | `mixed`
+- `skillLevel`
+- optional eligibility notes
+
+These support future filtering, labels, and eligibility rules, but the initial customer UI needs only the optional Ladies-only filter — no visible Men, Mixed, Girls-only, or Boys-only filter controls.
+
+Children's suitability is age-based: the child's age (from date of birth) is compared with the provider-defined age range; out-of-range programs are excluded from child-specific recommendations and results, and provider-defined age ranges are displayed clearly on cards and program details (`Ages 6–9`, `Ages 10–14`, `Ages 12+`, `All ages`).
+
+The UI wording must remain natural for the UAE audience. Eligibility can vary by session even when the provider is mixed.
 
 ### Time
 

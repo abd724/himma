@@ -54,7 +54,7 @@ The long category list from the brief (Fitness and gyms, Martial arts, …) is *
 3. Participant-aware ranking — personalization must never become an invisible restrictive filter:
    - **Everyone:** full catalogue, eligibility-ranked.
    - **Me:** adult-suitable programs rank first; child-only programs still appear lower in relevant searches (a parent searching "swimming" under Me still finds Junior Swim Squad).
-   - **Adam / Lina:** hard-ineligible adult-only programs are excluded; age-suitable programs rank first.
+   - **Adam / Lina:** programs outside the child's provider-defined age range (`minimumAge`/`maximumAge`/`allAges`, against the age calculated from date of birth) are hard-excluded; age-suitable programs rank first.
    - The participant control is always visible on Results (§3.2) so the active context is obvious and switchable.
 4. Proximity to selected area (area rank as in Home's near-me).
 5. Rating, then stable catalogue order for determinism.
@@ -65,7 +65,7 @@ No sponsored results in this milestone; if introduced later they must be labeled
 ### 3.4 Synonyms, typos, bilingual readiness
 
 - Synonym table keyed by canonical activity-type/category id: `{ id, en: [terms…], ar: [] }`. Arabic arrays exist but stay empty this stage (docs/08 §13).
-- Examples: `pilates: [pilates, reformer, mat pilates]`, `women-only: [ladies only, women only, ladies]`, `football: [football, soccer]`, `quran: [quran, hifz, tajweed, memorisation]`.
+- Examples: `pilates: [pilates, reformer, mat pilates]`, `ladies-only-filter: [ladies only, women only, ladies]` (resolves to the Ladies-only filter over `genderEligibility: ladies`), `football: [football, soccer]`, `quran: [quran, hifz, tajweed, memorisation]`.
 - Typo handling assumption for the mock: a small curated misspelling map (e.g. `pilaties → pilates`); no fuzzy-matching engine in the frontend milestone. The real backend will own fuzzy search.
 - No-results recovery: show "No results for '<query>'" + tappable popular searches + `Browse categories` + (if filters active) `Clear filters`.
 
@@ -79,7 +79,7 @@ A `SearchService` contract with a deterministic implementation over the shared c
 
 - **Quick chips** (Discover feed + Results): Today, This weekend, Near me, Ladies only, Camps, Offers. Single-select on the Discover feed (Home parity); on Results they act as shortcuts that set the equivalent sheet filter and may combine.
 - **Filter sheet** (HMS-003, bottom sheet): the complete set, grouped:
-  - **Who** — participant (Everyone/Me/each child), session eligibility (single-select: **Ladies only** pinned first, Girls only, Men only, Boys only, Mixed), audience (Adults/Children), age band.
+  - **Who** — participant (Everyone/Me/each child), **Ladies only** (optional toggle, pinned first), audience (Adults/Children), age band. No Men, Mixed, Girls-only, or Boys-only filter controls exist in this version.
   - **When** — Today, Tomorrow, This weekend, day-of-week, time of day (morning/afternoon/evening/after school), date range.
   - **Where** — area, Near me, distance band, (map bounds when in map mode).
   - **What** — category, activity type *(conditional: appears once a category is chosen)*, program format (drop-in, monthly, term, package, membership, camp, private, group), indoor/outdoor.
@@ -87,7 +87,7 @@ A `SearchService` contract with a deterministic implementation over the shared c
   - **More** — skill level *(conditional per activity type)*, availability (places left / instant booking), rating, accessibility support.
 - **Conditional filters** never render disabled rows; they appear only when their parent selection makes them meaningful.
 
-Eligibility wording (owner-confirmed): one canonical internal value `women-only`, always displayed as **Ladies only**; "women only" and "ladies" are search synonyms. There are never separate visible "Ladies only" and "Women only" filters. Girls only, Men only, Boys only, and Mixed remain distinct eligibility options (docs/05 §7 wording rule).
+Eligibility model (owner-confirmed): providers classify each program or session with structured fields — `minimumAge`, `maximumAge` (nullable), `allAges`, `genderEligibility: men | ladies | mixed`, `skillLevel`, optional eligibility notes (mocked deterministically this stage). Adults see all otherwise relevant classes by default — the catalogue is never auto-filtered by the account holder's gender. The only customer-facing gender filter is the optional **Ladies only** toggle: off = show all relevant classes; on = only provider-classified ladies-only programs/sessions. "Women only" and "ladies" are search synonyms for it. Children's suitability is age-based (docs/05 §7), never a boys/girls filter.
 
 ### 4.2 Sheet behavior
 
@@ -95,7 +95,7 @@ Eligibility wording (owner-confirmed): one canonical internal value `women-only`
 - Footer: primary button `Show N results` with a live deterministic count; disabled never — zero results still applies and lands on the no-results recovery state.
 - Active-filter count appears as a badge on every `Filters` chip and in the Results toolbar.
 - Clearing: `Clear all` in sheet; per-group clear; active filters also render as removable chips above results.
-- Incompatible combinations: options within a mutually exclusive group are radio-style (selecting `Men only` replaces `Ladies only`). Cross-field conflicts (e.g. child participant + Ladies only) are allowed but resolve to the zero-result recovery state with a specific explanation — never silent, never hidden (docs/04 HMA-019 principle).
+- Incompatible combinations: cross-field conflicts (e.g. a child participant + Ladies only when no age-suitable ladies-only session exists) are allowed but resolve to the zero-result recovery state with a specific explanation — never silent, never hidden (docs/04 HMA-019 principle).
 - Ladies-only prominence: quick chip everywhere, pinned first in Who, a Discover collection, and a popular-search entry (docs/06 §9).
 
 ## 5. Program-first and provider-first
@@ -116,6 +116,8 @@ Eligibility wording (owner-confirmed): one canonical internal value `women-only`
 
 Collection cards must be visually distinct from the hero (smaller, no CTA button) and from category tiles (wide, editorial title). Compact result cards must be instantly recognizable as the same family as the carousel cards — identical information hierarchy, smaller footprint.
 
+**Age display:** children's program cards (all card sizes) and future program details show the provider-defined age range clearly — `Ages 6–9`, `Ages 10–14`, `Ages 12+`, `All ages` — derived from `minimumAge` / `maximumAge` / `allAges`.
+
 ## 7. Map entry
 
 - Map lives inside Discover (§2.11) and Results (toolbar toggle) — not a dock tab (docs/09 §12).
@@ -126,6 +128,7 @@ Collection cards must be visually distinct from the hero (smaller, no CTA button
 ## 8. Mock-data requirements
 
 - Extend the shared catalogue (single source with Home): target ≈ **28–36 programs across 10–12 fictional providers**. Six focus categories (Fitness, Martial arts, Swimming, Pilates & yoga, Learning incl. Quran, Kids & Teens as a lens) get strong coverage (≥ 4 programs each); secondary categories stay deliberately thin (1–2) to demonstrate the weak-supply state honestly. The goal is demonstrating every filter, navigation path, and state deterministically — not production-scale catalogue volume.
+- Every program/session carries the provider-defined structured eligibility fields (`minimumAge`, `maximumAge` nullable, `allAges`, `genderEligibility: men | ladies | mixed`, `skillLevel`, optional notes) as deterministic mock values.
 - Every filter dimension in §4 must be satisfiable by at least one program; every zero-state must be reachable by a real combination.
 - Deterministic services: `DiscoverFeedService`, `SearchService`, `CatalogueService` (docs/15 §5) following the docs/08 §8 boundary; screens never import raw arrays.
 - Collections are data (id, title, imageKey, filter preset), not hard-coded UI.
