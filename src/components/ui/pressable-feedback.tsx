@@ -42,6 +42,10 @@ export function PressableFeedback({
       accessibilityRole={accessibilityRole}
       accessibilityState={accessibilityState}
       accessibilityHint={accessibilityHint}
+      // RN-web omits these from accessibilityState; set explicitly so web
+      // assistive tech (and Playwright role queries) see selection state.
+      aria-selected={accessibilityState?.selected}
+      aria-checked={accessibilityState?.checked}
       hitSlop={hitSlop}
       style={({ pressed }) => [
         style,

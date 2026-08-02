@@ -1,3 +1,4 @@
+import type { FilterSelection, SortId } from '@/services/contracts/filters';
 import type {
   AreaId,
   BrowseEntry,
@@ -50,10 +51,34 @@ export interface SearchResultSet {
  * excludes out-of-age-range programs. No gender-based filtering happens
  * here — Ladies only is an explicit filter (Commit 4).
  */
+export interface ResultsQuery extends SearchInput {
+  filters: FilterSelection;
+  sort: SortId;
+  /** 1-based page for the Programs/Providers lists. */
+  page: number;
+  /** QA/Playwright-only deterministic failure trigger — never customer-reachable. */
+  simulateFailure?: boolean;
+}
+
+export interface ResultsPage {
+  programs: Program[];
+  totalPrograms: number;
+  hasMorePrograms: boolean;
+  providers: Provider[];
+  totalProviders: number;
+  hasMoreProviders: boolean;
+  categories: Category[];
+  correctedQuery?: string;
+}
+
 export interface SearchService {
   getPreSearchContent(): PreSearchContent;
   addRecentSearch(query: string): void;
   clearRecentSearches(): void;
   getSuggestions(input: SearchInput): SearchSuggestion[];
   search(input: SearchInput): SearchResultSet;
+  /** Filtered, sorted, paginated results — async like a future API. */
+  getResults(query: ResultsQuery): Promise<ResultsPage>;
+  /** Live deterministic count for the filter sheet footer. */
+  countResults(query: Omit<ResultsQuery, 'page' | 'sort'>): number;
 }

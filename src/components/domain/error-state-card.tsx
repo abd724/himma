@@ -4,24 +4,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface Props {
-  message: string;
-  onClearFilter: () => void;
-  /** Recovery action label; contexts with several filters pass a plural. */
-  actionLabel?: string;
+  onRetry: () => void;
 }
 
-/** Friendly empty state with a clear recovery action — docs/11 §6. */
-export function EmptyFeedCard({ message, onClearFilter, actionLabel = 'Clear filter' }: Props) {
+/** Network/error state with a recovery action — docs/16 §2. */
+export function ErrorStateCard({ onRetry }: Props) {
   return (
     <View style={styles.wrap}>
       <View style={styles.card}>
         <View style={styles.iconCircle}>
-          <Ionicons name="search-outline" size={26} color={colors.brand.primary} />
+          <Ionicons name="cloud-offline-outline" size={26} color={colors.brand.primary} />
         </View>
-        <Text style={styles.title}>No matches right now</Text>
-        <Text style={styles.message}>{message}</Text>
-        <PressableFeedback accessibilityLabel={actionLabel} onPress={onClearFilter} style={styles.button}>
-          <Text style={styles.buttonLabel}>{actionLabel}</Text>
+        <Text style={styles.title}>Can’t load activities right now</Text>
+        <Text style={styles.message}>Check your connection and try again.</Text>
+        <PressableFeedback accessibilityLabel="Retry" onPress={onRetry} style={styles.button}>
+          <Text style={styles.buttonLabel}>Retry</Text>
         </PressableFeedback>
       </View>
     </View>
@@ -52,12 +49,12 @@ const styles = StyleSheet.create({
     ...typography.cardTitle,
     fontFamily: fontFamily.extraBold,
     color: colors.text.primary,
+    textAlign: 'center',
   },
   message: {
     ...typography.supporting,
     color: colors.text.secondary,
     textAlign: 'center',
-    maxWidth: 280,
   },
   button: {
     marginTop: spacing.sm,

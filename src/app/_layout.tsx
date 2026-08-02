@@ -1,6 +1,7 @@
 import { AreaProvider } from '@/state/area-context';
 import { FavouritesProvider } from '@/state/favourites-context';
 import { ParticipantProvider } from '@/state/participant-context';
+import { ResultsSessionProvider } from '@/state/results-session-context';
 import { colors } from '@/theme';
 import {
   Manrope_400Regular,
@@ -39,6 +40,7 @@ export default function RootLayout() {
       <ParticipantProvider>
         <AreaProvider>
           <FavouritesProvider>
+            <ResultsSessionProvider>
             <View style={{ flex: 1, backgroundColor: colors.background.main }}>
               <StatusBar style="dark" />
               {/* Search and Map are root-level pushes: the dock (owned by the
@@ -54,6 +56,7 @@ export default function RootLayout() {
                 <Stack.Screen name="map" />
               </Stack>
             </View>
+            </ResultsSessionProvider>
           </FavouritesProvider>
         </AreaProvider>
       </ParticipantProvider>

@@ -21,6 +21,8 @@ export function formatPrice(price: PriceModel): { amount: string; unit: string }
       return { amount: aed(price.amountPerWeek), unit: '/week' };
     case 'package':
       return { amount: aed(price.amount), unit: `for ${price.sessions} sessions` };
+    case 'free':
+      return { amount: 'Free', unit: '' };
     case 'freeTrial':
       return { amount: 'Free', unit: 'trial' };
   }

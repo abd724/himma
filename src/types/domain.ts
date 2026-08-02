@@ -71,6 +71,7 @@ export type PriceModel =
   | { kind: 'term'; amount: number }
   | { kind: 'camp'; amountPerWeek: number }
   | { kind: 'package'; amount: number; sessions: number }
+  | { kind: 'free' }
   | { kind: 'freeTrial' };
 
 export type GenderEligibility = 'men' | 'ladies' | 'mixed';
@@ -114,6 +115,7 @@ export interface Program {
   runsOnWeekend: boolean;
   runsAfterSchool?: boolean;
   isCamp: boolean;
+  setting: 'indoor' | 'outdoor';
   price: PriceModel;
   eligibility: Eligibility;
   rating: number;

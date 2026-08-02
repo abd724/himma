@@ -4,9 +4,10 @@ import type { SearchSuggestion, SuggestionKind } from '@/services/contracts/sear
 import { searchService } from '@/services/mock/mock-search-service';
 import { useAreaContext } from '@/state/area-context';
 import { useParticipantContext } from '@/state/participant-context';
+import { useResultsSession, type ResultsTab } from '@/state/results-session-context';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -48,8 +49,11 @@ export function SearchScreen() {
   const router = useRouter();
   const { participantId } = useParticipantContext();
   const { areaId } = useAreaContext();
+  const resultsSession = useResultsSession();
 
-  const [query, setQuery] = useState('');
+  // Results' query pill reopens Search prefilled for refinement.
+  const params = useLocalSearchParams<{ q?: string }>();
+  const [query, setQuery] = useState(typeof params.q === 'string' ? params.q : '');
   const [recentsVersion, setRecentsVersion] = useState(0);
 
   const preSearch = useMemo(
@@ -74,6 +78,9 @@ export function SearchScreen() {
     if (value.length === 0) return; // empty submission does nothing
     searchService.addRecentSearch(value);
     setRecentsVersion((version) => version + 1);
+    // A new submitted search resets filters, sort, and pagination here, in
+    // the event handler (docs/16 §3.8).
+    resultsSession.newSearch(value, tab as ResultsTab);
     // Dismiss the search overlay first so Results pushes onto the Discover
     // tab stack (back then pops to the feed, never to another tab).
     if (router.canGoBack()) router.dismiss();

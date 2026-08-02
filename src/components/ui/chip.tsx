@@ -10,19 +10,35 @@ interface Props {
   /** Ionicons name shown before the label. */
   icon?: keyof typeof Ionicons.glyphMap;
   accessibilityHint?: string;
+  /** 'radio' for single-select groups, 'checkbox' for toggles (docs/14 §9). */
+  accessibilityRole?: 'button' | 'radio' | 'checkbox';
+  /** Optional trailing count badge (e.g. active filters). */
+  badgeCount?: number;
 }
 
 /**
  * Selection chip. The selected state never relies on color alone: a checkmark
  * replaces the leading icon and the weight changes — docs/11 §6.
  */
-export function Chip({ label, selected, onPress, icon, accessibilityHint }: Props) {
+export function Chip({
+  label,
+  selected,
+  onPress,
+  icon,
+  accessibilityHint,
+  accessibilityRole = 'button',
+  badgeCount,
+}: Props) {
   const iconName = selected ? 'checkmark' : icon;
+  const badgeLabel = badgeCount !== undefined && badgeCount > 0 ? String(badgeCount) : undefined;
   return (
     <PressableFeedback
       onPress={onPress}
-      accessibilityLabel={label}
-      accessibilityState={{ selected }}
+      accessibilityLabel={badgeLabel === undefined ? label : `${label}, ${badgeLabel} active`}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={
+        accessibilityRole === 'button' ? { selected } : { selected, checked: selected }
+      }
       accessibilityHint={accessibilityHint}
       style={[styles.chip, selected && styles.chipSelected]}
     >
@@ -34,6 +50,9 @@ export function Chip({ label, selected, onPress, icon, accessibilityHint }: Prop
         />
       ) : null}
       <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
+      {badgeLabel !== undefined ? (
+        <Text style={[styles.badge, selected && styles.badgeSelected]}>{badgeLabel}</Text>
+      ) : null}
     </PressableFeedback>
   );
 }
@@ -61,5 +80,19 @@ const styles = StyleSheet.create({
   labelSelected: {
     color: colors.text.inverse,
     fontFamily: typography.price.fontFamily,
+  },
+  badge: {
+    ...typography.caption,
+    color: colors.text.inverse,
+    backgroundColor: colors.brand.primary,
+    borderRadius: radii.chip,
+    minWidth: 18,
+    textAlign: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: 4,
+  },
+  badgeSelected: {
+    color: colors.brand.primary,
+    backgroundColor: colors.text.inverse,
   },
 });

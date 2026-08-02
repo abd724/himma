@@ -15,11 +15,14 @@ import {
 } from '@/data/mock/search-data';
 import type {
   PreSearchContent,
+  ResultsPage,
+  ResultsQuery,
   SearchInput,
   SearchResultSet,
   SearchService,
   SearchSuggestion,
 } from '@/services/contracts/search';
+import { passesFilters, sortPrograms } from '@/services/mock/results-engine';
 import type { Area, AreaId, Participant, Program } from '@/types/domain';
 import { participantAge, suitsAdult, suitsChild } from '@/utils/eligibility';
 
@@ -91,8 +94,13 @@ function participantById(id: string): Participant {
   return participants.find((p) => p.id === id) ?? participants[0];
 }
 
+const PROGRAMS_PAGE_SIZE = 12;
+const PROVIDERS_PAGE_SIZE = 10;
+
 export class MockSearchService implements SearchService {
   private recents: string[] = [...initialRecentSearches];
+
+  constructor(private readonly delayMs: number = 250) {}
 
   getPreSearchContent(): PreSearchContent {
     return {
@@ -250,6 +258,90 @@ export class MockSearchService implements SearchService {
       providers: matchedProviders,
       categories: matchedCategories,
       correctedQuery: corrected !== query ? corrected : undefined,
+    };
+  }
+
+  async getResults(query: ResultsQuery): Promise<ResultsPage> {
+    if (this.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    }
+    return this.buildResults(query);
+  }
+
+  countResults(query: Omit<ResultsQuery, 'page' | 'sort'>): number {
+    return this.filteredPrograms(query).length;
+  }
+
+  /** Relevance-ordered base: search matches, or the whole catalogue for a preset (empty query). */
+  private baseResultSet(input: SearchInput): SearchResultSet {
+    if (normalize(input.query).length > 0) return this.search(input);
+    const participant = participantById(input.participantId);
+    const age = participantAge(participant);
+    let base = [...programs];
+    if (participant.kind === 'child') {
+      base = base.filter((program) => suitsChild(program.eligibility, age ?? 0));
+    } else if (participant.kind === 'self') {
+      base = base.sort(
+        (a, b) => Number(suitsAdult(b.eligibility)) - Number(suitsAdult(a.eligibility)),
+      );
+    }
+    return { programs: base, providers: [...providers], categories: [...categories] };
+  }
+
+  private filteredPrograms(query: Omit<ResultsQuery, 'page' | 'sort'>): Program[] {
+    if (query.simulateFailure === true) throw new Error('Simulated network failure (QA only)');
+    return this.baseResultSet(query).programs.filter((program) =>
+      passesFilters(program, query.filters),
+    );
+  }
+
+  /** Pure and synchronous so behavior is directly testable. */
+  buildResults(query: ResultsQuery): ResultsPage {
+    if (query.simulateFailure === true) throw new Error('Simulated network failure (QA only)');
+    const base = this.baseResultSet(query);
+    const filtered = base.programs.filter((program) => passesFilters(program, query.filters));
+    const sorted = sortPrograms(
+      filtered,
+      query.sort,
+      query.filters.areaId ?? query.areaId,
+      query.filters.nearMe,
+    );
+
+    const programEnd = query.page * PROGRAMS_PAGE_SIZE;
+    // Providers ordered by first appearance in the sorted (filtered) programs;
+    // then providers whose own name/categories match the query text, so a
+    // provider search still finds the business even when filters removed its
+    // programs from the list.
+    const normalized = normalize(query.query);
+    const terms = normalized.length > 0 ? expandTerms(correctTypos(normalized)) : [];
+    const seen = new Set<string>();
+    const orderedProviders = sorted
+      .map((program) => program.providerId)
+      .filter((id) => (seen.has(id) ? false : (seen.add(id), true)))
+      .map((id) => providerById.get(id))
+      .filter((provider): provider is NonNullable<typeof provider> => provider !== undefined);
+    if (terms.length > 0) {
+      for (const provider of base.providers) {
+        if (
+          !seen.has(provider.id) &&
+          (textMatches(provider.name, terms) || textMatches(provider.categories.join(' '), terms))
+        ) {
+          seen.add(provider.id);
+          orderedProviders.push(provider);
+        }
+      }
+    }
+    const providerEnd = query.page * PROVIDERS_PAGE_SIZE;
+
+    return {
+      programs: sorted.slice(0, programEnd),
+      totalPrograms: sorted.length,
+      hasMorePrograms: sorted.length > programEnd,
+      providers: orderedProviders.slice(0, providerEnd),
+      totalProviders: orderedProviders.length,
+      hasMoreProviders: orderedProviders.length > providerEnd,
+      categories: base.categories,
+      correctedQuery: base.correctedQuery,
     };
   }
 }

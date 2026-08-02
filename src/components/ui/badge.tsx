@@ -5,11 +5,16 @@ interface Props {
   label: string;
   /** offer = reward yellow; eligibility = soft indigo. */
   variant: 'offer' | 'eligibility';
+  /** Natural spoken form, e.g. "Ages 6 to 9" for the label "Ages 6–9". */
+  accessibilityLabel?: string;
 }
 
-export function Badge({ label, variant }: Props) {
+export function Badge({ label, variant, accessibilityLabel }: Props) {
   return (
-    <View style={[styles.badge, variant === 'offer' ? styles.offer : styles.eligibility]}>
+    <View
+      style={[styles.badge, variant === 'offer' ? styles.offer : styles.eligibility]}
+      accessibilityLabel={accessibilityLabel}
+    >
       <Text style={[styles.label, variant === 'offer' ? styles.offerLabel : styles.eligibilityLabel]}>
         {label}
       </Text>
