@@ -40,18 +40,26 @@ The long category list from the brief (Fitness and gyms, Martial arts, …) is *
 
 ### 3.2 Results (HMA-010)
 
-- Tabs: `All` · `Programs` · `Providers` · `Categories`. All = mixed groups with "See all" per group.
+- Tabs: `All` · `Programs` · `Providers` · `Categories`.
+- **All tab density:** up to 3 programs, up to 3 providers, and up to 3 categories, each group with a `See all` action that jumps to the matching tab.
+- **Programs and Providers tabs:** compact vertical result cards optimized for comparison, approximately 10–12 visible results, then a mock `Load more` action (deterministic next page). The oversized Home carousel cards are **not** reused unchanged here; a compact result-card variant reuses their visual language and information hierarchy (§6).
 - Toolbar: `Filter` (sheet, count badge), `Sort` (HMS-004), `Map` toggle (Programs/Providers tabs only).
-- Quick chips row persists (incl. Ladies only).
-- Program results use the approved program card; provider results the provider card; category results the category tile in list form.
+- Quick chips row persists (incl. Ladies only), and the **participant context chips are present on Results** so the browsing participant is always visible and changeable in one tap (never an invisible restriction).
+- Category results use the category tile in list form.
 
 ### 3.3 Ranking principles (mock, deterministic)
 
 1. Exact/prefix text match on title, activity type, provider name, category, area.
 2. Synonym match (§3.4).
-3. Eligibility fit for the selected participant context ranks above non-fit; hard-ineligible items are excluded when a child context is active.
+3. Participant-aware ranking — personalization must never become an invisible restrictive filter:
+   - **Everyone:** full catalogue, eligibility-ranked.
+   - **Me:** adult-suitable programs rank first; child-only programs still appear lower in relevant searches (a parent searching "swimming" under Me still finds Junior Swim Squad).
+   - **Adam / Lina:** hard-ineligible adult-only programs are excluded; age-suitable programs rank first.
+   - The participant control is always visible on Results (§3.2) so the active context is obvious and switchable.
 4. Proximity to selected area (area rank as in Home's near-me).
 5. Rating, then stable catalogue order for determinism.
+
+Search suggestions may be personalized by context but must never prevent a parent from finding activities for another participant — suggestions bias, they do not hide.
 No sponsored results in this milestone; if introduced later they must be labeled (docs/05 §8).
 
 ### 3.4 Synonyms, typos, bilingual readiness
@@ -79,7 +87,7 @@ A `SearchService` contract with a deterministic implementation over the shared c
   - **More** — skill level *(conditional per activity type)*, availability (places left / instant booking), rating, accessibility support.
 - **Conditional filters** never render disabled rows; they appear only when their parent selection makes them meaningful.
 
-"Women only" is a search synonym and internal canonical value (`women-only`) for the customer-facing label **Ladies only** — one filter, not two (docs/05 §7 wording rule).
+Eligibility wording (owner-confirmed): one canonical internal value `women-only`, always displayed as **Ladies only**; "women only" and "ladies" are search synonyms. There are never separate visible "Ladies only" and "Women only" filters. Girls only, Men only, Boys only, and Mixed remain distinct eligibility options (docs/05 §7 wording rule).
 
 ### 4.2 Sheet behavior
 
@@ -104,18 +112,20 @@ A `SearchService` contract with a deterministic implementation over the shared c
 | Provider card | Browse this business | docs/11 §7 | Approved, reuse |
 | Category tile | Enter taxonomy | docs/11 §7 | Approved, reuse |
 | Collection card | Editorial entry into a preset Results view | **New**: wide image card (~300 × 140), scrim, title (card-title type, inverse), supporting count line (`14 activities`), no price/rating | To build in milestone 2 |
+| Compact result card | Dense vertical comparison in Results lists | **New variant**: full-width row card — small thumbnail (with fallback), title, provider (program) or categories (provider), one meta line (area · schedule or area · rating), price + eligibility/offer badge; same tokens, type roles, and favourite action as the approved cards, compressed | To build in milestone 2 |
 
-Collection cards must be visually distinct from the hero (smaller, no CTA button) and from category tiles (wide, editorial title).
+Collection cards must be visually distinct from the hero (smaller, no CTA button) and from category tiles (wide, editorial title). Compact result cards must be instantly recognizable as the same family as the carousel cards — identical information hierarchy, smaller footprint.
 
 ## 7. Map entry
 
 - Map lives inside Discover (§2.11) and Results (toolbar toggle) — not a dock tab (docs/09 §12).
-- Mock map: deterministic, locally rendered stylized area map (static illustration or drawn shapes) with pins per area showing counts; tapping a pin filters results to that area as a list. No production map SDK, no geolocation (docs/03 §4).
-- Map screen respects safe areas and provides an always-visible `List` return control.
+- **Schematic mock map, not geography.** Do not hand-draw or approximate Abu Dhabi coastlines, districts, or real geography. The milestone map is a clearly schematic discovery canvas containing: labeled area nodes (Khalifa City, Al Raha, …), fictional provider pins, per-area counts, selectable areas (tap → area-filtered Results list), and list equivalents for everything. It must read as a discovery simulation, not an accurate map.
+- A licensed static geographic base image may be used **only** if its usage rights and attribution are recorded in `docs/ASSET_ATTRIBUTION.md`; otherwise stay schematic.
+- No production map SDK, no geolocation (docs/03 §4). Map screen respects safe areas and provides an always-visible `List` return control.
 
 ## 8. Mock-data requirements
 
-- Extend the shared catalogue (single source with Home): target ≈ 45–60 programs across ≥ 12 providers so that six focus categories (Fitness, Martial arts, Swimming, Pilates & yoga, Learning incl. Quran, Kids & Teens) have ≥ 4 programs each; remaining categories get 1–2 to demonstrate the weak-supply state honestly.
+- Extend the shared catalogue (single source with Home): target ≈ **28–36 programs across 10–12 fictional providers**. Six focus categories (Fitness, Martial arts, Swimming, Pilates & yoga, Learning incl. Quran, Kids & Teens as a lens) get strong coverage (≥ 4 programs each); secondary categories stay deliberately thin (1–2) to demonstrate the weak-supply state honestly. The goal is demonstrating every filter, navigation path, and state deterministically — not production-scale catalogue volume.
 - Every filter dimension in §4 must be satisfiable by at least one program; every zero-state must be reachable by a real combination.
 - Deterministic services: `DiscoverFeedService`, `SearchService`, `CatalogueService` (docs/15 §5) following the docs/08 §8 boundary; screens never import raw arrays.
 - Collections are data (id, title, imageKey, filter preset), not hard-coded UI.

@@ -15,6 +15,7 @@ Surfaces: **D** Discover feed · **S** Search · **R** Results (incl. category/a
 | Default | all | Per docs/14 §2–4. |
 | Loading | D, S, R, M | Static skeletons in section shapes (Home skeleton pattern; reduced-motion safe). Header, chips, and dock render immediately. Previous content stays visible during in-place refilters (Home rule). |
 | Empty section | D | Section collapses entirely; no empty carousels (Home rule). |
+| Long result lists | R | Programs/Providers tabs show ≈ 10–12 compact result cards, then a mock `Load more` action appending the deterministic next page (docs/14 §3.2). All tab caps at 3 per group with `See all`. |
 | Search: no results | S, R | `No results for "pilaties"` + tappable popular searches + `Browse categories` + `Clear filters` when filters active. Typo map may add `Did you mean Pilates?` as the first suggestion. |
 | Filter combination: no results | R, D | Empty-state card (Home pattern): `No matches right now` + specific reason when knowable (`No ladies-only activities for Adam. Try Everyone or Me.`) + `Clear filters` recovery. Never a blank screen. |
 | Weak category supply | D, R | Discover hides sections below the supply threshold (docs/14 §13). Category/activity pages always open and state it honestly: `Only 2 padel activities near Khalifa City right now. Try nearby areas.` + area action. No "coming soon" language. |
@@ -24,7 +25,7 @@ Surfaces: **D** Discover feed · **S** Search · **R** Results (incl. category/a
 | Provider unavailable | R, D | Unavailable providers and their programs are excluded from all mock lists. If a stale entry is ever opened (deep link, future), the detail surface owns the state — contract: `This provider is no longer on Himma.` + back to Results. |
 | Program no longer available | R, D | Same exclusion rule; detail-surface contract: `This program is no longer offered.` + provider's other programs. List surfaces never render dead cards. |
 | Selected filters | D, R, F, M | Chips filled + check icon + context line (Home rule); count badge on `Filters`; removable active-filter chips above Results; `Clear all` in sheet. Never color-only. |
-| Participant-specific results | D, S, R | Selected context filters suitability exactly as Home §5: child context excludes adult-audience programs and re-ranks; suggestions in Search respect context (no adult-only suggestions under a child context). |
+| Participant-specific results | D, S, R | Discover feed follows Home §5 exactly (child context excludes adult-audience programs and re-ranks). Search and Results follow the §4 table: personalization ranks, and only hard-ineligible content under a child context is excluded — "Me" never hides child programs. |
 | Ladies-only results | D, S, R, M | Ladies-only filter shows only `women-only` programs; context line `Showing ladies-only activities`; badges on cards where the program is ladies-only; collection entry behaves identically to the filter. |
 
 Every state must be demonstrable in the milestone with deterministic data (docs/14 §8) or explicitly marked contract-level in the milestone report.
@@ -48,10 +49,12 @@ Every state must be demonstrable in the milestone with deterministic data (docs/
 
 | Context | Discover feed | Search suggestions | Results |
 |---|---|---|---|
-| Everyone | Full breadth | All | All, eligibility-ranked |
-| Me | Adult-suitable emphasis; kids-only sections collapse | Adult-relevant | Adult-suitable first, child-only excluded from top ranks |
-| Adam (8) | Kid-suitable (age 8) only; adult-only sections collapse | Age-8-suitable | Hard-ineligible excluded |
-| Lina (12) | Kid/teen-suitable (age 12) only | Age-12-suitable | Hard-ineligible excluded |
+| Everyone | Full breadth | All | Full catalogue, eligibility-ranked |
+| Me | Adult-suitable emphasis; kids-only sections collapse | Adult-relevant biased first, none hidden | Adult-suitable rank first; child-only programs still appear lower in relevant searches — never invisibly excluded |
+| Adam (8) | Kid-suitable (age 8) only; adult-only sections collapse | Age-8-suitable biased first | Hard-ineligible adult-only excluded; age-suitable rank first |
+| Lina (12) | Kid/teen-suitable (age 12) only | Age-12-suitable biased first | Hard-ineligible adult-only excluded; age-suitable rank first |
+
+Discover stays strongly participant-personalized; Search must never become an invisible restrictive filter. The participant control is always visible on Results (docs/14 §3.2), so a parent browsing as "Me" can still find and switch to a child's activities in one tap. Suggestions bias by context; they do not hide.
 
 - Checkout-time participant selection remains a separate future concern (docs/02 §8) — browsing context never books.
 

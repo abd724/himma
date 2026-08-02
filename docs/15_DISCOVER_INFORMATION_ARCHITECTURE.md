@@ -104,7 +104,7 @@ From **Activity type**: default Programs list; segment to Providers; map toggle;
 
 ## 6. Mock-data requirements
 
-As docs/14 §8, plus: at least one activity type per category has ≥ 2 programs with different eligibility (adult vs junior) to prove the single-catalogue rule; at least one provider spans two categories; at least two collections resolve to non-empty presets and one (deliberately) to a thin result to exercise recovery.
+As docs/14 §8 (28–36 programs, 10–12 fictional providers), plus: in each **focus** category, at least one activity type has ≥ 2 programs with different eligibility (adult vs junior) to prove the single-catalogue rule; at least one provider spans two categories; at least two collections resolve to non-empty presets and one (deliberately) to a thin result to exercise recovery; Programs/Providers result lists exceed 10–12 items for at least one query so the mock `Load more` behavior is demonstrable.
 
 ## 7. Accessibility and native requirements
 
