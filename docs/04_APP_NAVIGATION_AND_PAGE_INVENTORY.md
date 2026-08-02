@@ -614,7 +614,7 @@ Home
   ├─ Category → Category → Activity Type
   ├─ Program card → Program Details
   ├─ Provider card → Provider Storefront
-  ├─ Quick filter → Filtered Results
+  ├─ Quick filter → in-place Home feed filtering (dedicated filtered-results navigation may come later)
   └─ Credit preview → Credits and Rewards
 
 Discover
