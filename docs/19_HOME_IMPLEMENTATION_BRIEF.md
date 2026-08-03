@@ -4,7 +4,7 @@ Status: prepared for product-owner approval. No Home code changes until the owne
 
 **Goal:** rebuild Home as the personalized, schedule-aware activity hub defined in docs/18 §4, add the child-dependent collection visibility gate to Home and the default Discover feed, and keep every approved visual token, card, and Discover surface otherwise unchanged.
 
-**Architecture:** a new `AccountProvider` supplies the dynamic participant list, deterministic mock bookings/plans, and the review scenario (docs/18 §9 A–D); a rewritten `HomeFeedService` assembles a typed, ordered section list from pure, unit-tested build functions; the Discover feed service gains one account-composition input for the §6 gate. Screens keep consuming services only — no raw arrays.
+**Architecture:** a new `AccountProvider` resolves the review scenario (docs/18 §9 A–D, `?qa-scenario`) into plain account data — participants, schedule entries, plans, credit; a rewritten `HomeFeedService` assembles a typed, ordered section list via a pure, unit-tested `buildHomeFeed(HomeFeedBuildInput)` that consumes only that resolved data (scenario ids never reach the domain layer); the Discover feed service gains one account-composition input for the §6 gate. Screens keep consuming services only — no raw arrays.
 
 **One commit:** `feat(home): rebuild Home as personalized activity hub` (docs/17 step 8a). Checks green before commit; stop-and-report after. The final `chore(review)` commit follows separately.
 
@@ -27,11 +27,11 @@ Status: prepared for product-owner approval. No Home code changes until the owne
 | `src/services/contracts/schedule.ts` | Schedule/plan types + `ScheduleService` contract |
 | `src/data/mock/schedule.ts` | Deterministic demo bookings, active plans, scenario definitions |
 | `src/services/mock/mock-schedule-service.ts` | `ScheduleService` implementation + pure `buildWeek` core |
-| `src/state/account-context.tsx` | `AccountProvider`: scenario, participants, childParticipants, bookings, plans, credit |
+| `src/state/account-context.tsx` | `AccountProvider`: resolves the `?qa-scenario` fixture once and exposes the resolved account data (participants, childParticipants, schedule entries, plans, credit) |
 | `src/features/home/upcoming-activity-card.tsx` | Lead card: program, participant, day/time, provider, area |
 | `src/features/home/week-strip.tsx` | Compact 7-day schedule preview |
 | `src/features/home/plan-card.tsx` | Routine card with progress line + next session |
-| `src/features/home/home-action-card.tsx` | Lightweight action card (welcome/setup, add-child) — one component, variants by props |
+| `src/features/home/home-action-card.tsx` | Guest welcome/setup action card (no add-child variant — docs/18 §6, docs/09 §19.6) |
 
 **Modify**
 
@@ -98,17 +98,34 @@ export type HomeSection =
   | { kind: 'week'; days: WeekDay[] }                          // WeekDay = { dayOffset; dayLabel; entries: ScheduleEntry[] }
   | { kind: 'plans'; plans: ActivePlan[] }
   | { kind: 'programs'; id: string; title: string; programs: Program[] }
-  | { kind: 'action'; id: 'setup' | 'add-child'; title: string; body: string }
+  | { kind: 'action'; id: 'setup'; title: string; body: string }   // union stays extensible; only 'setup' (guest) is emitted this commit
   | { kind: 'credit'; credit: CreditSummary };
 
-export interface HomeFeedInput { areaId: AreaId; scenario: AccountScenarioId; }
+export interface AccountSnapshot {
+  primaryParticipantId: ParticipantId;
+}
+
+/** The real feed domain input: resolved account data only — never scenario ids. */
+export interface HomeFeedBuildInput {
+  areaId: AreaId;
+  /** null = guest (no account). */
+  account: AccountSnapshot | null;
+  /** Primary participant first, then additional profiles in account order. Empty for guest. */
+  participants: Participant[];
+  scheduleEntries: ScheduleEntry[];
+  activePlans: ActivePlan[];
+  credit?: CreditSummary;
+}
+
 export interface HomeFeed { sections: HomeSection[]; }
 
 export interface HomeFeedService {
-  getHomeFeed(input: HomeFeedInput): Promise<HomeFeed>;
+  getHomeFeed(input: HomeFeedBuildInput): Promise<HomeFeed>;
   getAreas(): Area[];
 }
 ```
+
+**Data flow (fixture vs domain):** `?qa-scenario` → deterministic mock account fixture (`AccountProvider`) → `HomeFeedBuildInput` → pure `buildHomeFeed()`. `AccountScenarioId` exists only in the fixture layer and the `ScheduleService` mock API; the screen, `HomeFeedService`, and `buildHomeFeed` never see or branch on scenario names — every behavioral difference derives from the resolved data (null account, empty participants, empty schedule, missing credit).
 
 `getParticipants()` and `getQuickFilters()` leave the Home contract (participants move to `AccountProvider`; Home has no quick filters). Discover keeps its own quick-filter source unchanged.
 
@@ -146,26 +163,28 @@ export interface DiscoverFeedInput {
 | `me-active` | Sarah | Sarah's sessions + plan | yes |
 | `household` | Sarah, Adam (8), Lina (12) | full set | yes |
 
+Scenarios are **fixture selection only**: each id maps to a deterministic fixture that `AccountProvider` resolves into a `HomeFeedBuildInput`. No screen, service, or builder branches on scenario ids (§3 data flow).
+
 **Interests** (docs/09 §18.3): Sarah — Calisthenics, Pilates, Padel; Adam — Swimming, Football, Robotics; Lina — Coding, Art, Languages. Stored as activity-type ids on the participant records.
 
 **Collections:** `childFocused: true` on `kids-teens`, `after-school`, `camps`; `false` on `ladies-only`, `beat-the-heat`, and any other adult/general entry.
 
 ## 5. Feed assembly rules (`buildHomeFeed`)
 
-Pure, synchronous, fully unit-tested. Section order = docs/18 §4. Per scenario:
+Pure, synchronous, fully unit-tested. Section order = docs/18 §4. Every condition reads the **resolved input data**, never a scenario id:
 
-1. `welcome` — guest only (reuses hero card language; seasonal copy, no fabricated personalization).
-2. `upcoming` — earliest `ScheduleEntry` across all participants; omitted when no bookings.
-3. `week` — only days with ≥ 1 entry render rows in the strip; section omitted when no bookings.
-4. `plans` — active plans; omitted when none.
+1. `welcome` — `account === null` (reuses hero card language; seasonal copy, no fabricated personalization).
+2. `upcoming` — earliest `ScheduleEntry`; omitted when `scheduleEntries` is empty.
+3. `week` — only days with ≥ 1 entry render rows in the strip; section omitted when `scheduleEntries` is empty.
+4. `plans` — omitted when `activePlans` is empty.
 5. Program sections, each built with eligibility → interests → docs/05 §9 ranking, budgets ≈ 3–5 cards, omitted below the docs/18 §5 minimums:
-   - `Based on your interests` (primary participant; all non-guest scenarios).
-   - Per additional profile, in account order: `For {name}` (age-eligibility first); plus at most one supplemental rail `After school for {name}` or `Camps for {name}` only when ≥ 2 age-eligible matches exist (docs/18 §5.1) — supplemental rails are inherently child-gated (§6) because they derive from a real child profile.
-   - `Popular near {area}` — guest and `me-only` only (discovery useful without history).
-   - `Available today for you` (guest: `Available today`, area-scoped) — programs with today availability, scoped to household eligibility for non-guest scenarios.
-   - `Offers for you` (guest: `Offers`) — 2–3 offer/trial cards, personalized ranking for non-guest.
-6. `action` — guest: one `setup` card (interests/profiles invitation; inert until auth ships). `me-only`/`me-active`: one lightweight `add-child` card. Never rendered when child profiles exist; never imagery-led (docs/18 §6).
-7. `credit` — all non-guest scenarios.
+   - `Based on your interests` — `account !== null` (primary participant's declared interests).
+   - Per additional profile in `participants` order: `For {name}` (age-eligibility first); plus at most one supplemental rail `After school for {name}` or `Camps for {name}` only when ≥ 2 age-eligible matches exist (docs/18 §5.1) — supplemental rails are inherently child-gated (§6) because they derive from a real child profile.
+   - `Popular near {area}` — `scheduleEntries.length === 0` (discovery aid without history; yields once real schedule content exists, docs/18 §9 C).
+   - `Available today for you` (`Available today` when `account === null`, area-scoped) — programs with today availability, scoped to household eligibility when participants exist.
+   - `Offers for you` (`Offers` when `account === null`) — 2–3 offer/trial cards, personalized ranking when participants exist.
+6. `action` — `account === null` only: one `setup` card (interests/profiles invitation; inert until auth ships). **No `add-child` card is ever emitted** (docs/18 §6, docs/09 §19.6): signed-in feeds contain no child-related prompt regardless of account composition; participant creation belongs to future Profile/onboarding.
+7. `credit` — when `credit` is provided (fixtures provide it for signed-in accounts only).
 
 **Child-visibility on Home:** no section sourced from child-focused content may appear unless a child profile exists with age-eligible supply — enforced structurally (child rails derive from profiles) plus a guard test (§7).
 
@@ -173,7 +192,7 @@ Pure, synchronous, fully unit-tested. Section order = docs/18 §4. Per scenario:
 
 ## 6. Screen and components
 
-- `home-screen.tsx` renders `feed.sections` with a `kind`-switch — no scenario/participant conditionals in the screen; the service decides everything.
+- `home-screen.tsx` composes `HomeFeedBuildInput` from `AccountProvider` + `AreaProvider` as a pure pass-through, then renders `feed.sections` with a `kind`-switch — no scenario or participant conditionals in the screen; the builder decides everything from data.
 - New components compose existing primitives (`AppImage`, `SectionHeader`, `PressableFeedback`, card surfaces/tokens). Upcoming card is prominent but calm (no countdown, no urgency). Week strip rows: day label · time · participant · short title; rows grow with Dynamic Type.
 - Inert taps with press feedback: upcoming card + week strip (→ future Bookings), plan card (→ future plan detail), action cards, credit strip. Program cards stay inert per docs/09 §17.2.
 - `home-skeleton.tsx` mirrors the new shapes; header/dock render immediately; reduced-motion safe.
@@ -181,15 +200,17 @@ Pure, synchronous, fully unit-tested. Section order = docs/18 §4. Per scenario:
 
 ## 7. Test plan (write failing tests first, per step)
 
-Home feed core (`buildHomeFeed`):
-- household: exact section order per docs/18 §4; `For Adam` and `For Lina` generated from the profile list.
-- dynamic labels: synthetic account with one child `Lena` → `For Lena`; child `Omar` with camp-eligible age → `Camps for Omar`. No test relies on demo names for logic.
-- `me-only`: no upcoming/week/plans; **no camps, after-school, or Kids & Teens content anywhere**; no child-implying prompts; `add-child` action present and last-before-credit.
-- `me-active`: upcoming + week + plans appear with Sarah-only entries.
-- guest: welcome + popular-near + available-today + offers + setup action only; no credit, no fabricated data.
-- child with no age-eligible supply (synthetic dob 2023 → age 3): no `For {name}` supplemental camp rail, and no child-focused sections for that child.
-- removing the last child from the input removes every child-focused section.
+Home feed core (`buildHomeFeed`) — every test calls the **pure builder directly with a hand-built `HomeFeedBuildInput`**, never through scenario ids or the QA resolver:
+- three-participant input (demo fixture data): exact section order per docs/18 §4; `For Adam` and `For Lina` generated from the participant array.
+- dynamic labels with arbitrary names: one synthetic child `Lena` → `For Lena`; child `Omar` with camp-eligible age → `Camps for Omar`. No test relies on demo names for logic.
+- zero-child signed-in input, no bookings: no upcoming/week/plans; **no camps, after-school, or Kids & Teens content anywhere; no child-implying prompt and no `add-child`/setup card of any kind**; popular-near present.
+- zero-child signed-in input with bookings/plan: upcoming + week + plans appear; popular-near absent; still **no child-focused content and no child-related prompt**.
+- guest input (`account: null`, empty participants): welcome + popular-near + available-today + offers + setup action only; no credit, no fabricated data.
+- multiple synthetic children: one `For {name}` rail per child, in participant order.
+- child with no age-eligible supply (synthetic dob 2023 → age 3): no supplemental camp rail, and no child-focused sections for that child.
+- removing the last child from the input (same input minus the child) removes every child-focused section.
 - rail minimums: 1-card base rail renders; supplemental rail with 1 match does not.
+- fixture resolver (separately, thin): each `AccountScenarioId` resolves to the §4 fixture as a `HomeFeedBuildInput`; resolver output feeds the same builder — no other code path.
 
 Schedule core (`buildWeek` / upcoming):
 - upcoming = offset-0 10:00 AM entry, labelled `Today`; week strip contains only days with entries; all offsets within 0–6; every `programId` resolves in the catalogue.
@@ -206,12 +227,12 @@ All existing suites (search, results, catalogue, map) must pass unchanged; jest 
 
 - [ ] 1. Domain + data: add `interests`/`childFocused` types, `src/data/mock/schedule.ts`, collection flags. Data-invariant tests (program refs resolve, offsets 0–6, scenario definitions complete).
 - [ ] 2. Schedule contract + `MockScheduleService` with pure cores; tests above.
-- [ ] 3. `AccountProvider` + `ParticipantProvider` derivation + root mounting; provider unit tests (scenario → participant lists; guest → empty).
-- [ ] 4. Home feed contract v2 + `buildHomeFeed` + full §7 Home test matrix.
+- [ ] 3. `AccountProvider` (`?qa-scenario` → fixture → resolved account data) + `ParticipantProvider` derivation + root mounting; resolver unit tests (fixture → participant lists/entries/plans; guest → null account, empty lists).
+- [ ] 4. Home feed contract v2 (`HomeFeedBuildInput`) + pure `buildHomeFeed` + full §7 Home test matrix (direct builder-input tests).
 - [ ] 5. Discover gate: input change + `buildFeed` visibility rule + §7 Discover tests; update `discover-screen` call site to pass `childParticipants`.
 - [ ] 6. Components (`upcoming-activity-card`, `week-strip`, `plan-card`, `home-action-card`) — tokens only.
 - [ ] 7. Rewrite `home-screen.tsx` + `home-skeleton.tsx`; wire `?qa-scenario`.
-- [ ] 8. QA script: scenario matrix (A–D renders, forbidden-section assertions for `me-only`, child-visibility on Discover default feed), `visible=true` locator rule, `clearDevOverlay()` before dock taps.
+- [ ] 8. QA script: scenario matrix (A–D renders, forbidden-section assertions for `me-only`/`me-active` incl. no add-child/child-prompt cards, child-visibility on Discover default feed), `visible=true` locator rule, `clearDevOverlay()` before dock taps.
 - [ ] 9. Web review at 390 and 360 widths, all four scenarios; fix visual/a11y issues found.
 - [ ] 10. Screenshots: new Home baseline per scenario (`artifacts/home-review/`, re-baselined by design); Discover default (household) screenshots must stay **byte-identical** (the §6 gate is invisible in the default demo); other Discover-surface screenshots byte-identical.
 - [ ] 11. Full checks: `npx tsc --noEmit` · `npx eslint src scripts --max-warnings=0` · `npx jest` · `npx expo-doctor` · all QA scripts · zero console errors.

@@ -6,7 +6,7 @@ Status: product-owner approved, 2026-08-03 (including the §6 child-dependent co
 
 Home and Discover currently repeat categories, program carousels, providers, filters, and marketplace rails with only minor differences, which makes Discover feel redundant. This document separates their product roles permanently:
 
-- **Home** answers: *"What matters to me and my family right now?"* — personalized, schedule-aware, action-oriented.
+- **Home** answers: *"What matters to me right now?"* — personalized, schedule-aware, action-oriented. Home incorporates additional participant profiles when they exist, and describes an individual-only account just as correctly.
 - **Discover** answers: *"What activities and providers exist across Himma?"* — the broad, visual marketplace catalogue.
 
 ## 2. Duplication rule (permanent)
@@ -110,7 +110,7 @@ For a `Me`-only account:
 - show adult-suitable personalized sections only;
 - no camps, after-school, Kids & Teens, or child-development content anywhere in the feed;
 - no prompts that imply the user has children;
-- the optional `Add a child profile` action may exist but stays lightweight (one small action card, no imagery-led rail).
+- **no permanent `Add a child profile` card in the Home feed** (owner decision, 2026-08-03). Participant creation belongs to future Profile/onboarding. A one-time setup suggestion may appear only after explicit family/child intent exists; no child-related prompt appears merely because the account has no child profiles.
 
 For an account with children: generate child-focused sections from the real profile list, apply provider-defined age eligibility first, and label dynamically (`After school for Lena`, `Camps for Omar`).
 
@@ -152,8 +152,8 @@ Home renders correctly for any participant list and booking state. Four normativ
 | # | Scenario | Home content |
 |---|---|---|
 | A | **New guest, no account/history** | Header (sign-in affordance on avatar), search, seasonal welcome card (the only surface where the hero card language persists on Home), `Popular near {area}`, `Available today` (area-scoped, not personalized), `Offers`, and an invitation card to set up profiles/interests (routes to sign-in when auth ships; inert now). No upcoming, week, routine, credit, or participant rails. Nothing fabricated. Child-focused promotion for guests: see §18 open decisions. |
-| B | **Primary participant only, no bookings** (e.g., Sarah, interests declared) | Search, `Based on your interests`, `Popular near {area}`, `Available today for you`, `Offers for you`, credit strip, plus an optional lightweight `Add a child profile` action card. No upcoming/week/routine sections — no fake bookings. Per §6: no camps, after-school, Kids & Teens, or child-development content, and no prompts implying children. |
-| C | **Account with active bookings** | Scenario B plus: `Upcoming activity`, `Your week`, and `Continue your routine` (when a membership/package exists) at the top, per §4 order. |
+| B | **Primary participant only, no bookings** (e.g., Sarah, interests declared) | Search, `Based on your interests`, `Popular near {area}`, `Available today for you`, `Offers for you`, credit strip. No upcoming/week/routine sections — no fake bookings. Per §6: no camps, after-school, Kids & Teens, or child-development content, no prompts implying children, and no `Add a child profile` card. |
+| C | **Account with active bookings** | Scenario B plus: `Upcoming activity`, `Your week`, and `Continue your routine` (when a membership/package exists) at the top, per §4 order. `Popular near {area}` yields once real schedule content exists (it renders only for accounts/guests with zero booked sessions). |
 | D | **Household: primary + multiple children with bookings** (default demo: Sarah, Adam 8, Lina 12) | Full §4 hierarchy: upcoming + week across all participants, routine, `Based on your interests`, `For Adam`, `For Lina` (generated from the profile list, not hard-coded), `Available today for you`, `Offers for you`, credit. Child-focused sections appear because child profiles exist **and** age-eligible supply exists (§6). |
 
 One-child accounts are Scenario C/D with a single generated rail (e.g., `For Lena`, `After school for Lena`) — exactly the same code path as D with a shorter list.
@@ -167,7 +167,7 @@ One-child accounts are Scenario C/D with a single generated rail (e.g., `For Len
   - **Lina** — Teen Coding Summer Camp (Future Makers Robotics), weekday mornings this week.
   - **Sarah** — Reformer Pilates Foundations (Core Pilates House) as an active package: `6 of 10 sessions left`, next session mid-week evening → drives `Continue your routine`.
   - Exact session days/times are chosen at implementation to be internally consistent with the catalogue's schedule labels and are then frozen for tests and screenshots.
-- Service boundary (docs/08 §8): a typed contract such as `ScheduleService.getUpcomingActivity(...)`, `.getWeekSchedule(...)`, `.getActivePlans(...)` (or equivalent fields on an extended `HomeFeedService` response) with one deterministic mock implementation; screens never import raw booking arrays. The account scenario (§9 A–D) is selected in mock data / QA parameters, following the established `?qa-*` pattern for review states.
+- Service boundary (docs/08 §8): a typed contract such as `ScheduleService.getUpcomingActivity(...)`, `.getWeekSchedule(...)`, `.getActivePlans(...)` (or equivalent fields on an extended `HomeFeedService` response) with one deterministic mock implementation; screens never import raw booking arrays. The account scenario (§9 A–D) is selected in mock data / QA parameters, following the established `?qa-*` pattern for review states — scenarios are **fixture selection only**: the Home feed builder consumes resolved account data (participants, schedule entries, plans, credit), never scenario ids (docs/19 §3).
 - These mock bookings exist only for Home (and future Bookings) demonstration. They introduce no booking, payment, or capacity logic.
 
 ## 11. New components (existing tokens and card language only)
@@ -178,7 +178,7 @@ One-child accounts are Scenario C/D with a single generated rail (e.g., `For Len
 | Week-schedule strip | Compact 7-day preview with per-day session entries |
 | Routine/plan card | Program + progress line (`6 of 10 sessions left`) + next session |
 | Participant section header | Existing `SectionHeader` with generated labels — no new visual treatment |
-| Welcome/setup cards (scenarios A–B) | Reuse hero/offer card language; no new visual system |
+| Welcome/setup card (scenario A only) | Reuse hero/offer card language; no new visual system |
 
 No visual-system changes: colors, type roles, radii, spacing, dock, and approved card anatomies are reused as-is.
 
@@ -216,7 +216,7 @@ Existing Home state rules (docs/11 §9) apply unchanged: loading skeletons (head
 
 - Feed-generation unit tests cover: zero additional profiles, one child, multiple children, guest (no account), no-bookings vs active-bookings, thin-supply rail collapse.
 - Child-dependent visibility (§6), required cases:
-  - `Me`-only account: no camps, after-school, or Kids & Teens collections anywhere in Home or the default Discover feed;
+  - `Me`-only account (with and without active bookings): no camps, after-school, or Kids & Teens collections anywhere in Home or the default Discover feed, and no child-related setup prompt or `Add a child profile` card;
   - one-child account: eligible child-focused collections appear;
   - child profile exists but no age-eligible supply for that child: the child-focused collection stays hidden;
   - removing the last child profile removes all child-focused promoted content;
