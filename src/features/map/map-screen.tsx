@@ -191,7 +191,7 @@ export function MapScreen() {
           ) : (
             <>
               <View style={styles.canvas}>
-                <View style={styles.canvasDots} pointerEvents="none" accessibilityElementsHidden>
+                <View style={[styles.canvasDots, styles.noPointer]} accessibilityElementsHidden>
                   {[
                     { top: 26, left: 30 },
                     { top: 92, left: 190 },
@@ -244,7 +244,7 @@ export function MapScreen() {
                   <PressableFeedback
                     accessibilityLabel="Show all areas"
                     onPress={() => session.patchFilters({ areaId: undefined })}
-                    hitSlop={10}
+                    hitSlop={14}
                   >
                     <Text style={styles.areaEmptyAction}>Show all areas</Text>
                   </PressableFeedback>
@@ -345,6 +345,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   canvasDots: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  noPointer: { pointerEvents: 'none' },
   dot: {
     position: 'absolute',
     width: 6,

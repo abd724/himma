@@ -8,7 +8,7 @@ import { StyleSheet, View } from 'react-native';
  */
 export function HomeSkeleton() {
   return (
-    <View style={styles.container} accessibilityLabel="Loading your activities">
+    <View style={styles.container} accessible accessibilityLabel="Loading your activities">
       <SkeletonBlock style={styles.sectionTitle} />
       <SkeletonBlock style={styles.leadCard} />
       <SkeletonBlock style={styles.sectionTitle} />

@@ -96,9 +96,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontFamily: fontFamily.extraBold,
-    fontSize: 19,
-    lineHeight: 25,
+    ...typography.sectionTitle,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },

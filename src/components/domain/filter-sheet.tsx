@@ -37,11 +37,11 @@ const priceBands: { id: PriceBand; label: string }[] = [
   { id: 'over-500', label: 'Over AED 500' },
 ];
 
-const ageBands: { label: string; min: number; max: number | null }[] = [
-  { label: '3–5', min: 3, max: 5 },
-  { label: '6–9', min: 6, max: 9 },
-  { label: '10–13', min: 10, max: 13 },
-  { label: '14–17', min: 14, max: 17 },
+const ageBands: { label: string; spokenLabel: string; min: number; max: number | null }[] = [
+  { label: '3–5', spokenLabel: 'Ages 3 to 5', min: 3, max: 5 },
+  { label: '6–9', spokenLabel: 'Ages 6 to 9', min: 6, max: 9 },
+  { label: '10–13', spokenLabel: 'Ages 10 to 13', min: 10, max: 13 },
+  { label: '14–17', spokenLabel: 'Ages 14 to 17', min: 14, max: 17 },
 ];
 
 const skillOptions: Exclude<SkillLevel, 'all-levels'>[] = ['beginner', 'intermediate', 'advanced'];
@@ -135,6 +135,7 @@ export function FilterSheet({ visible, filters, resultCount, onChange, onClearAl
                   <Chip
                     key={band.label}
                     label={band.label}
+                    accessibilityLabel={band.spokenLabel}
                     selected={filters.ageBand?.min === band.min}
                     accessibilityRole="radio"
                     onPress={() =>
@@ -415,9 +416,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   title: {
-    fontFamily: fontFamily.extraBold,
-    fontSize: 20,
-    lineHeight: 26,
+    ...typography.sectionTitle,
     color: colors.text.primary,
   },
   clearAll: {
@@ -462,7 +461,6 @@ const styles = StyleSheet.create({
   applyLabel: {
     ...typography.chip,
     fontFamily: fontFamily.bold,
-    fontSize: 15,
     color: colors.text.inverse,
   },
 });

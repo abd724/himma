@@ -1,3 +1,4 @@
+import { resultsNavigationAction } from '@/features/search/search-navigation';
 import { MockSearchService } from '@/services/mock/mock-search-service';
 import { suitsAdult, suitsChild } from '@/utils/eligibility';
 import { describe, expect, test } from '@jest/globals';
@@ -135,5 +136,15 @@ describe('Recent searches (docs/17 §8 — session-local, clearable)', () => {
     expect(fresh.getPreSearchContent().recentSearches[0]).toBe('padel');
     fresh.clearRecentSearches();
     expect(fresh.getPreSearchContent().recentSearches).toEqual([]);
+  });
+});
+
+describe('Search → Results navigation (docs/16 §3.8 — one Results route only)', () => {
+  test('a search opened from Results replaces the existing Results route', () => {
+    expect(resultsNavigationAction('results')).toBe('replace');
+  });
+
+  test('a search opened from Home or Discover pushes a fresh Results route', () => {
+    expect(resultsNavigationAction(undefined)).toBe('push');
   });
 });

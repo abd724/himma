@@ -44,7 +44,7 @@ export function CompactProgramRow({
   return (
     <View style={styles.card}>
       <PressableFeedback
-        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${program.scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
+        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${program.scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${badge ? ` ${badge.label}.` : ''}${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
         style={styles.pressable}
       >
         <AppImage source={demoImage(program.imageKey)} style={styles.thumbnail} />
@@ -95,11 +95,12 @@ export function CompactProgramRow({
         accessibilityState={{ checked: isFavourite, selected: isFavourite }}
         onPress={() => onToggleFavourite(program.id)}
         style={styles.heart}
+        hitSlop={4}
       >
         <Ionicons
           name={isFavourite ? 'heart' : 'heart-outline'}
-          size={19}
-          color={isFavourite ? colors.brand.accentWarm : colors.text.secondary}
+          size={20}
+          color={isFavourite ? colors.brand.accentWarm : colors.text.primary}
         />
       </PressableFeedback>
     </View>

@@ -146,7 +146,9 @@ export function ResultsScreen() {
           <PressableFeedback
             accessibilityLabel={`Search, current query ${session.query}`}
             accessibilityHint="Opens search"
-            onPress={() => router.push({ pathname: '/search', params: { q: session.query } })}
+            onPress={() =>
+              router.push({ pathname: '/search', params: { q: session.query, origin: 'results' } })
+            }
             style={styles.queryPill}
           >
             <Ionicons name="search-outline" size={16} color={colors.text.secondary} />
@@ -179,6 +181,7 @@ export function ResultsScreen() {
             />
             <Chip
               label={sortOptions.find((option) => option.id === session.sort)?.label ?? 'Sort'}
+              accessibilityLabel={`Sort by, ${sortOptions.find((option) => option.id === session.sort)?.label ?? 'Sort'}`}
               icon="swap-vertical-outline"
               selected={session.sort !== 'recommended'}
               onPress={() => setSortSheetOpen(true)}
@@ -259,9 +262,10 @@ export function ResultsScreen() {
               {activeChips.map((chip) => (
                 <PressableFeedback
                   key={chip.key}
-                  accessibilityLabel={`Remove filter ${chip.label}`}
+                  accessibilityLabel={`Remove filter ${chip.spoken ?? chip.label}`}
                   onPress={() => session.patchFilters(chip.remove)}
                   style={styles.activeChip}
+                  hitSlop={5}
                 >
                   <Text style={styles.activeChipLabel}>{chip.label}</Text>
                   <Ionicons name="close" size={14} color={colors.brand.primary} />
@@ -321,7 +325,7 @@ export function ResultsScreen() {
                   actionLabel={session.activeCount > 0 ? 'Clear filters' : 'Try another search'}
                   onClearFilter={() => {
                     if (session.activeCount > 0) session.clearFilters();
-                    else router.push('/search');
+                    else router.push({ pathname: '/search', params: { origin: 'results' } });
                   }}
                 />
               ) : session.tab === 'all' ? (
@@ -359,6 +363,8 @@ export function ResultsScreen() {
 interface ChipDescriptor {
   key: string;
   label: string;
+  /** Spoken override when the visual label reads poorly aloud. */
+  spoken?: string;
   remove: Partial<FilterSelection>;
 }
 
@@ -380,9 +386,12 @@ function buildActiveChips(
     });
   }
   if (filters.ageBand !== undefined) {
+    // Canonical age wording (utils/eligibility.ts): "Ages 6–9" / "Ages 14+".
+    const { min, max } = filters.ageBand;
     chips.push({
       key: 'age',
-      label: `Ages ${filters.ageBand.min}–${filters.ageBand.max ?? '17+'}`,
+      label: max === null ? `Ages ${min}+` : `Ages ${min}–${max}`,
+      spoken: max === null ? `Ages ${min} and up` : `Ages ${min} to ${max}`,
       remove: { ageBand: undefined },
     });
   }
@@ -534,7 +543,7 @@ function GroupHeader({
         {title}
       </Text>
       {showSeeAll ? (
-        <PressableFeedback accessibilityLabel={`See all ${title}`} onPress={onSeeAll} hitSlop={10}>
+        <PressableFeedback accessibilityLabel={`See all ${title}`} onPress={onSeeAll} hitSlop={14}>
           <Text style={styles.seeAll}>See all</Text>
         </PressableFeedback>
       ) : null}
@@ -702,7 +711,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 44,
     borderRadius: radii.button - 4,
     alignItems: 'center',
     justifyContent: 'center',

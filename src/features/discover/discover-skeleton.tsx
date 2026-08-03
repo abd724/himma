@@ -9,7 +9,7 @@ import { StyleSheet, View } from 'react-native';
  */
 export function DiscoverSkeleton() {
   return (
-    <View style={styles.container} accessibilityLabel="Loading activities">
+    <View style={styles.container} accessible accessibilityLabel="Loading activities">
       <View style={styles.tileRow}>
         {Array.from({ length: 4 }, (_, index) => (
           <SkeletonBlock key={index} style={styles.tile} />

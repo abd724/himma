@@ -1,6 +1,6 @@
 # Asset Attribution
 
-Demo photography for the mock frontend. All photos are served from Unsplash and used under the [Unsplash License](https://unsplash.com/license) (free for commercial use, no attribution required; attribution recorded here anyway). Each file was downloaded from `https://images.unsplash.com/<photo-id>?w=900&q=75&fm=jpg&fit=crop` and stored locally under `assets/images/demo/`. Every image was visually reviewed to exclude readable third-party logos and embedded marketing text.
+Demo photography for the mock frontend. All photos are served from Unsplash and used under the [Unsplash License](https://unsplash.com/license) (free for commercial use, no attribution required; attribution recorded here anyway). Each file was downloaded from `https://images.unsplash.com/<photo-id>?w=900&q=75&fm=jpg&fit=crop` and stored locally under `assets/images/demo/`. Images were visually reviewed to exclude readable third-party logos and embedded marketing text; the 2026-08-03 milestone re-review found four residual marks that survived the first pass — see "Pre-release replacements" below.
 
 These are placeholder assets for design review only; final launch photography will be sourced and licensed separately.
 
@@ -26,4 +26,23 @@ These are placeholder assets for design review only; final launch photography wi
 
 Rejected during review (deleted, not shipped): images containing readable Nike, Brooks, Reyes, SoftBank Pepper, or hotel branding, an off-brief black-and-white gym, and a massage photo unsuited to a family app.
 
-App icon, splash, and favicon are the default Expo-generated placeholders pending final branding.
+## Pre-release replacements (2026-08-03 re-review)
+
+Acceptable for internal design review; replace before anything customer-facing or externally distributed:
+
+- **gym.jpg** — readable sportswear marks (shoe swoosh, striped shorts) survived the first review pass.
+- **robotics.jpg** — full-frame branded building bricks (protected trade dress; moulded wordmark visible on studs).
+- **boxing.jpg** — legible manufacturer wordmark with ® on the glove cuff.
+- **books.jpg** — small legible pencil-manufacturer wordmark in the foreground.
+- Second-pass candidates (marks present but not clearly legible at 900 px): fitness-woman.jpg (shoe sidewall pattern, smartwatch), karate.jpg (gi patches), library.jpg (book cover art).
+
+Known polish debt: 17 photos cover 62 surfaces (~3.6× reuse), so the same photo can appear as a category tile, a collection card, and several program cards in one scroll; some pairings are semantic placeholders (tennis for padel, karate for a multi-activity camp, meditation for mat pilates, adult imagery on two junior programs). Final launch photography resolves both.
+
+## Fonts and icons (shipped in the app bundle)
+
+| Asset | Source | License |
+|---|---|---|
+| Manrope (5 weights) | `@expo-google-fonts/manrope` | SIL Open Font License 1.1 — © 2018 The Manrope Project Authors; the OFL notice must ship with the font (add to a future in-app licences screen) |
+| Ionicons | `@expo/vector-icons` | MIT — © Ionic |
+
+App icon, splash, and favicon are the default Expo-generated placeholders pending final branding. Note the iOS icon (`assets/expo.icon/`) composes the **Expo logo mark** itself — it must be replaced before any build leaves internal review.

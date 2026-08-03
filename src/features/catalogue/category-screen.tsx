@@ -125,7 +125,8 @@ export function CategoryScreen() {
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <CataloguePageHeader title="Category" onBack={goBack} />
           <EmptyFeedCard
-            message="We can't find that category. Browse the full catalogue instead."
+            title="We can’t find that category"
+            message="Browse the full catalogue instead."
             actionLabel="Browse all categories"
             onClearFilter={() => router.replace('/discover/categories')}
           />
@@ -206,7 +207,7 @@ export function CategoryScreen() {
                 <EmptyFeedCard
                   message={
                     participantId !== 'everyone' && participantId !== 'me'
-                      ? `No ${page.category.label} activities for ${participantLabel}'s age right now. Try Everyone or Me.`
+                      ? `No ${page.category.label} activities for ${participantLabel}’s age right now. Try Everyone or Me.`
                       : `No ${page.category.label} activities right now. Try nearby areas.`
                   }
                   actionLabel={
@@ -234,7 +235,7 @@ export function CategoryScreen() {
                       <PressableFeedback
                         accessibilityLabel="Change area"
                         onPress={() => setLocationSheetOpen(true)}
-                        hitSlop={10}
+                        hitSlop={14}
                       >
                         <Text style={styles.supplyAction}>Change area</Text>
                       </PressableFeedback>

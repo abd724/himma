@@ -1,5 +1,6 @@
 import { Chip } from '@/components/ui/chip';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
+import { resultsNavigationAction, type SearchOrigin } from '@/features/search/search-navigation';
 import { collections } from '@/data/mock/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
 import type { SearchSuggestion, SuggestionKind } from '@/services/contracts/search';
@@ -53,8 +54,11 @@ export function SearchScreen() {
   const { areaId } = useAreaContext();
   const resultsSession = useResultsSession();
 
-  // Results' query pill reopens Search prefilled for refinement.
-  const params = useLocalSearchParams<{ q?: string }>();
+  // Results' query pill reopens Search prefilled for refinement; it also
+  // passes origin=results so a re-submission replaces that Results route
+  // instead of stacking a duplicate (see search-navigation.ts).
+  const params = useLocalSearchParams<{ q?: string; origin?: string }>();
+  const origin: SearchOrigin = params.origin === 'results' ? 'results' : undefined;
   const [query, setQuery] = useState(typeof params.q === 'string' ? params.q : '');
   const [recentsVersion, setRecentsVersion] = useState(0);
 
@@ -83,16 +87,23 @@ export function SearchScreen() {
     // A new submitted search resets filters, sort, and pagination here, in
     // the event handler (docs/16 §3.8).
     resultsSession.newSearch(value, tab as ResultsTab);
-    // Dismiss the search overlay first so Results pushes onto the Discover
-    // tab stack (back then pops to the feed, never to another tab).
-    if (router.canGoBack()) router.dismiss();
-    router.push({ pathname: '/discover/results', params: { q: value, tab } });
+    openResultsOnDiscoverStack({ pathname: '/discover/results', params: { q: value, tab } });
   };
 
   /** Dismiss the overlay so the destination stacks on the Discover feed. */
   const pushOnDiscoverStack = (path: Href) => {
     if (router.canGoBack()) router.dismiss();
     router.push(path);
+  };
+
+  /**
+   * Results destinations reset the shared session, so a Results route already
+   * on the stack (origin=results) must be replaced, never duplicated.
+   */
+  const openResultsOnDiscoverStack = (path: Href) => {
+    if (router.canGoBack()) router.dismiss();
+    if (resultsNavigationAction(origin) === 'replace') router.replace(path);
+    else router.push(path);
   };
 
   const openSuggestion = (suggestion: SearchSuggestion) => {
@@ -120,7 +131,7 @@ export function SearchScreen() {
     if (collection === undefined) return;
     resultsSession.newSearch('', 'programs');
     resultsSession.setFilters(collectionFilterSelection(collection));
-    pushOnDiscoverStack('/discover/results');
+    openResultsOnDiscoverStack('/discover/results');
   };
 
   const typing = query.trim().length > 0;
@@ -149,7 +160,7 @@ export function SearchScreen() {
               <PressableFeedback
                 onPress={() => setQuery('')}
                 accessibilityLabel="Clear search text"
-                hitSlop={10}
+                hitSlop={12}
               >
                 <Ionicons name="close-circle" size={20} color={colors.text.secondary} />
               </PressableFeedback>

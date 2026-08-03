@@ -25,7 +25,7 @@ export function DiscoverHeader({ areaLabel, onPressLocation }: Props) {
           onPress={onPressLocation}
           accessibilityLabel={`Change area. Current area ${areaLabel}, Abu Dhabi`}
           style={styles.location}
-          hitSlop={8}
+          hitSlop={10}
         >
           <Ionicons name="location-outline" size={15} color={colors.brand.primary} />
           <Text style={styles.locationText} numberOfLines={1}>

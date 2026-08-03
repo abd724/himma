@@ -59,7 +59,12 @@ export function FloatingDock({ activeId, onPressDestination }: Props) {
               size={active ? 20 : 22}
               color={active ? dockTokens.activeIconColor : dockTokens.inactiveIconColor}
             />
-            <Text style={[styles.label, active ? styles.activeLabel : styles.inactiveLabel]}>
+            {/* The capsule height is fixed, so dock labels cap font scaling
+                per docs/12 §4 instead of clipping at large Dynamic Type. */}
+            <Text
+              style={[styles.label, active ? styles.activeLabel : styles.inactiveLabel]}
+              maxFontSizeMultiplier={1.3}
+            >
               {destination.label}
             </Text>
           </PressableFeedback>

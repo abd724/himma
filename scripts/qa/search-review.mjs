@@ -22,7 +22,13 @@ page.on('console', (msg) => {
   if (msg.type() === 'error') consoleErrors.push(msg.text());
 });
 
-const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
+// Hide Expo web's transient Fast Refresh bubble (dev tooling, never app UI).
+const shot = async (name) => {
+  await page
+    .addStyleTag({ content: '.__expo_fast_refresh { display: none !important; }' })
+    .catch(() => {});
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+};
 const idle = () => page.waitForTimeout(700);
 // Expo's dev-only empty error-toast container intercepts pointer events over
 // the dock area in headless Chrome; it is not part of the app. Remove it.

@@ -9,6 +9,8 @@ interface Props {
   onPress: () => void;
   /** Ionicons name shown before the label. */
   icon?: keyof typeof Ionicons.glyphMap;
+  /** Spoken override when the visual label reads poorly aloud (e.g. "6–9"). */
+  accessibilityLabel?: string;
   accessibilityHint?: string;
   /** 'radio' for single-select groups, 'checkbox' for toggles (docs/14 §9). */
   accessibilityRole?: 'button' | 'radio' | 'checkbox';
@@ -25,16 +27,18 @@ export function Chip({
   selected,
   onPress,
   icon,
+  accessibilityLabel,
   accessibilityHint,
   accessibilityRole = 'button',
   badgeCount,
 }: Props) {
   const iconName = selected ? 'checkmark' : icon;
   const badgeLabel = badgeCount !== undefined && badgeCount > 0 ? String(badgeCount) : undefined;
+  const spokenLabel = accessibilityLabel ?? label;
   return (
     <PressableFeedback
       onPress={onPress}
-      accessibilityLabel={badgeLabel === undefined ? label : `${label}, ${badgeLabel} active`}
+      accessibilityLabel={badgeLabel === undefined ? spokenLabel : `${spokenLabel}, ${badgeLabel} active`}
       accessibilityRole={accessibilityRole}
       accessibilityState={
         accessibilityRole === 'button' ? { selected } : { selected, checked: selected }

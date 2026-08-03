@@ -70,7 +70,7 @@ export function ProgramCard({
   return (
     <View style={styles.card}>
       <PressableFeedback
-        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${scheduleLabel}. ${price.amount} ${price.unit}.${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
+        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${badge ? ` ${badge.label}.` : ''}${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
       >
         <View>
           <AppImage source={demoImage(program.imageKey)} style={styles.image} />
@@ -103,10 +103,10 @@ export function ProgramCard({
           <View style={styles.footer}>
             <View style={styles.priceRow}>
               <Text style={styles.price}>{price.amount}</Text>
-              <Text style={styles.priceUnit}>{price.unit}</Text>
+              {price.unit ? <Text style={styles.priceUnit}>{price.unit}</Text> : null}
             </View>
             <View style={styles.rating}>
-              <Ionicons name="star" size={13} color={colors.brand.reward} />
+              <Ionicons name="star" size={12} color={colors.brand.reward} />
               <Text style={styles.ratingText}>{program.rating.toFixed(1)}</Text>
             </View>
           </View>
@@ -118,9 +118,11 @@ export function ProgramCard({
             ? `Remove ${program.title} from favourites`
             : `Add ${program.title} to favourites`
         }
-        accessibilityState={{ selected: isFavourite }}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: isFavourite, selected: isFavourite }}
         onPress={() => onToggleFavourite(program.id)}
         style={styles.heart}
+        hitSlop={4}
       >
         <Ionicons
           name={isFavourite ? 'heart' : 'heart-outline'}

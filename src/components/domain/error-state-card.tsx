@@ -11,7 +11,8 @@ interface Props {
 export function ErrorStateCard({ onRetry }: Props) {
   return (
     <View style={styles.wrap}>
-      <View style={styles.card}>
+      {/* Announce the state change when this replaces list content. */}
+      <View style={styles.card} accessibilityLiveRegion="polite">
         <View style={styles.iconCircle}>
           <Ionicons name="cloud-offline-outline" size={26} color={colors.brand.primary} />
         </View>

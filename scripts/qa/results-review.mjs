@@ -21,7 +21,13 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 page.on('console', (msg) => {
   if (msg.type() === 'error') consoleErrors.push(msg.text());
 });
-const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
+// Hide Expo web's transient Fast Refresh bubble (dev tooling, never app UI).
+const shot = async (name) => {
+  await page
+    .addStyleTag({ content: '.__expo_fast_refresh { display: none !important; }' })
+    .catch(() => {});
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+};
 const idle = (ms = 700) => page.waitForTimeout(ms);
 const clearDevOverlay = () =>
   page.evaluate(() => document.getElementById('error-toast')?.remove());
@@ -107,6 +113,7 @@ check('clear all removes active chips', !(await visible(page.getByLabel(/Remove 
 // ——— Sorting ———
 await page.getByRole('button', { name: /^Recommended|^Sort/ }).click();
 await idle();
+await shot('sort-sheet-390');
 await page.getByRole('radio', { name: 'Lowest price' }).click();
 await idle(900);
 check('sort label updates', await visible(page.getByRole('button', { name: 'Lowest price' })));
@@ -148,6 +155,21 @@ await page.getByLabel('Back').click();
 await idle();
 check('back returns into discover', page.url().includes('/discover'));
 
+// ——— Refining from Results replaces the route (no duplicate Results) ———
+await page.goto(`${BASE}/discover/results?q=swimming`, { waitUntil: 'networkidle' });
+await idle(1200);
+await clearDevOverlay();
+await page.getByLabel(/Search, current query swimming/).click();
+await idle(800);
+await page.getByRole('textbox').fill('boxing');
+await page.keyboard.press('Enter');
+await idle(1200);
+check('refined query lands on results', await visible(page.getByLabel(/Search, current query boxing/)));
+await clearDevOverlay();
+await page.getByLabel('Back').click();
+await idle(900);
+check('back after refine skips the stale results route', page.url().endsWith('/discover'));
+
 // ——— Home regression: Home owns no filter controls (docs/18 §4, §7) ———
 await page.goto(`${BASE}/discover/results?q=yoga`, { waitUntil: 'networkidle' });
 await idle(1000);
@@ -156,7 +178,8 @@ await idle(700);
 await clearDevOverlay();
 await page.getByRole('tab', { name: 'Home' }).click();
 await idle(900);
-check('home has no quick filter chips (results filter cannot leak)', !(await page.getByRole('button', { name: 'Ladies only' }).first().isVisible().catch(() => false)));
+// exact: program-card labels legitimately CONTAIN "Ladies only" (spoken badge).
+check('home has no quick filter chips (results filter cannot leak)', !(await page.getByRole('button', { name: 'Ladies only', exact: true }).first().isVisible().catch(() => false)));
 const scrollTo = async (y) =>
   page.evaluate((offset) => {
     const els = [...document.querySelectorAll('div')].filter(

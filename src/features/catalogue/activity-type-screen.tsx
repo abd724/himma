@@ -124,7 +124,8 @@ export function ActivityTypeScreen() {
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <CataloguePageHeader title="Activity" onBack={goBack} />
           <EmptyFeedCard
-            message="We can't find that activity. Browse the full catalogue instead."
+            title="We can’t find that activity"
+            message="Browse the full catalogue instead."
             actionLabel="Browse all categories"
             onClearFilter={() => router.replace('/discover/categories')}
           />
@@ -201,7 +202,7 @@ export function ActivityTypeScreen() {
               {segment === 'programs' ? (
                 page.programs.length === 0 ? (
                   <EmptyFeedCard
-                    message={`No ${page.activityType.label} activities for ${participantLabel}'s age right now. Try Everyone or Me.`}
+                    message={`No ${page.activityType.label} activities for ${participantLabel}’s age right now. Try Everyone or Me.`}
                     actionLabel="Browse as Everyone"
                     onClearFilter={() => setParticipantId('everyone')}
                   />
@@ -231,7 +232,7 @@ export function ActivityTypeScreen() {
                 />
               ) : (
                 <View style={styles.list}>
-                  <Text style={styles.countLine}>
+                  <Text style={styles.countLine} accessibilityLiveRegion="polite">
                     {page.providers.length}{' '}
                     {page.providers.length === 1 ? 'provider' : 'providers'}
                   </Text>
@@ -286,7 +287,7 @@ const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 44,
     borderRadius: radii.button - 4,
     alignItems: 'center',
     justifyContent: 'center',

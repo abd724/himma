@@ -10,6 +10,13 @@ import {
 
 interface Props {
   onPress?: () => void;
+  /**
+   * false lets children announce individually instead of merging into one
+   * element — required when the pressable wraps a list of labelled rows
+   * (nested accessible children are unreachable inside an accessible parent
+   * on iOS).
+   */
+  accessible?: boolean;
   accessibilityLabel: string;
   accessibilityRole?: AccessibilityRole;
   accessibilityState?: AccessibilityState;
@@ -25,6 +32,7 @@ interface Props {
  */
 export function PressableFeedback({
   onPress,
+  accessible,
   accessibilityLabel,
   accessibilityRole = 'button',
   accessibilityState,
@@ -38,6 +46,7 @@ export function PressableFeedback({
   return (
     <Pressable
       onPress={onPress ?? (() => {})}
+      accessible={accessible}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}
       accessibilityState={accessibilityState}

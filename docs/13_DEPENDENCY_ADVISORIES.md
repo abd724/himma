@@ -7,7 +7,9 @@ Status as of 2026-08-02 (Expo SDK 57, `npm audit`).
 Every advisory reported by `npm audit` chains back to a single package:
 
 - **Root**: `uuid < 11.1.1` — [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq), "Missing buffer bounds check in v3/v5/v6 when `buf` is provided". Severity: moderate.
-- **Path**: `uuid` ← `xcode` ← `@expo/config-plugins` ← `@expo/cli` / `@expo/config` / `@expo/metro-config` / `@expo/prebuild-config` / `expo-splash-screen` ← `expo`.
+- **Path**: `uuid` ← `xcode` ← `@expo/config-plugins` ← `@expo/cli` / `@expo/config` / `@expo/metro-config` / `@expo/prebuild-config` / `@expo/inline-modules` / `@expo/local-build-cache-provider` / `expo-splash-screen` ← `expo`.
+
+Re-checked 2026-08-03 (milestone close): still 11 moderate, same single root cause, zero advisories in shipped bundle code. The path list above was corrected to name all 11 flagged packages (`@expo/inline-modules` and `@expo/local-build-cache-provider` are additional intermediates). `npm audit fix --force` now advertises a downgrade to `expo@46` — rule 2 below stands. One dependency added since this doc was written: `playwright-core` (devDependency, QA scripts only, justified in docs/08; carries no advisory).
 
 ## Assessment
 

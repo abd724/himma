@@ -16,7 +16,7 @@ export function SectionHeader({ title, actionLabel, onActionPress }: Props) {
         {title}
       </Text>
       {actionLabel ? (
-        <PressableFeedback accessibilityLabel={`${actionLabel}: ${title}`} onPress={onActionPress} hitSlop={10}>
+        <PressableFeedback accessibilityLabel={`${actionLabel}: ${title}`} onPress={onActionPress} hitSlop={14}>
           <Text style={styles.action}>{actionLabel}</Text>
         </PressableFeedback>
       ) : null}

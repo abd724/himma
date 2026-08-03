@@ -21,7 +21,13 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 page.on('console', (msg) => {
   if (msg.type() === 'error') consoleErrors.push(msg.text());
 });
-const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
+// Hide Expo web's transient Fast Refresh bubble (dev tooling, never app UI).
+const shot = async (name) => {
+  await page
+    .addStyleTag({ content: '.__expo_fast_refresh { display: none !important; }' })
+    .catch(() => {});
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+};
 const idle = (ms = 700) => page.waitForTimeout(ms);
 const visible = (locator) => locator.isVisible().catch(() => false);
 const visibleText = (text) => visible(page.getByText(text).locator('visible=true').first());

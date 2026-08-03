@@ -11,7 +11,13 @@ import { StyleSheet, Text, View } from 'react-native';
 export function WeekStrip({ days }: { days: WeekDay[] }) {
   return (
     <View style={styles.wrap}>
-      <PressableFeedback accessibilityLabel="Your week. Opens your full schedule" style={styles.card}>
+      {/* accessible={false}: the strip is a list — each session announces
+          itself; a merged parent label would hide every row from VoiceOver. */}
+      <PressableFeedback
+        accessible={false}
+        accessibilityLabel="Your week. Opens your full schedule"
+        style={styles.card}
+      >
         {days.map((day, index) => (
           <View
             key={day.dayOffset}

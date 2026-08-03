@@ -8,17 +8,25 @@ interface Props {
   onClearFilter: () => void;
   /** Recovery action label; contexts with several filters pass a plural. */
   actionLabel?: string;
+  /** Not-found contexts override the default zero-match headline. */
+  title?: string;
 }
 
 /** Friendly empty state with a clear recovery action — docs/11 §6. */
-export function EmptyFeedCard({ message, onClearFilter, actionLabel = 'Clear filter' }: Props) {
+export function EmptyFeedCard({
+  message,
+  onClearFilter,
+  actionLabel = 'Clear filter',
+  title = 'No matches right now',
+}: Props) {
   return (
     <View style={styles.wrap}>
-      <View style={styles.card}>
+      {/* Announce the state change when this replaces list content. */}
+      <View style={styles.card} accessibilityLiveRegion="polite">
         <View style={styles.iconCircle}>
           <Ionicons name="search-outline" size={26} color={colors.brand.primary} />
         </View>
-        <Text style={styles.title}>No matches right now</Text>
+        <Text style={styles.title}>{title}</Text>
         <Text style={styles.message}>{message}</Text>
         <PressableFeedback accessibilityLabel={actionLabel} onPress={onClearFilter} style={styles.button}>
           <Text style={styles.buttonLabel}>{actionLabel}</Text>

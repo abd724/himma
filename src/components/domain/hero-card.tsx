@@ -43,7 +43,7 @@ export function HeroCard({ hero, onPressAction }: Props) {
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: pagePadding },
   card: {
-    height: 216,
+    minHeight: 216,
     borderRadius: radii.hero,
     overflow: 'hidden',
   },
