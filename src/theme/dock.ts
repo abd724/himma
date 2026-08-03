@@ -1,4 +1,5 @@
 import { colors } from './colors';
+import { spacing } from './spacing';
 
 /**
  * Floating navigation dock tokens — docs/04 §2.
@@ -19,6 +20,10 @@ export const dockTokens = {
   /** Gap between the dock and the bottom safe-area edge. */
   safeAreaOffset: 10,
   horizontalMargin: 20,
-  /** Extra scroll padding so content never hides behind the dock. */
-  contentClearance: 24,
+  /**
+   * Extra scroll padding above the dock's top edge so the final card rests
+   * clear of the capsule and its shadow. Screens compose the full inset as
+   * height + safeAreaOffset + safe-area bottom + contentClearance.
+   */
+  contentClearance: spacing.huge,
 } as const;

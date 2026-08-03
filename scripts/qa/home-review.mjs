@@ -26,12 +26,23 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 page.on('console', (msg) => {
   if (msg.type() === 'error') consoleErrors.push(msg.text());
 });
-const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
+// Expo web's Fast Refresh ⚡ bubble (.__expo_fast_refresh) pops in and out of
+// the DOM during dev-server activity and can photobomb captures. Dev-only —
+// never app UI — so a persistent CSS kill rule keeps every shot clean.
+const shot = async (name) => {
+  await page
+    .addStyleTag({ content: '.__expo_fast_refresh { display: none !important; }' })
+    .catch(() => {});
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+};
 const idle = (ms = 700) => page.waitForTimeout(ms);
 const visible = (locator) => locator.isVisible().catch(() => false);
 const heading = (name) => page.getByRole('heading', { name, exact: true });
+// Aligns the heading to the top of the scroller (scrollIntoViewIfNeeded is a
+// no-op when the heading is already anywhere in the viewport, which framed
+// section shots identically to the top shot).
 const scrollToHeading = async (name) => {
-  await heading(name).scrollIntoViewIfNeeded();
+  await heading(name).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await idle(300);
 };
 const scrollTo = async (y) =>
@@ -44,6 +55,35 @@ const scrollTo = async (y) =>
   }, y);
 const noHorizontalOverflow = () =>
   page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+/** True when every visible element containing the text renders unclipped (no ellipsis/clamp). */
+const textUnclipped = async (text) => {
+  const els = await page.getByText(text).locator('visible=true').all();
+  if (els.length === 0) return false;
+  for (const el of els) {
+    const ok = await el.evaluate(
+      (node) => node.scrollWidth <= node.clientWidth + 1 && node.scrollHeight <= node.clientHeight + 1,
+    );
+    if (!ok) return false;
+  }
+  return true;
+};
+/** Gap in px between the lowest content element and the dock's top edge at full scroll. */
+const bottomGapAboveDock = () =>
+  page.evaluate(() => {
+    const tablist = document.querySelector('[role="tablist"]');
+    if (!tablist) return null;
+    const dockTop = tablist.getBoundingClientRect().top;
+    const scrollers = [...document.querySelectorAll('div')].filter(
+      (d) => d.scrollHeight > d.clientHeight + 100,
+    );
+    const sc = scrollers[scrollers.length - 1];
+    if (!sc) return null;
+    const kids = [...sc.firstElementChild.children].filter(
+      (k) => k.getBoundingClientRect().height > 0,
+    );
+    const last = kids[kids.length - 1];
+    return last ? dockTop - last.getBoundingClientRect().bottom : null;
+  });
 
 // ═══ Scenario D — default demo household (Sarah, Adam 8, Lina 12) ═══
 await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -65,6 +105,7 @@ check('household: upcoming card content', await visible(page.getByLabel(/Upcomin
 check('household: your week strip', await visible(heading('Your week')));
 check('household: week has today swim row', await visible(page.getByLabel('Today, 10:00 AM: Junior Swim Squad for Adam')));
 check('household: week has pilates row', await visible(page.getByLabel('Mon 3, 6:30 PM: Reformer Pilates Foundations for you')));
+check('household: week pilates title not truncated', await textUnclipped('Reformer Pilates Foundations'));
 check('household: no horizontal overflow 390', await noHorizontalOverflow());
 await shot('01-home-household-top-390');
 
@@ -168,7 +209,34 @@ await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
 await idle(1400);
 check('household 360: upcoming renders', await visible(heading('Upcoming activity')));
 check('household 360: no horizontal overflow', await noHorizontalOverflow());
+check('household 360: week pilates title not truncated', await textUnclipped('Reformer Pilates Foundations'));
 await shot('11-home-household-top-360');
+
+// ═══ Full scenario matrix — top/mid/bottom shots + dock clearance at both sizes ═══
+for (const [width, height] of [[390, 844], [360, 780]]) {
+  await page.setViewportSize({ width, height });
+  for (const scenario of ['guest', 'me-only', 'me-active', 'household']) {
+    await page.goto(`${BASE}/?qa-scenario=${scenario}`, { waitUntil: 'networkidle' });
+    await idle(1400);
+    await shot(`matrix-${scenario}-top-${width}`);
+    await scrollTo(99999);
+    await idle(500);
+    const halfway = await page.evaluate(() => {
+      const scrollers = [...document.querySelectorAll('div')].filter(
+        (d) => d.scrollHeight > d.clientHeight + 100,
+      );
+      const sc = scrollers[scrollers.length - 1];
+      return sc ? Math.floor((sc.scrollHeight - sc.clientHeight) / 2) : 0;
+    });
+    const gap = await bottomGapAboveDock();
+    check(`matrix ${scenario} ${width}: final card clears dock (gap ${gap?.toFixed(0)}px ≥ 32)`, gap !== null && gap >= 32);
+    check(`matrix ${scenario} ${width}: no horizontal overflow`, await noHorizontalOverflow());
+    await shot(`matrix-${scenario}-bottom-${width}`);
+    await scrollTo(halfway);
+    await idle(400);
+    await shot(`matrix-${scenario}-mid-${width}`);
+  }
+}
 
 check('zero console errors', consoleErrors.length === 0);
 if (consoleErrors.length > 0) console.log('console errors:', consoleErrors.slice(0, 5));

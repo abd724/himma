@@ -21,7 +21,7 @@ export function PlanCard({ plan }: { plan: ActivePlan }) {
           <Ionicons name="repeat" size={20} color={colors.brand.primary} />
         </View>
         <View style={styles.info}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={styles.title} numberOfLines={2}>
             {plan.programTitle}
           </Text>
           <Text style={styles.meta} numberOfLines={1}>

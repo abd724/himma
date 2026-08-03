@@ -28,15 +28,14 @@ export function WeekStrip({ days }: { days: WeekDay[] }) {
                   accessible
                   accessibilityLabel={`${day.dayLabel}, ${entry.timeLabel}: ${entry.programTitle} for ${entry.participantLabel === 'You' ? 'you' : entry.participantLabel}`}
                 >
-                  <Text style={styles.sessionTime}>{entry.timeLabel}</Text>
-                  <View style={styles.sessionInfo}>
-                    <Text style={styles.sessionTitle} numberOfLines={1}>
-                      {entry.programTitle}
-                    </Text>
-                    <Text style={styles.sessionParticipant} numberOfLines={1}>
-                      {entry.participantLabel}
-                    </Text>
-                  </View>
+                  <Text style={styles.sessionTitle} numberOfLines={2}>
+                    {entry.programTitle}
+                  </Text>
+                  <Text style={styles.sessionMeta}>
+                    <Text style={styles.sessionTime}>{entry.timeLabel}</Text>
+                    {' · '}
+                    {entry.participantLabel}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -69,7 +68,7 @@ const styles = StyleSheet.create({
   dayLabel: {
     ...typography.caption,
     color: colors.text.secondary,
-    width: 56,
+    width: 48,
     paddingTop: 2,
   },
   dayLabelToday: {
@@ -77,25 +76,19 @@ const styles = StyleSheet.create({
   },
   sessions: { flex: 1, gap: spacing.sm },
   session: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'flex-start',
+    gap: 1,
   },
-  sessionTime: {
-    ...typography.caption,
-    fontFamily: fontFamily.bold,
-    color: colors.text.primary,
-    width: 64,
-    paddingTop: 1,
-  },
-  sessionInfo: { flex: 1, gap: 0 },
   sessionTitle: {
     ...typography.supporting,
     fontFamily: fontFamily.semiBold,
     color: colors.text.primary,
   },
-  sessionParticipant: {
+  sessionMeta: {
     ...typography.supporting,
     color: colors.text.secondary,
+  },
+  sessionTime: {
+    fontFamily: fontFamily.semiBold,
+    color: colors.text.primary,
   },
 });
