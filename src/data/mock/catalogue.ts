@@ -34,6 +34,10 @@ export const areas: Area[] = [
   { id: 'yas-island', label: 'Yas Island', nearby: ['al-raha', 'saadiyat'] },
   { id: 'al-reem', label: 'Al Reem Island', nearby: ['saadiyat', 'khalifa-city'] },
   { id: 'saadiyat', label: 'Saadiyat Island', nearby: ['al-reem', 'yas-island'] },
+  // Deliberately without supply yet: a real marketplace has areas it hasn't
+  // reached. Keeps the map's honest "no activities in this area" state
+  // demonstrable without contriving a filter combination (docs/16 §2).
+  { id: 'abu-dhabi-island', label: 'Abu Dhabi Island', nearby: ['al-reem', 'saadiyat'] },
 ];
 
 /** Full customer-visible taxonomy — docs/15 §3. */

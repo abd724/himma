@@ -14,6 +14,8 @@ interface ResultsSessionState {
   filters: FilterSelection;
   sort: SortId;
   page: number;
+  /** True once any surface has opened a results session (search or preset). */
+  started: boolean;
 }
 
 interface ResultsSessionValue extends ResultsSessionState {
@@ -34,6 +36,7 @@ const initialState: ResultsSessionState = {
   filters: emptyFilters,
   sort: 'recommended',
   page: 1,
+  started: false,
 };
 
 const ResultsSessionContext = createContext<ResultsSessionValue | undefined>(undefined);
@@ -52,7 +55,7 @@ export function ResultsSessionProvider({ children }: PropsWithChildren) {
       ...state,
       activeCount: activeFilterCount(state.filters),
       newSearch: (query, tab) =>
-        setState({ query, tab, filters: emptyFilters, sort: 'recommended', page: 1 }),
+        setState({ query, tab, filters: emptyFilters, sort: 'recommended', page: 1, started: true }),
       setTab: (tab) => setState((current) => ({ ...current, tab })),
       setFilters: (filters) => setState((current) => ({ ...current, filters, page: 1 })),
       patchFilters: (patch) =>

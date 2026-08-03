@@ -92,6 +92,13 @@ export function CategoryScreen() {
     [categoryId],
   );
 
+  /** The map opens on this category's session, so List returns to it. */
+  const openMap = () => {
+    session.newSearch('', 'programs');
+    session.setFilters(categoryPreset);
+    router.push('/map?origin=category');
+  };
+
   const openFilterSheet = () => {
     setDraftFilters(categoryPreset);
     setFilterSheetOpen(true);
@@ -184,8 +191,8 @@ export function CategoryScreen() {
                   label="Map"
                   icon="map-outline"
                   selected={false}
-                  onPress={() => router.push('/map')}
-                  accessibilityHint="Opens the area map"
+                  onPress={() => openMap()}
+                  accessibilityHint="Shows this category on the map"
                 />
               </ScrollView>
 

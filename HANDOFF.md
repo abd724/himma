@@ -14,7 +14,7 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 | 4 results + filtering | `7be5199 feat(results)` | ✅ approved |
 | 5 Discover feed + Home entry activation | `df423a2 feat(discover)` | ✅ approved |
 | 6 All Categories / category / activity-type pages | `ad65ff7 feat(catalogue-pages)` | ✅ approved |
-| 7 schematic mock map | `feat(map)` | ⏳ **next** |
+| 7 schematic mock map | `feat(map)` | ✅ done, **reported, awaiting owner approval** |
 | 8 review polish + full screenshot matrix + milestone report | `chore(review)` | pending |
 
 ## Approval status per surface (docs/12 three levels)
@@ -29,7 +29,7 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 | All Categories (HMA-011) | ✅ approved | ✅ approved | ⏳ pending |
 | Category (HMA-012) | ✅ approved | ✅ approved | ⏳ pending |
 | Activity type (HMA-013) | ✅ approved | ✅ approved | ⏳ pending |
-| Map (HMA-016) | ✅ approved (docs/14 §7) | ⏳ not built — Commit 7 | ⏳ pending |
+| Map (HMA-016) | ✅ approved (docs/14 §7) | ⏳ built, pending owner review | ⏳ pending |
 
 **Native validation is pending for every surface.** No iOS Simulator or physical-device pass has occurred (this Mac has CommandLineTools only, no Xcode). Web review never upgrades a screen to "native validated" (docs/12 §1). All code is written native-safe per docs/12.
 
@@ -42,7 +42,7 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 
 ## Current catalogue
 
-**36 programs across 11 fictional providers** (owner range 28–36 / 10–12 — do not exceed). 11 categories, 24 activity types, 6 collections, 6 areas. Demo participants: Sarah (Me), Adam (8, dob 2018-03-14), Lina (12, dob 2013-11-02). All names fictional; no real provider logos or implied affiliations.
+**36 programs across 11 fictional providers** (owner range 28–36 / 10–12 — do not exceed). 11 categories, 24 activity types, 6 collections, 7 areas — Abu Dhabi Island is deliberately without supply so the map's honest "no activities in this area" state is always demonstrable. Demo participants: Sarah (Me), Adam (8, dob 2018-03-14), Lina (12, dob 2013-11-02). All names fictional; no real provider logos or implied affiliations.
 
 ## Not built / out of current scope
 
@@ -81,9 +81,13 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 - Checks per commit: `npx tsc --noEmit`, `npx eslint src scripts --max-warnings=0`, `npx jest`, `npx expo-doctor`, all QA scripts, zero console errors, Home regression screenshots byte-identical.
 - ESLint (react-hooks v6) forbids sync setState in effects — put setState in async callbacks/event handlers.
 
-## Commit 7 scope (next)
+## Commit 8 scope (next, after Map approval)
 
-Per docs/14 §7, docs/16 §2/§6, docs/17 §12: replace the `/map` shell with the schematic area-node canvas — labeled area nodes with per-area counts, fictional pins, selectable areas writing `areaId` into the **shared** `ResultsSessionProvider` (no second filter state), always-visible `List` control, dock hidden by structure, safe-area-aware controls, Android back / iOS swipe-back to the exact origin. Entry points to activate: Discover map card, Results Map action, category and activity-type Map actions — each preserving its session context; entering from Discover without a session creates a deterministic broad session. States: default, selected area, Ladies-only, child context, no results in an area, no matching areas, loading, error/retry via QA flag, missing count fallback, return-to-list. Screenshot 14 in the matrix plus 360-width coverage.
+Per docs/17 §18.8: state and accessibility polish, the full Playwright pass, the complete docs/17 §17 screenshot matrix, and the milestone report with the three approval levels per surface. No new screens.
+
+## Map implementation notes (Commit 7)
+
+`/map?origin=results|discover|category|activity` — the origin decides only how `List` returns (`results` pops back onto the existing list; every other origin dismisses the map and opens the session's list), so exactly one Results route ever exists. `src/features/map/map-navigation.ts` holds those pure rules and is unit-tested. `MockMapService` derives every node count from `MockSearchService.buildResults` with the area filter lifted, so map and list can never disagree; `mockSearchEngine` exports the one shared engine instance. Area selection writes `filters.areaId` into the shared session — there is no second filter state. QA flags: `?qa-fail=1` (error) and `?qa-nocount=1` (missing-count fallback).
 
 ## Owner workflow expectations
 

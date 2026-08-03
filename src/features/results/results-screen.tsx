@@ -184,6 +184,17 @@ export function ResultsScreen() {
               onPress={() => setSortSheetOpen(true)}
               accessibilityHint="Opens sort options"
             />
+            {/* Map toggle belongs to the program and provider lists (docs/14 §3.2);
+                it carries this exact session, so no state is rebuilt. */}
+            {session.tab === 'programs' || session.tab === 'providers' ? (
+              <Chip
+                label="Map"
+                icon="map-outline"
+                selected={false}
+                onPress={() => router.push('/map?origin=results')}
+                accessibilityHint="Shows these results on the map"
+              />
+            ) : null}
             <View style={styles.toolbarDivider} />
             <Chip
               label="Today"

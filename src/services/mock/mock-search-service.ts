@@ -346,4 +346,12 @@ export class MockSearchService implements SearchService {
   }
 }
 
-export const searchService: SearchService = new MockSearchService();
+const engine = new MockSearchService();
+
+export const searchService: SearchService = engine;
+
+/**
+ * The same instance, concretely typed so other mock services can compose the
+ * one filtering engine instead of duplicating its rules (docs/16 §3.1).
+ */
+export const mockSearchEngine: MockSearchService = engine;

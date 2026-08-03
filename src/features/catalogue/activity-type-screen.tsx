@@ -85,6 +85,13 @@ export function ActivityTypeScreen() {
     [page, activityTypeId],
   );
 
+  /** The map opens on this activity type's session, so List returns to it. */
+  const openMap = () => {
+    session.newSearch('', 'programs');
+    session.setFilters(typePreset);
+    router.push('/map?origin=activity');
+  };
+
   const openFilterSheet = () => {
     setDraftFilters(typePreset);
     setFilterSheetOpen(true);
@@ -160,8 +167,8 @@ export function ActivityTypeScreen() {
                   label="Map"
                   icon="map-outline"
                   selected={false}
-                  onPress={() => router.push('/map')}
-                  accessibilityHint="Opens the area map"
+                  onPress={openMap}
+                  accessibilityHint="Shows this activity on the map"
                 />
               </ScrollView>
 

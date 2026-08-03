@@ -21,7 +21,8 @@ export type AreaId =
   | 'mbz-city'
   | 'yas-island'
   | 'al-reem'
-  | 'saadiyat';
+  | 'saadiyat'
+  | 'abu-dhabi-island';
 
 export interface Area {
   id: AreaId;

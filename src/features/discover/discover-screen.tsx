@@ -14,6 +14,7 @@ import { SearchEntryButton } from '@/components/domain/search-entry-button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { collections, providers } from '@/data/mock/catalogue';
 import { DiscoverSkeleton } from '@/features/discover/discover-skeleton';
+import { needsBroadSession } from '@/features/map/map-navigation';
 import type { DiscoverFeed } from '@/services/contracts/discover-feed';
 import {
   activeFilterCount,
@@ -100,6 +101,16 @@ export function DiscoverScreen() {
   const openCollection = (collectionId: string) => {
     const collection = collectionById.get(collectionId);
     if (collection !== undefined) openPresetResults(collectionFilterSelection(collection));
+  };
+
+  /**
+   * The map is a view of the active results session. Browsing Discover with
+   * no session yet creates a deterministic broad one; an existing session
+   * (a search or a preset) carries over untouched (docs/17 §12).
+   */
+  const openMap = () => {
+    if (needsBroadSession('discover', session.started)) session.newSearch('', 'programs');
+    router.push('/map?origin=discover');
   };
 
   /** Tile activations — docs/15 §4.2: every target now resolves. */
@@ -251,7 +262,7 @@ export function DiscoverScreen() {
                 </View>
               ) : null}
 
-              <MapEntryCard onPress={() => router.push('/map')} />
+              <MapEntryCard onPress={openMap} />
             </>
           )}
         </ScrollView>
