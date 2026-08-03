@@ -15,7 +15,8 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 | 5 Discover feed + Home entry activation | `df423a2 feat(discover)` | ✅ approved |
 | 6 All Categories / category / activity-type pages | `ad65ff7 feat(catalogue-pages)` | ✅ approved |
 | 7 schematic mock map | `feat(map)` | ✅ done, **reported, awaiting owner approval** |
-| 8 review polish + full screenshot matrix + milestone report | `chore(review)` | pending |
+| 8a Home rework (docs/18 differentiation) | `feat(home)` | 📝 specs approved (docs/18, docs/09 §19); implementation brief docs/19 **awaiting owner approval — no code yet** |
+| 8b review polish + full screenshot matrix + milestone report | `chore(review)` | pending, follows 8a |
 
 ## Approval status per surface (docs/12 three levels)
 
@@ -81,9 +82,10 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 - Checks per commit: `npx tsc --noEmit`, `npx eslint src scripts --max-warnings=0`, `npx jest`, `npx expo-doctor`, all QA scripts, zero console errors, Home regression screenshots byte-identical.
 - ESLint (react-hooks v6) forbids sync setState in effects — put setState in async callbacks/event handlers.
 
-## Commit 8 scope (next, after Map approval)
+## Next steps (after Map approval)
 
-Per docs/17 §18.8: state and accessibility polish, the full Playwright pass, the complete docs/17 §17 screenshot matrix, and the milestone report with the three approval levels per surface. No new screens.
+1. **`feat(home)` (docs/17 step 8a):** rebuild Home per docs/18 (personalized activity hub: upcoming activity, week strip, routine, dynamic `For {name}` rails; participant chips, quick filters, hero, category grid, and providers rail removed from Home) plus the docs/18 §6 child-dependent collection visibility gate on Home **and** the default Discover feed. Implementation brief: docs/19 — **owner approval required before any code**. Owner-approved rules recorded in docs/09 §19 (supersedes §17.4 for Home only).
+2. **`chore(review)` (step 8b):** state and accessibility polish, the full Playwright pass, the complete docs/17 §17 screenshot matrix (plus new per-scenario Home baselines), and the milestone report with the three approval levels per surface.
 
 ## Map implementation notes (Commit 7)
 

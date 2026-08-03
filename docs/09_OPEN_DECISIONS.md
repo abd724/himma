@@ -257,3 +257,15 @@ These decisions were confirmed by the product owner and override earlier wording
 4. **Open: recommendation weighting.** How the simple ranking factors combine (their relative weights and ordering) is not decided. Until decided, any implementation ordering is a temporary assumption, not a business rule.
 
 These decisions do not alter the approved Home or Discover visual baseline and do not change the approved Commit 6 sequence.
+
+## 19. Product-owner decisions — 2026-08-03 (Home/Discover differentiation)
+
+These decisions were confirmed by the product owner and are specified fully in `docs/18_HOME_DISCOVER_DIFFERENTIATION.md`, which governs where earlier wording differs:
+
+1. **Home and Discover have separated product roles.** Home is the personalized activity hub ("What matters to me and my family right now?") — schedule-aware and action-oriented. Discover is the broad marketplace catalogue ("What activities and providers exist across Himma?"). A section must not appear on both screens in substantially the same form (docs/18 §2).
+2. **Removed from Home:** the dominant participant context chips, the quick filter row, the seasonal hero on signed-in Home (guest/no-history welcome card only), the popular-categories grid, and the popular-providers rail. Discover exclusively owns the participant selector, quick filters incl. Ladies only, categories/All Categories, activity types, collections, trending, popular providers, marketplace-wide Available today and Offers & trials, and map discovery (docs/18 §4, §7). **Section 17.4 of this document is superseded for Home only**; Discover quick-chip semantics are unchanged.
+3. **Home is dynamically participant-aware, never household-hard-coded.** Sections generate from the actual participant list (zero, one, or many additional profiles) with generated labels (`For you`, `For {participantName}`); no UI logic branches on demo names or a fixed participant count. Sarah, Adam, and Lina remain deterministic demo profiles only (docs/18 §3, §5, §9).
+4. **Home shows real schedule context from deterministic mock bookings** (upcoming activity, weekly preview, active plans) pinned to `MOCK_TODAY`, referencing existing catalogue programs only, behind a typed service contract. Never fabricate bookings, memberships, or schedules in no-history scenarios (docs/18 §10).
+5. **Child-dependent collection visibility.** An account with only the primary participant `Me` must not automatically see child- or student-focused collections (camps, after-school, Kids & Teens, child-development rails) on Home or in the default Discover feed — a visibility rule, not a ranking preference. Child-focused collections appear only when the account has at least one child profile **and** the collection has provider-defined age-eligible supply for at least one of those children. Deliberate search and explicit catalogue browsing remain complete. Full rules and required test cases in docs/18 §6 and §15.
+
+These decisions change Home's content hierarchy but not the approved visual system (tokens, typography, dock, card language, spacing).
