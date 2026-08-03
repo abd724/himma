@@ -1,8 +1,9 @@
-import type { QuickFilter, QuickFilterId } from '@/services/contracts/home-feed';
+import type { QuickFilter, QuickFilterId } from '@/services/contracts/filters';
 import type {
   AreaId,
   BrowseEntry,
   Collection,
+  Participant,
   ParticipantId,
   Program,
   Provider,
@@ -12,6 +13,15 @@ export interface DiscoverFeedInput {
   areaId: AreaId;
   participantId: ParticipantId;
   quickFilterId?: QuickFilterId;
+  /**
+   * The account's FULL child-profile composition — docs/18 §6 gate input.
+   * Never derived from the selected browsing participant (owner caution,
+   * 2026-08-03): composition decides whether child-focused collections are
+   * eligible for promoted placement; the browsing participant only filters
+   * and ranks the content shown. `null` = guest/no account (gate off,
+   * docs/18 §18 assumption); `[]` = signed-in with no child profiles.
+   */
+  childParticipants: Participant[] | null;
   /** QA/Playwright-only deterministic failure trigger — never customer-reachable. */
   simulateFailure?: boolean;
 }

@@ -171,12 +171,15 @@ await page.getByRole('button', { name: 'Everyone' }).click();
 await idle(900);
 
 // ——— Favourite on Discover persists to Home ———
+// Beginner Calisthenics sits in Discover's trending rail AND Home's
+// "Based on your interests" rail (Sarah's calisthenics interest), so the
+// favourite is observable on both screens.
 await scrollTo(700);
 await idle(300);
 await clearDevOverlay();
-await page.getByLabel(/Add Ladies Strength Circuit to favourites/).first().click();
+await page.getByLabel(/Add Beginner Calisthenics to favourites/).first().click();
 await idle(400);
-check('favourite toggled on discover', await visible(page.getByLabel(/Remove Ladies Strength Circuit from favourites/).first()));
+check('favourite toggled on discover', await visible(page.getByLabel(/Remove Beginner Calisthenics from favourites/).first()));
 
 // ——— Collection → preset Results → back ———
 await scrollTo(560);
@@ -205,34 +208,25 @@ await clearDevOverlay();
 await page.getByRole('tab', { name: 'Home' }).click();
 await idle(900);
 check('home shares the changed area', await visible(page.getByLabel(/Change area. Current area Yas Island/).first()));
-check('home favourite persisted from discover', await visible(page.getByLabel(/Remove Ladies Strength Circuit from favourites/).first()));
+await scrollTo(1200);
+await idle(400);
+check('home favourite persisted from discover', await visible(page.getByLabel(/Remove Beginner Calisthenics from favourites/).first()));
+await scrollTo(0);
+await idle(300);
 
-// ——— Home quick filters remain local ———
-await page.getByRole('button', { name: 'Ladies only', exact: true }).click();
-await idle(900);
-check('home ladies chip active', (await page.getByRole('button', { name: 'Ladies only', exact: true }).getAttribute('aria-selected')) === 'true');
-await clearDevOverlay();
-await page.getByRole('tab', { name: 'Discover' }).click();
-await idle(900);
-check('discover quick chip independent of home', (await page.getByRole('button', { name: 'Ladies only', exact: true }).getAttribute('aria-selected')) !== 'true');
-await clearDevOverlay();
-await page.getByRole('tab', { name: 'Home' }).click();
-await idle(700);
-await page.getByRole('button', { name: 'Ladies only', exact: true }).click();
-await idle(700);
+// ——— Home owns no Discover surfaces (docs/18 §4, §7) ———
+check('home has no participant chips', !(await visible(page.getByRole('button', { name: 'Everyone', exact: true }))));
+check('home has no quick filter chips', !(await visible(page.getByRole('button', { name: 'Ladies only', exact: true }))));
+check('home has no categories grid', !(await visible(page.getByRole('heading', { name: 'Popular categories' }))));
+check('home has no providers rail', !(await visible(page.getByRole('heading', { name: 'Popular providers near you' }))));
+check('discover quick chips unaffected by Home rework', await visible(page.getByRole('tab', { name: 'Discover' })));
 
-// ——— Home entry activation: search bar + hero CTA ———
+// ——— Home entry activation: search bar ———
 await page.getByRole('button', { name: 'Search activities, providers or classes' }).click();
 await idle(800);
 check('home search bar opens search', page.url().includes('/search'));
 await page.getByLabel('Cancel search').click();
 await idle(800);
-await clearDevOverlay();
-await page.getByLabel('Explore summer picks').click();
-await idle(1200);
-check('hero CTA opens preset results', page.url().includes('/discover/results'));
-check('summer preset applied (indoor)', await visible(page.getByLabel('Remove filter Indoor')));
-await shot('home-hero-results-390');
 
 // ——— Error state via deterministic QA flag + retry ———
 await page.goto(`${BASE}/discover?qa-fail=1`, { waitUntil: 'networkidle' });

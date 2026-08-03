@@ -21,10 +21,11 @@ import {
   collectionFilterSelection,
   quickFilterSelection,
   type FilterSelection,
+  type QuickFilterId,
 } from '@/services/contracts/filters';
-import type { QuickFilterId } from '@/services/contracts/home-feed';
 import { discoverFeedService } from '@/services/mock/mock-discover-feed-service';
 import { searchService } from '@/services/mock/mock-search-service';
+import { useAccount } from '@/state/account-context';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
@@ -51,6 +52,7 @@ export function DiscoverScreen() {
   const params = useLocalSearchParams<{ 'qa-fail'?: string }>();
 
   const quickFilters = discoverFeedService.getQuickFilters();
+  const account = useAccount();
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
   const { favourites, toggleFavourite } = useFavourites();
@@ -68,10 +70,16 @@ export function DiscoverScreen() {
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
+  // Account COMPOSITION drives the docs/18 §6 collection gate — never the
+  // selected browsing participant (owner caution, 2026-08-03). Guest = null.
+  const childParticipants = account.account === null ? null : account.childParticipants;
+
   // Previous content stays visible while a context change reloads (Home rule).
   useEffect(() => {
     let cancelled = false;
-    discoverFeedService.getDiscoverFeed({ areaId, participantId, quickFilterId, simulateFailure }).then(
+    discoverFeedService
+      .getDiscoverFeed({ areaId, participantId, quickFilterId, childParticipants, simulateFailure })
+      .then(
       (result) => {
         if (!cancelled) {
           setFeed(result);
@@ -85,7 +93,7 @@ export function DiscoverScreen() {
     return () => {
       cancelled = true;
     };
-  }, [areaId, participantId, quickFilterId, simulateFailure]);
+  }, [areaId, participantId, quickFilterId, childParticipants, simulateFailure]);
 
   const toggleFilter = (id: QuickFilterId) => {
     setQuickFilterId((current) => (current === id ? undefined : id));
@@ -164,11 +172,14 @@ export function DiscoverScreen() {
           showsVerticalScrollIndicator={false}
         >
           <SearchEntryButton onPress={() => router.push('/search')} />
-          <ParticipantChips
-            participants={participants}
-            selectedId={participantId}
-            onSelect={setParticipantId}
-          />
+          {/* A guest has no participant profiles, so no chip row renders. */}
+          {participants.length > 0 ? (
+            <ParticipantChips
+              participants={participants}
+              selectedId={participantId}
+              onSelect={setParticipantId}
+            />
+          ) : null}
           <QuickFilterRow
             filters={quickFilters}
             activeId={quickFilterId}

@@ -67,12 +67,10 @@ await idle();
 check('cancel returns to discover origin', page.url().endsWith('/discover'));
 
 // — Participant effect: Adam context excludes 16+ programs from suggestions —
+// The participant selector lives on Discover (docs/18 §7); Home has no chips.
 await clearDevOverlay();
-await page.getByRole('tab', { name: 'Home' }).click();
+await page.getByRole('button', { name: 'Adam', exact: true }).click();
 await idle();
-await page.getByRole('button', { name: 'Adam' }).click();
-await clearDevOverlay();
-await page.getByRole('tab', { name: 'Discover' }).click();
 await page.getByRole('button', { name: 'Search activities, providers or classes' }).click();
 await idle();
 await page.getByRole('textbox').fill('swim');

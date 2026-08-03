@@ -148,7 +148,7 @@ await page.getByLabel('Back').click();
 await idle();
 check('back returns into discover', page.url().includes('/discover'));
 
-// ——— Home regression + quick-filter independence ———
+// ——— Home regression: Home owns no filter controls (docs/18 §4, §7) ———
 await page.goto(`${BASE}/discover/results?q=yoga`, { waitUntil: 'networkidle' });
 await idle(1000);
 await page.getByRole('checkbox', { name: 'Ladies only' }).first().click();
@@ -156,7 +156,7 @@ await idle(700);
 await clearDevOverlay();
 await page.getByRole('tab', { name: 'Home' }).click();
 await idle(900);
-check('home ladies chip independent of results filter', (await page.getByRole('button', { name: 'Ladies only' }).first().getAttribute('aria-selected')) !== 'true');
+check('home has no quick filter chips (results filter cannot leak)', !(await page.getByRole('button', { name: 'Ladies only' }).first().isVisible().catch(() => false)));
 const scrollTo = async (y) =>
   page.evaluate((offset) => {
     const els = [...document.querySelectorAll('div')].filter(

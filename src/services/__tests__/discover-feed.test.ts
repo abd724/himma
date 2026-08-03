@@ -1,4 +1,4 @@
-import { collections, programs } from '@/data/mock/catalogue';
+import { collections, participants, programs } from '@/data/mock/catalogue';
 import {
   activeFilterCount,
   collectionFilterSelection,
@@ -13,8 +13,15 @@ import { describe, expect, test } from '@jest/globals';
 const service = new MockDiscoverFeedService(0);
 const searchService = new MockSearchService(0);
 
-const feed = (participantId: string, quickFilterId?: any, areaId: any = 'khalifa-city') =>
-  service.buildFeed({ areaId, participantId, quickFilterId });
+/** The demo household's account composition — docs/18 §6 gate input. */
+const householdChildren = participants.filter((participant) => participant.kind === 'child');
+
+const feed = (
+  participantId: string,
+  quickFilterId?: any,
+  areaId: any = 'khalifa-city',
+  childParticipants: any = householdChildren,
+) => service.buildFeed({ areaId, participantId, quickFilterId, childParticipants });
 
 const collectionById = (id: string) => {
   const collection = collections.find((entry) => entry.id === id);
@@ -111,6 +118,80 @@ describe('Discover feed — participant context (docs/16 §4)', () => {
   });
 });
 
+describe('Discover feed — child-dependent collection visibility (docs/18 §6, docs/09 §19.5)', () => {
+  const CHILD_FOCUSED = ['camps', 'after-school', 'kids-teens'];
+
+  test('a signed-in account with no children never sees child-focused promoted collections', () => {
+    for (const participantId of ['everyone', 'me']) {
+      const ids = feed(participantId, undefined, 'khalifa-city', []).collections.map(
+        (summary) => summary.collection.id,
+      );
+      for (const id of CHILD_FOCUSED) {
+        expect(ids).not.toContain(id);
+      }
+    }
+  });
+
+  test('adult collections are unaffected by the account-composition gate', () => {
+    const gated = feed('everyone', undefined, 'khalifa-city', []).collections.map(
+      (summary) => summary.collection.id,
+    );
+    expect(gated).toContain('ladies-only');
+    expect(gated).toContain('beat-the-heat');
+  });
+
+  test('the gate reads account composition, not the browsing participant', () => {
+    // One child on the account, browsing as Me: child-focused collections may
+    // stay in the promoted set (owner caution, 2026-08-03) — camps has
+    // age-eligible supply for Adam and an all-audiences classification.
+    const adam = householdChildren.find((child) => child.id === 'adam');
+    const ids = feed('me', undefined, 'khalifa-city', [adam]).collections.map(
+      (summary) => summary.collection.id,
+    );
+    expect(ids).toContain('camps');
+    // Zero children hides them under the identical browsing state.
+    const gatedIds = feed('me', undefined, 'khalifa-city', []).collections.map(
+      (summary) => summary.collection.id,
+    );
+    expect(gatedIds).not.toContain('camps');
+  });
+
+  test('a child profile without age-eligible supply keeps child-focused collections hidden', () => {
+    // Age 3: no camp or after-school program covers this age.
+    const toddler = { id: 'zayed', label: 'Zayed', kind: 'child', dateOfBirth: '2023-05-01' };
+    const ids = feed('everyone', undefined, 'khalifa-city', [toddler]).collections.map(
+      (summary) => summary.collection.id,
+    );
+    expect(ids).not.toContain('camps');
+    expect(ids).not.toContain('after-school');
+  });
+
+  test('an age-eligible child restores child-focused collections with supply', () => {
+    const adam = householdChildren.find((child) => child.id === 'adam');
+    const ids = feed('everyone', undefined, 'khalifa-city', [adam]).collections.map(
+      (summary) => summary.collection.id,
+    );
+    expect(ids).toContain('camps');
+    expect(ids).toContain('after-school');
+  });
+
+  test('a guest (no account) sees the broad default rail — docs/18 §18 assumption', () => {
+    const ids = feed('everyone', undefined, 'khalifa-city', null).collections.map(
+      (summary) => summary.collection.id,
+    );
+    expect(ids).toContain('camps');
+    expect(ids).toContain('after-school');
+  });
+
+  test('the household demo rail is unchanged by the gate', () => {
+    const gated = feed('everyone').collections.map((summary) => summary.collection.id);
+    const ungated = feed('everyone', undefined, 'khalifa-city', null).collections.map(
+      (summary) => summary.collection.id,
+    );
+    expect(gated).toEqual(ungated);
+  });
+});
+
 describe('Discover feed — quick filters (docs/09 §17.4 semantics)', () => {
   test('Today keeps only available-today programs', () => {
     const result = feed('everyone', 'today');
@@ -159,6 +240,7 @@ describe('Discover feed — quick filters (docs/09 §17.4 semantics)', () => {
       areaId: 'yas-island',
       participantId: 'everyone',
       quickFilterId: 'near-me',
+      childParticipants: householdChildren,
     });
     const today = fromYas.programSections.find((s) => s.id === 'available-today');
     expect(today?.programs[0].areaId).toBe('al-raha');
@@ -294,7 +376,12 @@ describe('Filter sheet handoff (docs/16 §3, commit-5 merge rule)', () => {
 
   test('the QA failure flag is deterministic and throws before any content', () => {
     expect(() =>
-      service.buildFeed({ areaId: 'khalifa-city', participantId: 'everyone', simulateFailure: true }),
+      service.buildFeed({
+        areaId: 'khalifa-city',
+        participantId: 'everyone',
+        childParticipants: null,
+        simulateFailure: true,
+      }),
     ).toThrow();
   });
 });

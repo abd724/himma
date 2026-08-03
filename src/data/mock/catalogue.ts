@@ -22,9 +22,12 @@ import type {
 
 export const participants: Participant[] = [
   { id: 'everyone', label: 'Everyone', kind: 'everyone' },
-  { id: 'me', label: 'Me', kind: 'self' },
-  { id: 'adam', label: 'Adam', kind: 'child', dateOfBirth: '2018-03-14' }, // age 8
-  { id: 'lina', label: 'Lina', kind: 'child', dateOfBirth: '2013-11-02' }, // age 12
+  // Declared interests are activity-type ids — docs/09 §18.3 (Sarah:
+  // Calisthenics/Pilates/Padel; Adam: Swimming/Football/Robotics; Lina:
+  // Coding/Art/Languages mapped to the catalogue taxonomy).
+  { id: 'me', label: 'Me', kind: 'self', interests: ['calisthenics', 'pilates', 'padel'] },
+  { id: 'adam', label: 'Adam', kind: 'child', dateOfBirth: '2018-03-14', interests: ['swimming', 'football', 'robotics'] }, // age 8
+  { id: 'lina', label: 'Lina', kind: 'child', dateOfBirth: '2013-11-02', interests: ['coding', 'painting', 'arabic'] }, // age 12
 ];
 
 export const areas: Area[] = [
@@ -742,15 +745,19 @@ export const programs: Program[] = [
   },
 ];
 
-/** Editorial collections — data, not UI (docs/15 §2). */
+/**
+ * Editorial collections — data, not UI (docs/15 §2). `childFocused` marks
+ * collections whose intended participant is a child or school-age student;
+ * their promoted placement is account-gated (docs/18 §6, docs/09 §19.5).
+ */
 export const collections: Collection[] = [
-  { id: 'kids-teens', title: 'Kids & Teens', imageKey: 'karate', preset: { childRelevant: true }, audience: 'all', featuredOnDiscover: false },
-  { id: 'ladies-only', title: 'Ladies only', subtitle: 'Classes just for you', imageKey: 'fitnessWoman', preset: { ladiesOnly: true }, audience: 'adults', featuredOnDiscover: true },
-  { id: 'beat-the-heat', title: 'Beat the heat indoors', subtitle: 'Cool escapes this summer', imageKey: 'poolLanes', preset: { indoor: true }, audience: 'all', featuredOnDiscover: true, seasonalLabel: 'Summer 2026' },
-  { id: 'camps', title: 'Camps & holidays', imageKey: 'swimRace', preset: { camps: true }, audience: 'all', featuredOnDiscover: true, seasonalLabel: 'Summer 2026' },
-  { id: 'after-school', title: 'After school', imageKey: 'football', preset: { afterSchool: true }, audience: 'children', featuredOnDiscover: true },
+  { id: 'kids-teens', title: 'Kids & Teens', imageKey: 'karate', preset: { childRelevant: true }, audience: 'all', childFocused: true, featuredOnDiscover: false },
+  { id: 'ladies-only', title: 'Ladies only', subtitle: 'Classes just for you', imageKey: 'fitnessWoman', preset: { ladiesOnly: true }, audience: 'adults', childFocused: false, featuredOnDiscover: true },
+  { id: 'beat-the-heat', title: 'Beat the heat indoors', subtitle: 'Cool escapes this summer', imageKey: 'poolLanes', preset: { indoor: true }, audience: 'all', childFocused: false, featuredOnDiscover: true, seasonalLabel: 'Summer 2026' },
+  { id: 'camps', title: 'Camps & holidays', imageKey: 'swimRace', preset: { camps: true }, audience: 'all', childFocused: true, featuredOnDiscover: true, seasonalLabel: 'Summer 2026' },
+  { id: 'after-school', title: 'After school', imageKey: 'football', preset: { afterSchool: true }, audience: 'children', childFocused: true, featuredOnDiscover: true },
   // Deliberately thin preset to exercise recovery states (docs/15 §6).
-  { id: 'try-something-new', title: 'Try something new', subtitle: 'Trials and offers to taste', imageKey: 'art', preset: { offers: true, availableToday: true }, audience: 'all', featuredOnDiscover: true },
+  { id: 'try-something-new', title: 'Try something new', subtitle: 'Trials and offers to taste', imageKey: 'art', preset: { offers: true, availableToday: true }, audience: 'all', childFocused: false, featuredOnDiscover: true },
 ];
 
 /**

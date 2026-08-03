@@ -13,6 +13,11 @@ export interface Participant {
   kind: 'everyone' | 'self' | 'child';
   /** ISO date; children only. Age derives from this against the fixed mock today. */
   dateOfBirth?: string;
+  /**
+   * Declared interests as activity-type ids — docs/05 §9, docs/09 §18.3.
+   * Optional, set during onboarding/profile setup; drives rule-based ranking.
+   */
+  interests?: string[];
 }
 
 export type AreaId =
@@ -142,6 +147,12 @@ export interface Collection {
   };
   /** Participant contexts the collection makes sense for (docs/16 §4). */
   audience: 'all' | 'adults' | 'children';
+  /**
+   * Intended participant is a child or school-age student — docs/18 §6.
+   * Child-focused collections are promoted only to accounts with at least one
+   * age-eligible child profile; never inferred from titles.
+   */
+  childFocused: boolean;
   /** Shown in Discover's editorial rail; lenses like Kids & Teens stay grid-only. */
   featuredOnDiscover: boolean;
   /** Optional seasonal framing, e.g. "Summer 2026". */

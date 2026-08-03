@@ -7,11 +7,20 @@ import type {
   DiscoverFeedService,
   DiscoverProgramSection,
 } from '@/services/contracts/discover-feed';
-import type { QuickFilter, QuickFilterId } from '@/services/contracts/home-feed';
+import type { QuickFilter, QuickFilterId } from '@/services/contracts/filters';
 import { passesFilters } from '@/services/mock/results-engine';
-import { quickFilters } from '@/services/mock/mock-home-feed-service';
 import type { Area, AreaId, Collection, Participant, ParticipantId, Program } from '@/types/domain';
 import { isLadiesOnly, participantAge, suitsAdult, suitsChild } from '@/utils/eligibility';
+
+/** Discover's six quick chips — docs/14 §2.4 (moved from the Home service; Home has no quick filters, docs/18 §4). */
+export const quickFilters: QuickFilter[] = [
+  { id: 'today', label: 'Today', activeDescription: 'Showing activities available today' },
+  { id: 'weekend', label: 'This weekend', activeDescription: 'Showing weekend activities' },
+  { id: 'near-me', label: 'Near me', activeDescription: 'Showing the closest activities first' },
+  { id: 'ladies-only', label: 'Ladies only', activeDescription: 'Showing ladies-only activities' },
+  { id: 'camps', label: 'Camps', activeDescription: 'Showing camps' },
+  { id: 'offers', label: 'Offers', activeDescription: 'Showing offers and trials' },
+];
 
 const CAPS = { trending: 5, today: 4, offers: 4, providers: 4, collections: 5 } as const;
 
@@ -171,8 +180,29 @@ export class MockDiscoverFeedService implements DiscoverFeedService {
       .map((entry) => entry.provider)
       .slice(0, CAPS.providers);
 
-    // Editorial rail — participant-compatible, counts deterministic, empty
-    // presets collapsed. The quick filter narrows programs, not the rail.
+    // Child-dependent visibility — docs/18 §6: a child-focused collection is
+    // eligible for promoted placement only when the ACCOUNT has a child
+    // profile with age-eligible supply in that collection. This reads account
+    // composition, never the browsing participant (owner caution,
+    // 2026-08-03); `null` children = guest, gate off (docs/18 §18).
+    const passesChildGate = (collection: Collection): boolean => {
+      if (!collection.childFocused) return true;
+      const accountChildren = input.childParticipants;
+      if (accountChildren === null) return true;
+      if (accountChildren.length === 0) return false;
+      const selection = collectionFilterSelection(collection);
+      return programs.some(
+        (program) =>
+          passesFilters(program, selection) &&
+          accountChildren.some((child) =>
+            suitsChild(program.eligibility, participantAge(child) ?? 0),
+          ),
+      );
+    };
+
+    // Editorial rail — account-gated, participant-compatible, counts
+    // deterministic, empty presets collapsed. The quick filter narrows
+    // programs, not the rail.
     const countFor = (collection: Collection): number => {
       const selection = collectionFilterSelection(collection);
       return programs.filter(
@@ -183,7 +213,9 @@ export class MockDiscoverFeedService implements DiscoverFeedService {
     const rail: CollectionSummary[] = collections
       .filter(
         (collection) =>
-          collection.featuredOnDiscover && collectionSuitsParticipant(collection, participant),
+          collection.featuredOnDiscover &&
+          passesChildGate(collection) &&
+          collectionSuitsParticipant(collection, participant),
       )
       .map((collection) => ({ collection, programCount: countFor(collection) }))
       .filter((summary) => summary.programCount > 0)

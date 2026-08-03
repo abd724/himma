@@ -1,40 +1,10 @@
 import type {
-  Area,
-  AreaId,
-  BrowseEntry,
-  CreditSummary,
-  Participant,
-  ParticipantId,
-  Program,
-  Provider,
-} from '@/types/domain';
-
-export type QuickFilterId =
-  | 'today'
-  | 'weekend'
-  | 'near-me'
-  | 'ladies-only'
-  | 'camps'
-  | 'offers';
-
-export interface QuickFilter {
-  id: QuickFilterId;
-  label: string;
-  /** Shown under the filter row while active, e.g. "Showing ladies-only activities". */
-  activeDescription: string;
-}
-
-export interface HomeFeedInput {
-  areaId: AreaId;
-  participantId: ParticipantId;
-  quickFilterId?: QuickFilterId;
-}
-
-export interface ProgramSection {
-  id: string;
-  title: string;
-  programs: Program[];
-}
+  AccountSnapshot,
+  ActivePlan,
+  ResolvedAccount,
+  ScheduleEntry,
+} from '@/services/contracts/schedule';
+import type { Area, AreaId, CreditSummary, Participant, Program } from '@/types/domain';
 
 export interface HeroContent {
   eyebrow: string;
@@ -44,17 +14,57 @@ export interface HeroContent {
   imageKey: string;
 }
 
+export interface WeekDay {
+  dayOffset: number;
+  dayLabel: string;
+  entries: ScheduleEntry[];
+}
+
+/**
+ * Home's typed, ordered section list — docs/18 §4, docs/19 §3. The screen
+ * renders this with a kind-switch and adds nothing of its own. The union
+ * stays extensible; only 'setup' (guest) is emitted as an action this
+ * milestone — never an add-child prompt (docs/09 §19.6).
+ */
+export type HomeSection =
+  | { kind: 'welcome'; content: HeroContent }
+  | { kind: 'upcoming'; entry: ScheduleEntry }
+  | { kind: 'week'; days: WeekDay[] }
+  | { kind: 'plans'; plans: ActivePlan[] }
+  | { kind: 'programs'; id: string; title: string; programs: Program[] }
+  | { kind: 'action'; id: 'setup'; title: string; body: string }
+  | { kind: 'credit'; credit: CreditSummary };
+
+/**
+ * The real feed domain input: resolved account data only — never scenario
+ * ids (docs/19 §3). Every behavioral difference derives from this data:
+ * null account = guest, empty scheduleEntries = no history, and so on.
+ */
+export interface HomeFeedBuildInput {
+  areaId: AreaId;
+  /** null = guest (no account). */
+  account: AccountSnapshot | null;
+  /** Primary participant first, then additional profiles. Empty for guest. */
+  participants: Participant[];
+  scheduleEntries: ScheduleEntry[];
+  activePlans: ActivePlan[];
+  credit?: CreditSummary;
+}
+
+/** Pass-through composition from resolved account data — used by the screen. */
+export function toHomeFeedBuildInput(resolved: ResolvedAccount, areaId: AreaId): HomeFeedBuildInput {
+  return {
+    areaId,
+    account: resolved.account,
+    participants: resolved.participants,
+    scheduleEntries: resolved.scheduleEntries,
+    activePlans: resolved.activePlans,
+    credit: resolved.credit,
+  };
+}
+
 export interface HomeFeed {
-  hero: HeroContent;
-  /** Home's approved eight browse tiles (labels/images unchanged). */
-  categories: BrowseEntry[];
-  /** Program-first sections in display order; empty sections are omitted. */
-  programSections: ProgramSection[];
-  /** Provider-first content; empty when nothing matches. */
-  providers: Provider[];
-  credit: CreditSummary;
-  /** True when an active filter/context combination matched no programs. */
-  isEmpty: boolean;
+  sections: HomeSection[];
 }
 
 /**
@@ -62,8 +72,6 @@ export interface HomeFeed {
  * a real API client replaces it later without touching screens.
  */
 export interface HomeFeedService {
-  getHomeFeed(input: HomeFeedInput): Promise<HomeFeed>;
-  getParticipants(): Participant[];
+  getHomeFeed(input: HomeFeedBuildInput): Promise<HomeFeed>;
   getAreas(): Area[];
-  getQuickFilters(): QuickFilter[];
 }

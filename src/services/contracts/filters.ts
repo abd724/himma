@@ -1,5 +1,17 @@
-import type { QuickFilterId } from '@/services/contracts/home-feed';
 import type { AreaId, CategoryId, Collection, SkillLevel } from '@/types/domain';
+
+/**
+ * Discover's quick chips — docs/14 §2.4. Home has no quick filter row
+ * (docs/18 §4, docs/09 §19.2); these types moved here from the Home contract.
+ */
+export type QuickFilterId = 'today' | 'weekend' | 'near-me' | 'ladies-only' | 'camps' | 'offers';
+
+export interface QuickFilter {
+  id: QuickFilterId;
+  label: string;
+  /** Shown under the filter row while active, e.g. "Showing ladies-only activities". */
+  activeDescription: string;
+}
 
 /** Program-format filter values; `camp` matches camp-format programs. */
 export type ProgramFormatFilter = 'dropIn' | 'monthly' | 'term' | 'package' | 'camp';

@@ -1,3 +1,4 @@
+import { AccountProvider } from '@/state/account-context';
 import { AreaProvider } from '@/state/area-context';
 import { FavouritesProvider } from '@/state/favourites-context';
 import { ParticipantProvider } from '@/state/participant-context';
@@ -37,6 +38,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <AccountProvider>
       <ParticipantProvider>
         <AreaProvider>
           <FavouritesProvider>
@@ -60,6 +62,7 @@ export default function RootLayout() {
           </FavouritesProvider>
         </AreaProvider>
       </ParticipantProvider>
+      </AccountProvider>
     </SafeAreaProvider>
   );
 }

@@ -14,15 +14,15 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 | 4 results + filtering | `7be5199 feat(results)` | ✅ approved |
 | 5 Discover feed + Home entry activation | `df423a2 feat(discover)` | ✅ approved |
 | 6 All Categories / category / activity-type pages | `ad65ff7 feat(catalogue-pages)` | ✅ approved |
-| 7 schematic mock map | `feat(map)` | ✅ done, **reported, awaiting owner approval** |
-| 8a Home rework (docs/18 differentiation) | `feat(home)` | 📝 specs approved (docs/18, docs/09 §19); implementation brief docs/19 **awaiting owner approval — no code yet** |
-| 8b review polish + full screenshot matrix + milestone report | `chore(review)` | pending, follows 8a |
+| 7 schematic mock map | `feat(map)` | ✅ approved |
+| 8a Home rework (docs/18 differentiation) | `feat(home)` | ✅ done, **reported, awaiting owner approval** |
+| 8b review polish + full screenshot matrix + milestone report | `chore(review)` | pending, follows 8a approval — **do not start without it** |
 
 ## Approval status per surface (docs/12 three levels)
 
 | Surface | Design | Frontend implementation | Native validation |
 |---|---|---|---|
-| Home (HMA-004) | ✅ approved | ✅ approved | ⏳ pending |
+| Home (HMA-004, rebuilt per docs/18) | ✅ approved (docs/18/19) | ⏳ rebuilt, pending owner review | ⏳ pending |
 | Navigation shell + floating dock | ✅ approved | ✅ approved | ⏳ pending |
 | Search (HMA-009) | ✅ approved | ✅ approved | ⏳ pending |
 | Results + filtering (HMA-010) | ✅ approved | ✅ approved | ⏳ pending |
@@ -69,7 +69,8 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 - Services: `contracts/` (home-feed, discover-feed, search incl. `getResults`/`countResults`, filters incl. `FilterSelection`/`activeFilterCount`/`sortOptions`, catalogue) and `mock/` (mock-home-feed, mock-discover-feed, mock-search, mock-catalogue, results-engine). All deterministic; screens never import raw arrays (catalogue imports in screens are for label/count lookups only).
 - Data: `src/data/mock/catalogue.ts` (first 21 programs' order is Home-stability-critical — append only), `search-data.ts` (synonyms/typos/populars/recents seeds).
 - Key components: compact-program-row / compact-provider-row / category-result-row / category-grid (`columns`, `labelLines` props) / collection-card / filter-sheet / sort-sheet / error-state-card / map-entry-card / search-entry-button + all Home-era components (unchanged visuals).
-- Tests: 104 passing across 6 suites (jest preset `jest-expo`, tests import `@jest/globals`). Sync cores (`buildFeed`/`buildResults`/`buildCategoryPage`, constructor delay 0) are the test surface.
+- Tests: 159 passing across 9 suites (jest preset `jest-expo`, tests import `@jest/globals`). Sync cores (`buildHomeFeed`/`buildFeed`/`buildResults`/`buildCategoryPage`/`resolveAccountScenario`, constructor delay 0) are the test surface. Home feed tests call the pure builder with hand-built `HomeFeedBuildInput` values (synthetic `Lena`/`Omar`/toddler/teen children) — never scenario ids.
+- State additions (8a): `AccountProvider` (`src/state/account-context.tsx`) above `ParticipantProvider` in `_layout`; `ParticipantProvider` derives browsing chips from the account (`Everyone` + account participants; empty for guest). Home ignores the browsing context entirely (context-complete, docs/18 §8).
 
 ## QA tooling (important environment notes)
 
@@ -82,10 +83,21 @@ Milestone 1 (Home) is complete and approved. Milestone 2 (Discover + Search, doc
 - Checks per commit: `npx tsc --noEmit`, `npx eslint src scripts --max-warnings=0`, `npx jest`, `npx expo-doctor`, all QA scripts, zero console errors, Home regression screenshots byte-identical.
 - ESLint (react-hooks v6) forbids sync setState in effects — put setState in async callbacks/event handlers.
 
-## Next steps (after Map approval)
+## Home rework notes (Commit 8a — `feat(home)`)
 
-1. **`feat(home)` (docs/17 step 8a):** rebuild Home per docs/18 (personalized activity hub: upcoming activity, week strip, routine, dynamic `For {name}` rails; participant chips, quick filters, hero, category grid, and providers rail removed from Home) plus the docs/18 §6 child-dependent collection visibility gate on Home **and** the default Discover feed. Implementation brief: docs/19 — **owner approval required before any code**. Owner-approved rules recorded in docs/09 §19 (supersedes §17.4 for Home only).
-2. **`chore(review)` (step 8b):** state and accessibility polish, the full Playwright pass, the complete docs/17 §17 screenshot matrix (plus new per-scenario Home baselines), and the milestone report with the three approval levels per surface.
+- **Data flow (docs/19 §3):** `?qa-scenario=guest|me-only|me-active|household` (default household) → `AccountProvider` resolves the fixture once via `resolveAccountScenario` (`src/services/mock/mock-schedule-service.ts`) → `toHomeFeedBuildInput(resolved, areaId)` → pure `buildHomeFeed`. Scenario ids never reach screens or the builder; every condition reads resolved data (null account = guest, empty scheduleEntries = no history).
+- **Schedule fixtures** (`src/data/mock/schedule.ts`) pinned to `MOCK_TODAY` (Sunday 2026-08-02): Adam swim Sun/Sat 10:00 AM (Sun = Upcoming activity), Sarah reformer Mon/Wed 6:30 PM + package plan `6 of 10 sessions left`. **Lina's Teen Coding Summer Camp runs 10–14 Aug (catalogue label) = offsets 8–12, next week — deliberately outside the 7-day strip**, so the household week shows Adam + Sarah only. Reported as a deviation from the docs/19 table's "this week" wording (the brief's schedule-label consistency clause wins).
+- **Popular near {area}** renders only when the resolved account/guest has zero booked sessions (owner decision 2026-08-03); it yields to schedule content on active accounts.
+- **Discover gate:** `DiscoverFeedInput.childParticipants: Participant[] | null` — the account's FULL child composition (never the browsing participant; owner caution 2026-08-03). `null` = guest → gate off (docs/18 §18 assumption); `[]` = signed-in me-only → child-focused collections (`childFocused: true` flags on camps/after-school/kids-teens) hidden; else require age-eligible supply for ≥ 1 account child. Browsing-context rules (docs/16 §4) compose on top. Guest also hides the Discover chip row (no profiles).
+- **No add-child card anywhere** (docs/09 §19.6); guest gets one `setup` action card. `AccountScenarioId` lives only in fixtures + `ScheduleService` mock API.
+- **Quick-filter types moved** to `contracts/filters.ts`; `quickFilters` const moved to `mock-discover-feed-service.ts`; Home contract v2 has `getHomeFeed(HomeFeedBuildInput)` + `getAreas()` only.
+- New Home components: `upcoming-activity-card`, `week-strip`, `plan-card`, `home-action-card` (tokens/idioms reused; no new visual language). Home program rails pass `showAgeRange` (docs/14 §6).
+- **Screenshots:** `artifacts/home-review/` re-baselined by design (11 scenario shots, docs/19 §8.10); `home-regression/` + `16-home-*` refreshed. All Discover-surface screenshots byte-identical except: stale `home-hero-results-390.png` deleted (hero gone), and `11-all-categories`/`15-discover-top-360`/`discover-collection-results`/`02-typing` proved **nondeterministic across identical runs** (photo resampling) — kept at baseline after pixel-level verification of identical content.
+- **QA script updates:** new `scripts/qa/home-review.mjs` (58 checks, scenario matrix + gate). `discover-review.mjs`/`results-review.mjs`/`search-review.mjs` Home-era steps updated (no Home chips/hero; search-review now selects Adam on Discover — the old Home-chip step silently no-opped and two search shots are byte-identical to baseline again after the fix).
+
+## Next step (after 8a approval)
+
+**`chore(review)` (step 8b):** state and accessibility polish, the full Playwright pass, the complete docs/17 §17 screenshot matrix, and the milestone report with the three approval levels per surface.
 
 ## Map implementation notes (Commit 7)
 

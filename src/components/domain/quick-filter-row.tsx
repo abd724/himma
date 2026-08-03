@@ -1,5 +1,5 @@
 import { Chip } from '@/components/ui/chip';
-import type { QuickFilter, QuickFilterId } from '@/services/contracts/home-feed';
+import type { QuickFilter, QuickFilterId } from '@/services/contracts/filters';
 import { colors, pagePadding, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
