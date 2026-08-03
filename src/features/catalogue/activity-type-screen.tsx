@@ -51,8 +51,8 @@ export function ActivityTypeScreen() {
   const session = useResultsSession();
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areaId, areaLabelById } = useAreaContext();
-  const { favourites, toggleFavourite } = useFavourites();
-  const { openProgram } = useDetailNavigation();
+  const { isFavourite, toggleFavourite } = useFavourites();
+  const { openProgram, openProvider } = useDetailNavigation();
 
   const [page, setPage] = useState<ActivityTypePage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -220,8 +220,8 @@ export function ActivityTypeScreen() {
                         program={program}
                         providerName={providerNameById.get(program.providerId) ?? ''}
                         areaLabel={areaLabelById.get(program.areaId) ?? ''}
-                        isFavourite={favourites.has(program.id)}
-                        onToggleFavourite={toggleFavourite}
+                        isFavourite={isFavourite('program', program.id)}
+                        onToggleFavourite={(id) => toggleFavourite('program', id)}
                         onPress={() => openProgram(program.id)}
                       />
                     ))}
@@ -245,6 +245,7 @@ export function ActivityTypeScreen() {
                       provider={provider}
                       areaLabel={areaLabelById.get(provider.areaId) ?? ''}
                       programCount={providerProgramCount(provider.id)}
+                      onPress={() => openProvider(provider.id)}
                     />
                   ))}
                 </View>

@@ -56,8 +56,8 @@ export function DiscoverScreen() {
   const account = useAccount();
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
-  const { favourites, toggleFavourite } = useFavourites();
-  const { openProgram } = useDetailNavigation();
+  const { isFavourite, toggleFavourite } = useFavourites();
+  const { openProgram, openProvider } = useDetailNavigation();
   const session = useResultsSession();
 
   const [quickFilterId, setQuickFilterId] = useState<QuickFilterId | undefined>(undefined);
@@ -247,8 +247,8 @@ export function DiscoverScreen() {
                           areaLabel={areaLabelById.get(program.areaId) ?? ''}
                           scheduleOverride={section.scheduleOverrides?.[program.id]}
                           showAgeRange
-                          isFavourite={favourites.has(program.id)}
-                          onToggleFavourite={toggleFavourite}
+                          isFavourite={isFavourite('program', program.id)}
+                          onToggleFavourite={(id) => toggleFavourite('program', id)}
                           onPress={() => openProgram(program.id)}
                         />
                       ))}
@@ -270,6 +270,7 @@ export function DiscoverScreen() {
                         key={provider.id}
                         provider={provider}
                         areaLabel={areaLabelById.get(provider.areaId) ?? ''}
+                        onPress={() => openProvider(provider.id)}
                       />
                     ))}
                   </ScrollView>

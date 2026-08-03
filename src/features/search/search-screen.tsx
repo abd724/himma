@@ -1,5 +1,6 @@
 import { Chip } from '@/components/ui/chip';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
+import { providerHref } from '@/features/details/detail-navigation';
 import { resultsNavigationAction, type SearchOrigin } from '@/features/search/search-navigation';
 import { collections } from '@/data/mock/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
@@ -108,9 +109,14 @@ export function SearchScreen() {
 
   const openSuggestion = (suggestion: SearchSuggestion) => {
     // Category suggestions enter the taxonomy directly (docs/15 §4.2);
-    // activity, provider, and area suggestions submit as searches.
+    // provider suggestions open the storefront directly (docs/20 §2.4);
+    // activity and area suggestions submit as searches.
     if (suggestion.kind === 'category') {
       pushOnDiscoverStack(`/discover/category/${suggestion.targetId}`);
+      return;
+    }
+    if (suggestion.kind === 'provider') {
+      pushOnDiscoverStack(providerHref(suggestion.targetId));
       return;
     }
     submit(suggestion.query, kindToTab[suggestion.kind]);

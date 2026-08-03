@@ -52,7 +52,7 @@ export function HomeScreen() {
 
   const account = useAccount();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
-  const { favourites, toggleFavourite } = useFavourites();
+  const { isFavourite, toggleFavourite } = useFavourites();
   const { openProgram } = useDetailNavigation();
 
   const [feed, setFeed] = useState<HomeFeed | null>(null);
@@ -133,8 +133,8 @@ export function HomeScreen() {
                   providerName={providerNameById.get(program.providerId) ?? ''}
                   areaLabel={areaLabelById.get(program.areaId) ?? ''}
                   showAgeRange
-                  isFavourite={favourites.has(program.id)}
-                  onToggleFavourite={toggleFavourite}
+                  isFavourite={isFavourite('program', program.id)}
+                  onToggleFavourite={(id) => toggleFavourite('program', id)}
                   onPress={() => openProgram(program.id)}
                 />
               ))}

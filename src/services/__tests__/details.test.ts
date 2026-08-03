@@ -1,12 +1,13 @@
 import { describe, expect, test } from '@jest/globals';
-import { programs, providers } from '@/data/mock/catalogue';
+import { activityTypes, categories, programs, providers } from '@/data/mock/catalogue';
 import { cancellationPolicies } from '@/data/mock/policies';
 import { programDetailExtras } from '@/data/mock/program-details';
-import { providerBranches } from '@/data/mock/provider-details';
-import type { ProgramDetailInput } from '@/services/contracts/details';
+import { providerBranches, providerDetailExtras } from '@/data/mock/provider-details';
+import type { ProgramDetailInput, ProviderStorefrontInput } from '@/services/contracts/details';
 import {
   buildUpcomingSessions,
   MockDetailsService,
+  providerMonogram,
 } from '@/services/mock/mock-details-service';
 import type { Participant } from '@/types/domain';
 
@@ -202,6 +203,282 @@ describe('Deterministic sessions (docs/20 §8.3, docs/09 §20.9)', () => {
         buildUpcomingSessions(program, programDetailExtras[program.id]),
       );
     }
+  });
+});
+
+function storefrontInput(
+  overrides: Partial<ProviderStorefrontInput>,
+): ProviderStorefrontInput {
+  return {
+    providerId: 'falcon',
+    participantId: 'everyone',
+    participants: household,
+    areaId: 'khalifa-city',
+    ...overrides,
+  };
+}
+
+describe('Provider storefront lookup (docs/20 §8.4, docs/16 §2)', () => {
+  test('every catalogue provider builds a complete page', () => {
+    for (const provider of providers) {
+      const page = service.buildProviderStorefrontPage(
+        storefrontInput({ providerId: provider.id }),
+      );
+      expect(page).toBeDefined();
+      expect(page?.extras.description.length).toBeGreaterThan(20);
+      expect(page?.extras.reviewCount).toBeGreaterThan(0);
+      expect(page?.monogram.length).toBeGreaterThan(0);
+      expect(page?.branches.length).toBeGreaterThanOrEqual(1);
+      expect(page?.policy).toBe(cancellationPolicies[page!.extras.policyId]);
+      expect(page?.areaLabel.length).toBeGreaterThan(0);
+      expect(page?.programCount).toBeGreaterThan(0);
+    }
+  });
+
+  test('extras cover exactly the 11 catalogue providers — no orphans', () => {
+    const catalogueIds = new Set(providers.map((provider) => provider.id));
+    const extraIds = Object.keys(providerDetailExtras);
+    expect(providers).toHaveLength(11);
+    expect(extraIds).toHaveLength(11);
+    for (const id of extraIds) expect(catalogueIds.has(id)).toBe(true);
+  });
+
+  test('unknown provider id returns undefined for screen-level recovery', () => {
+    expect(
+      service.buildProviderStorefrontPage(storefrontInput({ providerId: 'not-real' })),
+    ).toBeUndefined();
+  });
+
+  test('monogram derives from the provider name — never a real logo', () => {
+    expect(providerMonogram('Falcon Combat Academy')).toBe('FC');
+    expect(providerMonogram('Gravity Movement Studio')).toBe('GM');
+    const page = service.buildProviderStorefrontPage(storefrontInput({}));
+    expect(page?.monogram).toBe('FC');
+  });
+
+  test('simulated failure rejects with the QA-only error', async () => {
+    await expect(
+      service.getProviderStorefrontPage(storefrontInput({ simulateFailure: true })),
+    ).rejects.toThrow('Simulated network failure');
+  });
+});
+
+describe('Storefront program relationships and taxonomy (docs/20 §7.3)', () => {
+  test('program groups exactly partition the provider catalogue in everyone context', () => {
+    for (const provider of providers) {
+      const page = service.buildProviderStorefrontPage(
+        storefrontInput({ providerId: provider.id, branchId: undefined }),
+      )!;
+      const providerProgramIds = programs
+        .filter((program) => program.providerId === provider.id)
+        .map((program) => program.id);
+      const groupedIds = page.programGroups.flatMap((group) =>
+        group.programs.map((program) => program.id),
+      );
+      // Multi-branch providers filter to the selected branch; the union of
+      // both branches must still partition the full catalogue set.
+      if (provider.id === 'blue-wave') {
+        const gardens = service.buildProviderStorefrontPage(
+          storefrontInput({ providerId: provider.id, branchId: 'blue-wave-gardens' }),
+        )!;
+        const union = new Set([
+          ...groupedIds,
+          ...gardens.programGroups.flatMap((group) =>
+            group.programs.map((program) => program.id),
+          ),
+        ]);
+        expect([...union].sort()).toEqual([...providerProgramIds].sort());
+      } else {
+        expect(groupedIds.sort()).toEqual([...providerProgramIds].sort());
+        expect(new Set(groupedIds).size).toBe(groupedIds.length);
+      }
+    }
+  });
+
+  test('categories and activity types join the taxonomy via programs, never free text', () => {
+    for (const provider of providers) {
+      const page = service.buildProviderStorefrontPage(
+        storefrontInput({ providerId: provider.id }),
+      )!;
+      const providerPrograms = programs.filter((program) => program.providerId === provider.id);
+      const expectedCategoryIds = categories
+        .filter((category) =>
+          providerPrograms.some((program) => program.categoryId === category.id),
+        )
+        .map((category) => category.id);
+      const expectedActivityIds = activityTypes
+        .filter((activityType) =>
+          providerPrograms.some((program) => program.activityTypeId === activityType.id),
+        )
+        .map((activityType) => activityType.id);
+      expect(page.categories.map((category) => category.id)).toEqual(expectedCategoryIds);
+      expect(page.activityTypes.map((activityType) => activityType.id)).toEqual(
+        expectedActivityIds,
+      );
+    }
+  });
+
+  test('noor spans two categories and groups under both headers', () => {
+    const page = service.buildProviderStorefrontPage(storefrontInput({ providerId: 'noor' }))!;
+    expect(page.programGroups.map((group) => group.category.id).sort()).toEqual([
+      'learning',
+      'quran',
+    ]);
+  });
+});
+
+describe('Storefront branches (docs/09 §20.6)', () => {
+  test('blue-wave returns two branches; the default selection is the first', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'blue-wave' }),
+    )!;
+    expect(page.branches).toHaveLength(2);
+    expect(page.selectedBranch.id).toBe('blue-wave-beach');
+  });
+
+  test('branch selection filters the represented program availability', () => {
+    const beach = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'blue-wave', branchId: 'blue-wave-beach' }),
+    )!;
+    const gardens = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'blue-wave', branchId: 'blue-wave-gardens' }),
+    )!;
+    const beachIds = beach.programGroups.flatMap((group) =>
+      group.programs.map((program) => program.id),
+    );
+    const gardensIds = gardens.programGroups.flatMap((group) =>
+      group.programs.map((program) => program.id),
+    );
+    expect(beachIds).toEqual(['junior-swim-squad', 'holiday-swim-camp', 'adult-swim-technique']);
+    expect(gardensIds).toEqual(['ladies-aqua']);
+    expect(beach.programCount).toBe(3);
+    expect(gardens.programCount).toBe(1);
+  });
+
+  test('an unknown branch id falls back to the first branch', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'blue-wave', branchId: 'not-a-branch' }),
+    )!;
+    expect(page.selectedBranch.id).toBe('blue-wave-beach');
+  });
+
+  test('single-branch providers expose one implicit branch with address details', () => {
+    for (const provider of providers.filter((entry) => entry.id !== 'blue-wave')) {
+      const page = service.buildProviderStorefrontPage(
+        storefrontInput({ providerId: provider.id }),
+      )!;
+      expect(page.branches).toHaveLength(1);
+      expect(page.selectedBranch.areaId).toBe(provider.areaId);
+      expect(page.selectedBranch.addressLine.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('Storefront eligibility grouping (docs/05 §7, docs/20 §4.7, §6.2)', () => {
+  test('adult context ranks adult-suitable first and never gender-filters', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'gravity', participantId: 'me' }),
+    )!;
+    const ids = page.programGroups.flatMap((group) =>
+      group.programs.map((program) => program.id),
+    );
+    expect(ids).toEqual([
+      'beginner-calisthenics',
+      'ladies-strength',
+      'mens-strength-basics',
+      'active-summer-camp',
+      'junior-calisthenics',
+    ]);
+    // Ladies-only stays visible for Me; nothing is hidden for adults.
+    expect(page.ineligiblePrograms).toEqual([]);
+    expect(page.programCount).toBe(5);
+  });
+
+  test('child context lists eligible programs and separates (never hides) the rest', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'blue-wave', participantId: 'adam' }),
+    )!;
+    const eligibleIds = page.programGroups.flatMap((group) =>
+      group.programs.map((program) => program.id),
+    );
+    expect(eligibleIds).toEqual(['junior-swim-squad', 'holiday-swim-camp']);
+    expect(page.ineligiblePrograms.map((program) => program.id)).toEqual([
+      'adult-swim-technique',
+    ]);
+    expect(page.eligibleProgramCount).toBe(2);
+    expect(page.programCount).toBe(3);
+  });
+
+  test('a child with no eligible programs gets recovery data, not an empty provider', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'restore', participantId: 'adam', areaId: 'saadiyat' }),
+    )!;
+    expect(page.eligibleProgramCount).toBe(0);
+    expect(page.programGroups).toEqual([]);
+    expect(page.ineligiblePrograms).toHaveLength(2);
+    // Recovery chips: the adult can join; neither child can.
+    expect(page.eligibleParticipants.map((entry) => entry.participantId)).toEqual(['me']);
+    // Identity and trust content is still present.
+    expect(page.provider.name.length).toBeGreaterThan(0);
+    expect(page.extras.description.length).toBeGreaterThan(0);
+  });
+
+  test('everyone context keeps catalogue order with nothing separated', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'gravity', participantId: 'everyone' }),
+    )!;
+    const ids = page.programGroups.flatMap((group) =>
+      group.programs.map((program) => program.id),
+    );
+    expect(ids).toEqual([
+      'beginner-calisthenics',
+      'ladies-strength',
+      'active-summer-camp',
+      'mens-strength-basics',
+      'junior-calisthenics',
+    ]);
+    expect(page.ineligiblePrograms).toEqual([]);
+  });
+
+  test('guest input (no participants) renders the full storefront', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ participants: [], participantId: 'everyone' }),
+    )!;
+    expect(page.programGroups.flatMap((group) => group.programs)).toHaveLength(5);
+    expect(page.eligibleParticipants).toEqual([]);
+  });
+});
+
+describe('Storefront supply and offers states (docs/20 §9.2)', () => {
+  test('weak supply stays an honest short list', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'coastal-tennis' }),
+    )!;
+    expect(page.programCount).toBe(1);
+    expect(page.programGroups.flatMap((group) => group.programs)).toHaveLength(1);
+  });
+
+  test('falcon has no offer programs — the offers section collapses', () => {
+    const page = service.buildProviderStorefrontPage(storefrontInput({ providerId: 'falcon' }))!;
+    expect(page.offerPrograms).toEqual([]);
+  });
+
+  test('gravity surfaces its offer subset', () => {
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'gravity' }),
+    )!;
+    expect(page.offerPrograms.map((program) => program.id)).toEqual([
+      'ladies-strength',
+      'active-summer-camp',
+    ]);
+  });
+
+  test('the missing-cover provider falls back to the monogram banner data', () => {
+    expect(providerDetailExtras['coastal-tennis'].coverImageKey).toBeUndefined();
+    const page = service.buildProviderStorefrontPage(
+      storefrontInput({ providerId: 'coastal-tennis' }),
+    )!;
+    expect(page.monogram).toBe('CT');
   });
 });
 

@@ -13,13 +13,16 @@ interface Props {
   provider: Provider;
   areaLabel: string;
   programCount: number;
+  /** Opens the Provider Storefront (HMA-014). */
+  onPress?: () => void;
 }
 
-/** Dense provider row for Results lists — inert until storefronts ship. */
-export function CompactProviderRow({ provider, areaLabel, programCount }: Props) {
+/** Dense provider row for Results lists. */
+export function CompactProviderRow({ provider, areaLabel, programCount, onPress }: Props) {
   return (
     <PressableFeedback
       accessibilityLabel={`${provider.name}, ${provider.verified ? 'verified provider, ' : ''}${provider.categories.join(', ')}, ${areaLabel}, ${programCount} activities, rated ${provider.rating.toFixed(1)}`}
+      onPress={onPress}
       style={styles.card}
     >
       <View style={styles.monogram}>

@@ -1,18 +1,24 @@
-import { areas, programs, providers } from '@/data/mock/catalogue';
+import { activityTypes, areas, categories, programs, providers } from '@/data/mock/catalogue';
 import { cancellationPolicies } from '@/data/mock/policies';
 import { programDetailExtras, type ProgramDetailExtras } from '@/data/mock/program-details';
-import { providerBranches } from '@/data/mock/provider-details';
+import { providerBranches, providerDetailExtras } from '@/data/mock/provider-details';
 import type {
   DetailsService,
   ProgramDetailInput,
   ProgramDetailPage,
+  ProviderStorefrontInput,
+  ProviderStorefrontPage,
+  StorefrontProgramGroup,
 } from '@/services/contracts/details';
-import type { Program, SessionOccurrence } from '@/types/domain';
+import type { Participant, Program, ProviderBranch, SessionOccurrence } from '@/types/domain';
 import {
   ageRangeLabel,
   householdSuitability,
   MOCK_TODAY,
+  participantAge,
   participantSuitability,
+  suitsAdult,
+  suitsChild,
 } from '@/utils/eligibility';
 import { priceLabel, programFormatLabel } from '@/utils/price';
 
@@ -91,6 +97,25 @@ export function buildUpcomingSessions(
   return capped;
 }
 
+/** Fictional provider monogram — never a real logo (docs/08 §11). */
+export function providerMonogram(name: string): string {
+  return name
+    .split(' ')
+    .filter((word) => word.length > 0)
+    .slice(0, 2)
+    .map((word) => word[0].toUpperCase())
+    .join('');
+}
+
+/** Whether the selected participant can join a program — docs/05 §7. */
+function programEligible(program: Program, participant: Participant | undefined): boolean {
+  if (participant === undefined || participant.kind === 'everyone') return true;
+  if (participant.kind === 'child') {
+    return suitsChild(program.eligibility, participantAge(participant) ?? 0);
+  }
+  return suitsAdult(program.eligibility);
+}
+
 export class MockDetailsService implements DetailsService {
   constructor(private readonly delayMs: number = 300) {}
 
@@ -137,6 +162,105 @@ export class MockDetailsService implements DetailsService {
       householdSuitability: household,
       areaLabel: areas.find((area) => area.id === program.areaId)?.label ?? '',
       moreFromProvider,
+    };
+  }
+
+  async getProviderStorefrontPage(
+    input: ProviderStorefrontInput,
+  ): Promise<ProviderStorefrontPage | undefined> {
+    await this.delay();
+    if (input.simulateFailure) throw new Error('Simulated network failure (QA only)');
+    return this.buildProviderStorefrontPage(input);
+  }
+
+  /** Pure and synchronous so behavior is directly testable. */
+  buildProviderStorefrontPage(
+    input: ProviderStorefrontInput,
+  ): ProviderStorefrontPage | undefined {
+    const provider = providers.find((entry) => entry.id === input.providerId);
+    if (provider === undefined) return undefined;
+    const extras = providerDetailExtras[provider.id];
+    if (extras === undefined) return undefined;
+
+    // Explicit branches, or the implicit primary at the provider's area.
+    const branches: ProviderBranch[] = extras.branches ?? [
+      {
+        id: `${provider.id}-main`,
+        label: areas.find((area) => area.id === provider.areaId)?.label ?? provider.name,
+        areaId: provider.areaId,
+        addressLine: extras.addressLine ?? '',
+        openingHours: extras.openingHours,
+      },
+    ];
+    const selectedBranch =
+      branches.find((branch) => branch.id === input.branchId) ?? branches[0];
+
+    const providerPrograms = programs.filter((entry) => entry.providerId === provider.id);
+    // A program without a branch assignment runs at every branch.
+    const branchPrograms =
+      extras.branches === undefined
+        ? providerPrograms
+        : providerPrograms.filter((entry) => {
+            const branchId = programDetailExtras[entry.id]?.branchId;
+            return branchId === undefined || branchId === selectedBranch.id;
+          });
+
+    const selected = input.participants.find(
+      (participant) => participant.id === input.participantId,
+    );
+    const childContext = selected?.kind === 'child';
+    const eligiblePrograms = branchPrograms.filter((entry) => programEligible(entry, selected));
+    // Child context separates ineligible programs into the collapsed group
+    // (never hidden — docs/20 §4.7); adults see everything, suitable first.
+    const groupablePrograms = childContext
+      ? eligiblePrograms
+      : selected?.kind === 'self'
+        ? [...branchPrograms].sort(
+            (a, b) =>
+              Number(programEligible(b, selected)) - Number(programEligible(a, selected)),
+          )
+        : branchPrograms;
+    const ineligiblePrograms = childContext
+      ? branchPrograms.filter((entry) => !programEligible(entry, selected))
+      : [];
+
+    // Taxonomy joins come from the programs, never the free-text card
+    // strings (docs/20 §7.3) — identity-level, not branch-filtered.
+    const providerCategories = categories.filter((category) =>
+      providerPrograms.some((entry) => entry.categoryId === category.id),
+    );
+    const providerActivityTypes = activityTypes.filter((activityType) =>
+      providerPrograms.some((entry) => entry.activityTypeId === activityType.id),
+    );
+
+    const programGroups: StorefrontProgramGroup[] = providerCategories
+      .map((category) => ({
+        category,
+        programs: groupablePrograms.filter((entry) => entry.categoryId === category.id),
+      }))
+      .filter((group) => group.programs.length > 0);
+
+    return {
+      provider,
+      extras,
+      monogram: providerMonogram(provider.name),
+      categories: providerCategories,
+      activityTypes: providerActivityTypes,
+      branches,
+      selectedBranch,
+      policy: cancellationPolicies[extras.policyId],
+      programGroups,
+      ineligiblePrograms,
+      offerPrograms: groupablePrograms.filter((entry) => entry.offer !== undefined),
+      programCount: branchPrograms.length,
+      eligibleProgramCount: eligiblePrograms.length,
+      eligibleParticipants: input.participants
+        .filter((participant) => participant.kind !== 'everyone')
+        .filter((participant) =>
+          branchPrograms.some((entry) => programEligible(entry, participant)),
+        )
+        .map((participant) => ({ participantId: participant.id, label: participant.label })),
+      areaLabel: areas.find((area) => area.id === selectedBranch.areaId)?.label ?? '',
     };
   }
 

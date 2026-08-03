@@ -51,7 +51,9 @@ export function ResultsScreen() {
   const session = useResultsSession();
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areaId, areaLabelById } = useAreaContext();
-  const { favourites, toggleFavourite } = useFavourites();
+  const { isFavourite, toggleFavourite } = useFavourites();
+  const isProgramFavourite = (id: string) => isFavourite('program', id);
+  const toggleProgramFavourite = (id: string) => toggleFavourite('program', id);
 
   const [page, setPage] = useState<ResultsPage | null>(null);
   const [failed, setFailed] = useState(false);
@@ -330,9 +332,9 @@ export function ResultsScreen() {
                   }}
                 />
               ) : session.tab === 'all' ? (
-                <AllTab page={page} onSeeAll={session.setTab} onOpenCategory={openCategory} favourites={favourites} onToggleFavourite={toggleFavourite} />
+                <AllTab page={page} onSeeAll={session.setTab} onOpenCategory={openCategory} isFavourite={isProgramFavourite} onToggleFavourite={toggleProgramFavourite} />
               ) : session.tab === 'programs' ? (
-                <ProgramsTab page={page} favourites={favourites} onToggleFavourite={toggleFavourite} onLoadMore={session.loadMore} />
+                <ProgramsTab page={page} isFavourite={isProgramFavourite} onToggleFavourite={toggleProgramFavourite} onLoadMore={session.loadMore} />
               ) : session.tab === 'providers' ? (
                 <ProvidersTab page={page} onLoadMore={session.loadMore} />
               ) : (
@@ -439,11 +441,11 @@ const areaLabel = (areaId: string) => areas.find((area) => area.id === areaId)?.
 
 function ProgramList({
   programs,
-  favourites,
+  isFavourite,
   onToggleFavourite,
 }: {
   programs: ResultsPage['programs'];
-  favourites: ReadonlySet<string>;
+  isFavourite: (id: string) => boolean;
   onToggleFavourite: (id: string) => void;
 }) {
   const { openProgram } = useDetailNavigation();
@@ -455,7 +457,7 @@ function ProgramList({
           program={program}
           providerName={providerNameById.get(program.providerId) ?? ''}
           areaLabel={areaLabel(program.areaId)}
-          isFavourite={favourites.has(program.id)}
+          isFavourite={isFavourite(program.id)}
           onToggleFavourite={onToggleFavourite}
           onPress={() => openProgram(program.id)}
         />
@@ -468,15 +470,16 @@ function AllTab({
   page,
   onSeeAll,
   onOpenCategory,
-  favourites,
+  isFavourite,
   onToggleFavourite,
 }: {
   page: ResultsPage;
   onSeeAll: (tab: ResultsTab) => void;
   onOpenCategory: (categoryId: string) => void;
-  favourites: ReadonlySet<string>;
+  isFavourite: (id: string) => boolean;
   onToggleFavourite: (id: string) => void;
 }) {
+  const { openProvider } = useDetailNavigation();
   return (
     <View style={styles.groups}>
       {page.programs.length > 0 ? (
@@ -488,7 +491,7 @@ function AllTab({
           />
           <ProgramList
             programs={page.programs.slice(0, 3)}
-            favourites={favourites}
+            isFavourite={isFavourite}
             onToggleFavourite={onToggleFavourite}
           />
         </View>
@@ -506,6 +509,7 @@ function AllTab({
               provider={provider}
               areaLabel={areaLabel(provider.areaId)}
               programCount={providerProgramCount(provider.id)}
+              onPress={() => openProvider(provider.id)}
             />
           ))}
         </View>
@@ -556,18 +560,18 @@ function GroupHeader({
 
 function ProgramsTab({
   page,
-  favourites,
+  isFavourite,
   onToggleFavourite,
   onLoadMore,
 }: {
   page: ResultsPage;
-  favourites: ReadonlySet<string>;
+  isFavourite: (id: string) => boolean;
   onToggleFavourite: (id: string) => void;
   onLoadMore: () => void;
 }) {
   return (
     <View style={styles.list}>
-      <ProgramList programs={page.programs} favourites={favourites} onToggleFavourite={onToggleFavourite} />
+      <ProgramList programs={page.programs} isFavourite={isFavourite} onToggleFavourite={onToggleFavourite} />
       <ListFooter
         hasMore={page.hasMorePrograms}
         shownCount={page.programs.length}
@@ -579,6 +583,7 @@ function ProgramsTab({
 }
 
 function ProvidersTab({ page, onLoadMore }: { page: ResultsPage; onLoadMore: () => void }) {
+  const { openProvider } = useDetailNavigation();
   return (
     <View style={styles.list}>
       {page.providers.map((provider) => (
@@ -587,6 +592,7 @@ function ProvidersTab({ page, onLoadMore }: { page: ResultsPage; onLoadMore: () 
           provider={provider}
           areaLabel={areaLabel(provider.areaId)}
           programCount={providerProgramCount(provider.id)}
+          onPress={() => openProvider(provider.id)}
         />
       ))}
       <ListFooter

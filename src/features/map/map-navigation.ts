@@ -3,9 +3,9 @@
  * session, so the origin decides how `List` returns without ever stacking a
  * second Results route (docs/16 §3.8, docs/15 §4.3).
  */
-export type MapOrigin = 'results' | 'discover' | 'category' | 'activity';
+export type MapOrigin = 'results' | 'discover' | 'category' | 'activity' | 'provider';
 
-export const mapOrigins: MapOrigin[] = ['results', 'discover', 'category', 'activity'];
+export const mapOrigins: MapOrigin[] = ['results', 'discover', 'category', 'activity', 'provider'];
 
 export function parseMapOrigin(value: unknown): MapOrigin {
   return typeof value === 'string' && (mapOrigins as string[]).includes(value)

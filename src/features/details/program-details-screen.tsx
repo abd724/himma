@@ -56,8 +56,8 @@ export function ProgramDetailsScreen() {
 
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areaId } = useAreaContext();
-  const { favourites, toggleFavourite } = useFavourites();
-  const { openProgram } = useDetailNavigation();
+  const { isFavourite, toggleFavourite } = useFavourites();
+  const { openProgram, openProvider } = useDetailNavigation();
 
   const [page, setPage] = useState<ProgramDetailPage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -143,7 +143,7 @@ export function ProgramDetailsScreen() {
     );
   }
 
-  const isFavourite = page !== null && favourites.has(page.program.id);
+  const saved = page !== null && isFavourite('program', page.program.id);
   const price = page === null ? null : formatPrice(page.program.price);
   const ctaLabel =
     page === null
@@ -187,10 +187,13 @@ export function ProgramDetailsScreen() {
                 {page.program.title}
               </Text>
 
-              {/* Provider row — cross-link contract to the storefront
-                  (HMA-014); inert with press feedback until it ships. */}
+              {/* Provider row — the Program → Provider cross-link (HMA-014).
+                  Round-trips back to a storefront directly beneath instead of
+                  growing the stack (docs/20 §2.3). */}
               <PressableFeedback
                 accessibilityLabel={`${page.provider.name}${page.provider.verified ? ', verified provider' : ', provider'}`}
+                accessibilityHint="Opens the provider storefront"
+                onPress={() => openProvider(page.provider.id)}
                 style={styles.providerRow}
               >
                 <View style={styles.monogram}>
@@ -443,8 +446,8 @@ export function ProgramDetailsScreen() {
                         program={program}
                         providerName={page.provider.name}
                         areaLabel={page.areaLabel}
-                        isFavourite={favourites.has(program.id)}
-                        onToggleFavourite={toggleFavourite}
+                        isFavourite={isFavourite('program', program.id)}
+                        onToggleFavourite={(id) => toggleFavourite('program', id)}
                         onPress={() => openProgram(program.id)}
                       />
                     ))}
@@ -476,19 +479,19 @@ export function ProgramDetailsScreen() {
             />
             <PressableFeedback
               accessibilityLabel={
-                isFavourite
+                saved
                   ? `Remove ${page.program.title} from favourites`
                   : `Save ${page.program.title} to favourites`
               }
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: isFavourite, selected: isFavourite }}
-              onPress={() => toggleFavourite(page.program.id)}
+              accessibilityState={{ checked: saved, selected: saved }}
+              onPress={() => toggleFavourite('program', page.program.id)}
               style={styles.saveButton}
             >
               <Ionicons
-                name={isFavourite ? 'heart' : 'heart-outline'}
+                name={saved ? 'heart' : 'heart-outline'}
                 size={22}
-                color={isFavourite ? colors.brand.accentWarm : colors.text.primary}
+                color={saved ? colors.brand.accentWarm : colors.text.primary}
               />
             </PressableFeedback>
           </View>

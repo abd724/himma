@@ -12,13 +12,16 @@ function monogram(name: string): string {
 interface Props {
   provider: Provider;
   areaLabel: string;
+  /** Opens the Provider Storefront (HMA-014). */
+  onPress?: () => void;
 }
 
 /** Provider-first card, deliberately distinct from program cards — docs/11 §7. */
-export function ProviderCard({ provider, areaLabel }: Props) {
+export function ProviderCard({ provider, areaLabel, onPress }: Props) {
   return (
     <PressableFeedback
       accessibilityLabel={`${provider.name}, ${provider.verified ? 'verified provider, ' : ''}${provider.categories.join(', ')}, ${areaLabel}, rated ${provider.rating.toFixed(1)}`}
+      onPress={onPress}
       style={styles.card}
     >
       <View style={styles.monogram}>

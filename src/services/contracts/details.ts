@@ -1,7 +1,10 @@
 import type { ProgramDetailExtras } from '@/data/mock/program-details';
+import type { ProviderDetailExtras } from '@/data/mock/provider-details';
 import type {
+  ActivityType,
   AreaId,
   CancellationPolicy,
+  Category,
   Participant,
   ParticipantId,
   Program,
@@ -16,9 +19,6 @@ import type { ParticipantSuitability } from '@/utils/eligibility';
  * never in screens (docs/08 §8). Participants are resolved account data
  * passed in by the caller (docs/19 pattern) — the service never assumes a
  * fixed household.
- *
- * `getProviderStorefrontPage` joins this contract in the storefront commit
- * (docs/20 §13, Commit 10).
  */
 export interface ProgramDetailInput {
   programId: string;
@@ -55,7 +55,60 @@ export interface ProgramDetailPage {
   moreFromProvider: Program[];
 }
 
+export interface ProviderStorefrontInput {
+  providerId: string;
+  /** The selected browsing participant (shared app context). */
+  participantId: ParticipantId;
+  /** Real household participants, primary first; empty for guest. */
+  participants: Participant[];
+  areaId: AreaId;
+  /** Selected branch for multi-branch providers; defaults to the first. */
+  branchId?: string;
+  /** QA/Playwright-only deterministic failure trigger — never customer-reachable. */
+  simulateFailure?: boolean;
+}
+
+/** Programs grouped under a category header — docs/20 §4.7. */
+export interface StorefrontProgramGroup {
+  category: Category;
+  programs: Program[];
+}
+
+export interface ProviderStorefrontPage {
+  provider: Provider;
+  extras: ProviderDetailExtras;
+  /** Fictional monogram derived from the name — never a real logo (docs/08 §11). */
+  monogram: string;
+  /** Taxonomy-joined via the provider's programs — never the free-text strings (docs/20 §7.3). */
+  categories: Category[];
+  activityTypes: ActivityType[];
+  /** ≥ 1: explicit branches, or the implicit primary at the provider's area. */
+  branches: ProviderBranch[];
+  selectedBranch: ProviderBranch;
+  policy: CancellationPolicy;
+  /**
+   * Branch-filtered programs the selected participant can join, grouped by
+   * category in taxonomy order. Child context: eligible only; adult context:
+   * adult-suitable ranked first, nothing hidden (docs/20 §4.7, docs/05 §7).
+   */
+  programGroups: StorefrontProgramGroup[];
+  /** Child context only — shown collapsed with the age reason, never hidden. */
+  ineligiblePrograms: Program[];
+  /** Offer/trial subset of the visible programs. */
+  offerPrograms: Program[];
+  /** Programs at the selected branch. */
+  programCount: number;
+  eligibleProgramCount: number;
+  /** Real household participants with ≥ 1 eligible program here (recovery chips). */
+  eligibleParticipants: { participantId: ParticipantId; label: string }[];
+  /** The selected branch's area label. */
+  areaLabel: string;
+}
+
 export interface DetailsService {
   /** Undefined for unknown ids — the screen owns the recovery state (docs/16 §2). */
   getProgramDetailPage(input: ProgramDetailInput): Promise<ProgramDetailPage | undefined>;
+  getProviderStorefrontPage(
+    input: ProviderStorefrontInput,
+  ): Promise<ProviderStorefrontPage | undefined>;
 }

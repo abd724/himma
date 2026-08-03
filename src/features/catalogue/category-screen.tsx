@@ -50,8 +50,8 @@ export function CategoryScreen() {
   const session = useResultsSession();
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
-  const { favourites, toggleFavourite } = useFavourites();
-  const { openProgram } = useDetailNavigation();
+  const { isFavourite, toggleFavourite } = useFavourites();
+  const { openProgram, openProvider } = useDetailNavigation();
 
   const [page, setPage] = useState<CategoryPage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -257,8 +257,8 @@ export function CategoryScreen() {
                           program={program}
                           providerName={providerNameById.get(program.providerId) ?? ''}
                           areaLabel={areaLabelById.get(program.areaId) ?? ''}
-                          isFavourite={favourites.has(program.id)}
-                          onToggleFavourite={toggleFavourite}
+                          isFavourite={isFavourite('program', program.id)}
+                          onToggleFavourite={(id) => toggleFavourite('program', id)}
                           onPress={() => openProgram(program.id)}
                         />
                       ))}
@@ -275,6 +275,7 @@ export function CategoryScreen() {
                             provider={provider}
                             areaLabel={areaLabelById.get(provider.areaId) ?? ''}
                             programCount={providerProgramCount(provider.id)}
+                            onPress={() => openProvider(provider.id)}
                           />
                         ))}
                       </View>
@@ -291,8 +292,8 @@ export function CategoryScreen() {
                             program={program}
                             providerName={providerNameById.get(program.providerId) ?? ''}
                             areaLabel={areaLabelById.get(program.areaId) ?? ''}
-                            isFavourite={favourites.has(program.id)}
-                            onToggleFavourite={toggleFavourite}
+                            isFavourite={isFavourite('program', program.id)}
+                            onToggleFavourite={(id) => toggleFavourite('program', id)}
                             onPress={() => openProgram(program.id)}
                           />
                         ))}

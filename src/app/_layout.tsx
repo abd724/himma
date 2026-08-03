@@ -58,6 +58,7 @@ export default function RootLayout() {
                 <Stack.Screen name="search" />
                 <Stack.Screen name="map" />
                 <Stack.Screen name="program/[programId]" />
+                <Stack.Screen name="provider/[providerId]" />
               </Stack>
             </View>
             </ResultsSessionProvider>
