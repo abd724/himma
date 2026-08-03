@@ -17,6 +17,10 @@ interface Props {
   filters: QuickFilter[];
   activeId?: QuickFilterId;
   onToggle: (id: QuickFilterId) => void;
+  /** Renders a trailing Filters chip that opens the filter sheet (docs/14 §2.4). */
+  onPressFilters?: () => void;
+  /** Active-filter count shown as a badge on the Filters chip. */
+  filtersActiveCount?: number;
 }
 
 /**
@@ -24,7 +28,13 @@ interface Props {
  * The active state is carried by fill, weight, a checkmark, and a context
  * line — never color alone (docs/11 §6).
  */
-export function QuickFilterRow({ filters, activeId, onToggle }: Props) {
+export function QuickFilterRow({
+  filters,
+  activeId,
+  onToggle,
+  onPressFilters,
+  filtersActiveCount,
+}: Props) {
   const active = filters.find((filter) => filter.id === activeId);
 
   return (
@@ -46,6 +56,16 @@ export function QuickFilterRow({ filters, activeId, onToggle }: Props) {
             }
           />
         ))}
+        {onPressFilters !== undefined ? (
+          <Chip
+            label="Filters"
+            icon="options-outline"
+            selected={false}
+            badgeCount={filtersActiveCount}
+            onPress={onPressFilters}
+            accessibilityHint="Opens all filters"
+          />
+        ) : null}
       </ScrollView>
       {active ? (
         <View style={styles.contextLine} accessibilityLiveRegion="polite">

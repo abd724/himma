@@ -67,6 +67,11 @@ export function isChildRelevant(eligibility: Eligibility): boolean {
   return max !== undefined && max !== null && max <= 17;
 }
 
+/** Screen-reader form of an age label: "Ages 6 to 9", "Ages 12 and up". */
+export function spokenAgeLabel(label: string): string {
+  return label.replace('–', ' to ').replace('+', ' and up');
+}
+
 /** The optional Ladies-only customer filter — docs/05 §7. */
 export function isLadiesOnly(eligibility: Eligibility): boolean {
   return eligibility.genderEligibility === 'ladies';

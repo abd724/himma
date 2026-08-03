@@ -15,6 +15,12 @@ interface Props {
   onChange: (filters: FilterSelection) => void;
   onClearAll: () => void;
   onClose: () => void;
+  /**
+   * Called by the primary "Show N results" action instead of onClose when a
+   * surface applies to a new destination (Discover → Results handoff).
+   * Backdrop tap and Android back always call onClose (cancel).
+   */
+  onApply?: () => void;
 }
 
 const formatOptions: { id: ProgramFormatFilter; label: string }[] = [
@@ -47,7 +53,7 @@ const skillOptions: Exclude<SkillLevel, 'all-levels'>[] = ['beginner', 'intermed
  * (docs/17 §10). Conditional rows appear only when meaningful — no disabled
  * control lists.
  */
-export function FilterSheet({ visible, filters, resultCount, onChange, onClearAll, onClose }: Props) {
+export function FilterSheet({ visible, filters, resultCount, onChange, onClearAll, onClose, onApply }: Props) {
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
 
@@ -319,7 +325,7 @@ export function FilterSheet({ visible, filters, resultCount, onChange, onClearAl
           </ScrollView>
 
           <PressableFeedback
-            onPress={onClose}
+            onPress={onApply ?? onClose}
             accessibilityLabel={`Show ${resultCount} ${resultCount === 1 ? 'activity' : 'activities'}`}
             style={styles.apply}
           >

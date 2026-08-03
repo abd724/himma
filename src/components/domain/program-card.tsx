@@ -4,7 +4,7 @@ import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { demoImage } from '@/data/mock/images';
 import { colors, fontFamily, radii, shadows, spacing, typography } from '@/theme';
 import type { PriceModel, Program } from '@/types/domain';
-import { isLadiesOnly } from '@/utils/eligibility';
+import { ageRangeLabel, isChildRelevant, isLadiesOnly, spokenAgeLabel } from '@/utils/eligibility';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -34,15 +34,35 @@ interface Props {
   areaLabel: string;
   isFavourite: boolean;
   onToggleFavourite: (programId: string) => void;
+  /** Time-led surfaces show "Today, 7:30 PM" instead of the weekly schedule. */
+  scheduleOverride?: string;
+  /**
+   * Shows the provider-defined age range on child-relevant cards (docs/14 §6).
+   * Off by default so Home keeps its approved baseline pixels.
+   */
+  showAgeRange?: boolean;
 }
 
 /** Program-first card — docs/11 §7. Card body tap is inert this milestone. */
-export function ProgramCard({ program, providerName, areaLabel, isFavourite, onToggleFavourite }: Props) {
+export function ProgramCard({
+  program,
+  providerName,
+  areaLabel,
+  isFavourite,
+  onToggleFavourite,
+  scheduleOverride,
+  showAgeRange = false,
+}: Props) {
   const price = formatPrice(program.price);
+  const scheduleLabel = scheduleOverride ?? program.scheduleLabel;
   const badge = program.offer
     ? { label: program.offer.label, variant: 'offer' as const }
     : isLadiesOnly(program.eligibility)
       ? { label: 'Ladies only', variant: 'eligibility' as const }
+      : undefined;
+  const ageLabel =
+    showAgeRange && isChildRelevant(program.eligibility)
+      ? ageRangeLabel(program.eligibility)
       : undefined;
 
   // The favourite toggle is a sibling of the card pressable, not a child —
@@ -50,13 +70,20 @@ export function ProgramCard({ program, providerName, areaLabel, isFavourite, onT
   return (
     <View style={styles.card}>
       <PressableFeedback
-        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${program.scheduleLabel}. ${price.amount} ${price.unit}. Rated ${program.rating.toFixed(1)}`}
+        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${scheduleLabel}. ${price.amount} ${price.unit}.${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
       >
         <View>
           <AppImage source={demoImage(program.imageKey)} style={styles.image} />
-          {badge ? (
+          {badge || ageLabel ? (
             <View style={styles.badge}>
-              <Badge label={badge.label} variant={badge.variant} />
+              {badge ? <Badge label={badge.label} variant={badge.variant} /> : null}
+              {ageLabel ? (
+                <Badge
+                  label={ageLabel}
+                  variant="eligibility"
+                  accessibilityLabel={spokenAgeLabel(ageLabel)}
+                />
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -70,7 +97,7 @@ export function ProgramCard({ program, providerName, areaLabel, isFavourite, onT
           <View style={styles.metaRow}>
             <Ionicons name="location-outline" size={13} color={colors.text.secondary} />
             <Text style={styles.meta} numberOfLines={1}>
-              {areaLabel} · {program.scheduleLabel}
+              {areaLabel} · {scheduleLabel}
             </Text>
           </View>
           <View style={styles.footer}>
@@ -123,6 +150,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.md,
     left: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
   heart: {
     position: 'absolute',

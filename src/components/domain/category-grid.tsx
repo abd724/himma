@@ -5,17 +5,28 @@ import { colors, pagePadding, radii, spacing, typography } from '@/theme';
 import type { BrowseEntry } from '@/types/domain';
 import { StyleSheet, Text, View } from 'react-native';
 
+interface Props {
+  categories: BrowseEntry[];
+  /**
+   * Activated tiles route through here (collection lenses this milestone);
+   * tiles whose destinations don't exist yet stay inert with press feedback
+   * when the handler ignores them (docs/09 §17.2).
+   */
+  onPressEntry?: (entry: BrowseEntry) => void;
+}
+
 /**
  * Fixed four-column grid: all eight categories visible with zero interaction
  * cost — chosen over a scrolling grid for scanability at 390 pt (docs/11 §4.6).
  */
-export function CategoryGrid({ categories }: { categories: BrowseEntry[] }) {
+export function CategoryGrid({ categories, onPressEntry }: Props) {
   return (
     <View style={styles.grid}>
       {categories.map((category) => (
         <PressableFeedback
           key={category.id}
           accessibilityLabel={`${category.label} category`}
+          onPress={onPressEntry === undefined ? undefined : () => onPressEntry(category)}
           style={styles.cell}
         >
           <AppImage source={demoImage(category.imageKey)} style={styles.tile} />

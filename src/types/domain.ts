@@ -122,12 +122,14 @@ export interface Program {
   offer?: Offer;
 }
 
-/** Editorial grouping over the shared catalogue — docs/15 §2. */
+/** Editorial grouping over the shared catalogue — docs/15 §2, docs/14 §6. */
 export interface Collection {
   id: string;
   title: string;
+  /** Optional editorial support line; the card falls back to its count. */
+  subtitle?: string;
   imageKey: string;
-  /** Simple deterministic preset resolved by services. */
+  /** Simple deterministic preset resolved by services — never by cards. */
   preset: {
     ladiesOnly?: boolean;
     childRelevant?: boolean;
@@ -135,7 +137,14 @@ export interface Collection {
     offers?: boolean;
     availableToday?: boolean;
     afterSchool?: boolean;
+    indoor?: boolean;
   };
+  /** Participant contexts the collection makes sense for (docs/16 §4). */
+  audience: 'all' | 'adults' | 'children';
+  /** Shown in Discover's editorial rail; lenses like Kids & Teens stay grid-only. */
+  featuredOnDiscover: boolean;
+  /** Optional seasonal framing, e.g. "Summer 2026". */
+  seasonalLabel?: string;
 }
 
 /**

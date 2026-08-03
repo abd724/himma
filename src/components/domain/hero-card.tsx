@@ -6,8 +6,14 @@ import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/t
 import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, Text, View } from 'react-native';
 
+interface Props {
+  hero: HeroContent;
+  /** Activated once its Results destination exists; inert otherwise. */
+  onPressAction?: () => void;
+}
+
 /** Seasonal feature for adults and families together — docs/11 §4.5. */
-export function HeroCard({ hero }: { hero: HeroContent }) {
+export function HeroCard({ hero, onPressAction }: Props) {
   return (
     <View style={styles.wrap}>
       <View style={styles.card}>
@@ -25,7 +31,7 @@ export function HeroCard({ hero }: { hero: HeroContent }) {
           <Text style={styles.eyebrow}>{hero.eyebrow}</Text>
           <Text style={styles.title}>{hero.title}</Text>
           <Text style={styles.subtitle}>{hero.subtitle}</Text>
-          <PressableFeedback accessibilityLabel={hero.actionLabel} style={styles.cta}>
+          <PressableFeedback accessibilityLabel={hero.actionLabel} onPress={onPressAction} style={styles.cta}>
             <Text style={styles.ctaLabel}>{hero.actionLabel}</Text>
           </PressableFeedback>
         </View>

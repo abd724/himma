@@ -18,7 +18,8 @@ import type {
 } from '@/services/contracts/home-feed';
 import type { Area, AreaId, Participant, ParticipantId, Program } from '@/types/domain';
 
-const quickFilters: QuickFilter[] = [
+/** Shared by Home and Discover — same six chips, same semantics (docs/14 §2.4). */
+export const quickFilters: QuickFilter[] = [
   { id: 'today', label: 'Today', activeDescription: 'Showing activities available today' },
   { id: 'weekend', label: 'This weekend', activeDescription: 'Showing weekend activities' },
   { id: 'near-me', label: 'Near me', activeDescription: 'Showing the closest activities first' },

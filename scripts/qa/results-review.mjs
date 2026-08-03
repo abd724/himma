@@ -39,7 +39,7 @@ check('handoff lands on results', page.url().includes('/discover/results'));
 check('All tab selected', (await page.getByRole('tab', { name: 'All', exact: true }).getAttribute('aria-selected')) === 'true');
 check('count line announced', await visible(page.getByText(/activit(y|ies) ·/)));
 check('dock visible on results browsing', await visible(page.getByRole('tab', { name: 'Discover' })));
-const programCards = await page.locator('[aria-label*=" by "]').count();
+const programCards = await page.locator('[aria-label*=" by "]:visible').count();
 check(`All tab caps programs at 3 (got ${programCards})`, programCards <= 3);
 check('See all Programs offered', await visible(page.getByLabel('See all Programs')));
 await shot('07-results-all-390');
@@ -54,8 +54,8 @@ check('age badge shown on junior program', await visible(page.getByText('Ages 6�
 await page.getByRole('button', { name: 'Adam' }).click();
 await idle(900);
 check('query preserved after participant switch', await visible(page.getByLabel(/Search, current query swimming/)));
-check('adam: 16+ program excluded', !(await visible(page.getByText('Ladies Aqua Fitness'))));
-check('adam: age-suitable program present', await visible(page.getByText('Junior Swim Squad')));
+check('adam: 16+ program excluded', !(await visible(page.getByText('Ladies Aqua Fitness').locator('visible=true').first())));
+check('adam: age-suitable program present', await visible(page.getByText('Junior Swim Squad').locator('visible=true').first()));
 await shot('results-participant-adam-390');
 
 // ——— Ladies-only + child → zero-result recovery ———
@@ -65,7 +65,7 @@ check('recovery names the conflict', await visible(page.getByText(/No ladies-onl
 await shot('10-zero-result-recovery-390');
 await page.getByLabel('Clear filters', { exact: true }).click();
 await idle(900);
-check('clear filters recovers results', await visible(page.getByText('Junior Swim Squad')));
+check('clear filters recovers results', await visible(page.getByText('Junior Swim Squad').locator('visible=true').first()));
 await page.getByRole('button', { name: 'Everyone' }).click();
 await idle(900);
 
@@ -109,20 +109,20 @@ await idle();
 await page.getByRole('radio', { name: 'Lowest price' }).click();
 await idle(900);
 check('sort label updates', await visible(page.getByRole('button', { name: 'Lowest price' })));
-const firstCard = await page.locator('[aria-label*=" by "]').first().getAttribute('aria-label');
+const firstCard = await page.locator('[aria-label*=" by "]:visible').first().getAttribute('aria-label');
 check(`lowest price first (${firstCard.slice(0, 40)}…)`, /AED 60|Free/.test(firstCard));
 check('query survives sorting', await visible(page.getByLabel(/Search, current query swimming/)));
 
 // ——— Load more on a broad query (deep link) ———
 await page.goto(`${BASE}/discover/results?q=in&tab=programs`, { waitUntil: 'networkidle' });
 await idle(1200);
-const before = await page.locator('[aria-label*=" by "]').count();
+const before = await page.locator('[aria-label*=" by "]:visible').count();
 check(`page 1 shows 12 programs (got ${before})`, before === 12);
 await shot('08-results-programs-390');
 await clearDevOverlay();
 await page.getByLabel('Load more results').click();
 await idle(900);
-const after = await page.locator('[aria-label*=" by "]').count();
+const after = await page.locator('[aria-label*=" by "]:visible').count();
 check(`load more appends (now ${after})`, after > before);
 check('end of results shown when list complete', (await visible(page.getByText(/You’ve seen all/))) || (await visible(page.getByLabel('Load more results'))));
 

@@ -1,4 +1,5 @@
-import type { AreaId, CategoryId, SkillLevel } from '@/types/domain';
+import type { QuickFilterId } from '@/services/contracts/home-feed';
+import type { AreaId, CategoryId, Collection, SkillLevel } from '@/types/domain';
 
 /** Program-format filter values; `camp` matches camp-format programs. */
 export type ProgramFormatFilter = 'dropIn' | 'monthly' | 'term' | 'package' | 'camp';
@@ -56,6 +57,48 @@ export const emptyFilters: FilterSelection = {
   trial: false,
   topRated: false,
 };
+
+/**
+ * The one place a Discover quick chip translates into a FilterSelection —
+ * used to seed the filter sheet from the active chip (docs/16 §3) and to
+ * open quick-chip-equivalent Results sessions. Deterministic and total.
+ */
+export function quickFilterSelection(quickFilterId?: QuickFilterId): FilterSelection {
+  switch (quickFilterId) {
+    case undefined:
+      return emptyFilters;
+    case 'today':
+      return { ...emptyFilters, when: 'today' };
+    case 'weekend':
+      return { ...emptyFilters, when: 'weekend' };
+    case 'near-me':
+      return { ...emptyFilters, nearMe: true };
+    case 'ladies-only':
+      return { ...emptyFilters, ladiesOnly: true };
+    case 'camps':
+      return { ...emptyFilters, formats: ['camp'] };
+    case 'offers':
+      return { ...emptyFilters, offers: true };
+  }
+}
+
+/**
+ * Resolves an editorial collection's preset into the shared FilterSelection —
+ * collections are data; no card ever hard-codes filtering (docs/15 §2).
+ */
+export function collectionFilterSelection(collection: Collection): FilterSelection {
+  const { preset } = collection;
+  return {
+    ...emptyFilters,
+    ladiesOnly: preset.ladiesOnly === true,
+    audience: preset.childRelevant === true ? 'children' : undefined,
+    formats: preset.camps === true ? ['camp'] : [],
+    offers: preset.offers === true,
+    when: preset.availableToday === true ? 'today' : undefined,
+    afterSchool: preset.afterSchool === true,
+    setting: preset.indoor === true ? 'indoor' : undefined,
+  };
+}
 
 /** Number of active filter dimensions — drives count badges everywhere. */
 export function activeFilterCount(filters: FilterSelection): number {

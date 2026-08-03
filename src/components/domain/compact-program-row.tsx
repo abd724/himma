@@ -5,7 +5,7 @@ import { formatPrice } from '@/components/domain/program-card';
 import { demoImage } from '@/data/mock/images';
 import { colors, fontFamily, radii, shadows, spacing, typography } from '@/theme';
 import type { Program } from '@/types/domain';
-import { ageRangeLabel, isChildRelevant, isLadiesOnly } from '@/utils/eligibility';
+import { ageRangeLabel, isChildRelevant, isLadiesOnly, spokenAgeLabel } from '@/utils/eligibility';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -44,7 +44,7 @@ export function CompactProgramRow({
   return (
     <View style={styles.card}>
       <PressableFeedback
-        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${program.scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${ageLabel ? ` ${spokenAge(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
+        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${program.scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
         style={styles.pressable}
       >
         <AppImage source={demoImage(program.imageKey)} style={styles.thumbnail} />
@@ -56,7 +56,7 @@ export function CompactProgramRow({
                 <Badge
                   label={ageLabel}
                   variant="eligibility"
-                  accessibilityLabel={spokenAge(ageLabel)}
+                  accessibilityLabel={spokenAgeLabel(ageLabel)}
                 />
               ) : null}
             </View>
@@ -64,21 +64,24 @@ export function CompactProgramRow({
           <Text style={styles.title} numberOfLines={2}>
             {program.title}
           </Text>
-          <Text style={styles.provider} numberOfLines={1}>
-            {providerName}
-          </Text>
-          <Text style={styles.meta} numberOfLines={1}>
-            {areaLabel} · {program.scheduleLabel}
-          </Text>
-          <View style={styles.footer}>
-            <View style={styles.priceRow}>
-              <Text style={styles.price}>{price.amount}</Text>
-              {price.unit ? <Text style={styles.priceUnit}>{price.unit}</Text> : null}
-            </View>
+          <View style={styles.providerRow}>
+            <Text style={styles.provider} numberOfLines={1}>
+              {providerName}
+            </Text>
             <View style={styles.rating}>
               <Ionicons name="star" size={12} color={colors.brand.reward} />
               <Text style={styles.ratingText}>{program.rating.toFixed(1)}</Text>
             </View>
+          </View>
+          <Text style={styles.meta} numberOfLines={1}>
+            {areaLabel} · {program.scheduleLabel}
+          </Text>
+          {/* Dedicated full-width price row: the pricing model always renders
+              in full at 360 pt; a long unit wraps under the amount as a whole
+              instead of squeezing beside the rating. */}
+          <View style={styles.priceRow}>
+            <Text style={styles.price}>{price.amount}</Text>
+            {price.unit ? <Text style={styles.priceUnit}>{price.unit}</Text> : null}
           </View>
         </View>
       </PressableFeedback>
@@ -103,9 +106,6 @@ export function CompactProgramRow({
   );
 }
 
-function spokenAge(label: string): string {
-  return label.replace('–', ' to ').replace('+', ' and up');
-}
 
 const styles = StyleSheet.create({
   card: {
@@ -143,27 +143,29 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: colors.text.primary,
   },
+  providerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   provider: {
     ...typography.caption,
     fontFamily: fontFamily.medium,
     color: colors.text.secondary,
+    flexShrink: 1,
   },
   meta: {
     ...typography.caption,
     fontFamily: fontFamily.medium,
     color: colors.text.secondary,
   },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.xs,
-  },
   priceRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'baseline',
-    gap: 4,
-    flexShrink: 1,
+    columnGap: 4,
+    marginTop: spacing.xs,
   },
   price: {
     ...typography.price,

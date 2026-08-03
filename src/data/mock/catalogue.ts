@@ -740,12 +740,13 @@ export const programs: Program[] = [
 
 /** Editorial collections — data, not UI (docs/15 §2). */
 export const collections: Collection[] = [
-  { id: 'kids-teens', title: 'Kids & Teens', imageKey: 'karate', preset: { childRelevant: true } },
-  { id: 'ladies-only', title: 'Ladies only', imageKey: 'fitnessWoman', preset: { ladiesOnly: true } },
-  { id: 'camps', title: 'Camps & holidays', imageKey: 'swimRace', preset: { camps: true } },
-  { id: 'after-school', title: 'After school', imageKey: 'football', preset: { afterSchool: true } },
+  { id: 'kids-teens', title: 'Kids & Teens', imageKey: 'karate', preset: { childRelevant: true }, audience: 'all', featuredOnDiscover: false },
+  { id: 'ladies-only', title: 'Ladies only', subtitle: 'Classes just for you', imageKey: 'fitnessWoman', preset: { ladiesOnly: true }, audience: 'adults', featuredOnDiscover: true },
+  { id: 'beat-the-heat', title: 'Beat the heat indoors', subtitle: 'Cool escapes this summer', imageKey: 'poolLanes', preset: { indoor: true }, audience: 'all', featuredOnDiscover: true, seasonalLabel: 'Summer 2026' },
+  { id: 'camps', title: 'Camps & holidays', imageKey: 'swimRace', preset: { camps: true }, audience: 'all', featuredOnDiscover: true, seasonalLabel: 'Summer 2026' },
+  { id: 'after-school', title: 'After school', imageKey: 'football', preset: { afterSchool: true }, audience: 'children', featuredOnDiscover: true },
   // Deliberately thin preset to exercise recovery states (docs/15 §6).
-  { id: 'try-something-new', title: 'Try something new', imageKey: 'art', preset: { offers: true, availableToday: true } },
+  { id: 'try-something-new', title: 'Try something new', subtitle: 'Trials and offers to taste', imageKey: 'art', preset: { offers: true, availableToday: true }, audience: 'all', featuredOnDiscover: true },
 ];
 
 /**
