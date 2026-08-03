@@ -73,7 +73,7 @@ Do not implement during the customer-frontend stage:
 - Real push notifications
 - Real calendar integration
 - Real maps integration
-- Real recommendation engine
+- Behavioral or machine-learning recommendation engine (simple deterministic rule-based recommendations are in scope — see `docs/05_DISCOVERY_CATALOGUE_AND_FILTERS.md` section 9)
 - Real provider integrations
 - Provider web portal
 - Administration web portal

@@ -422,34 +422,74 @@ Sponsored content must be clearly identified later and must never bypass eligibi
 
 ## 9. Recommendation principles
 
-Recommendations may eventually use:
+### Current scope: simple rule-based recommendations (product-owner decision, 2026-08-03)
 
-- Selected participant
-- Age
-- Interests
-- Previous bookings
-- Completed attendance
-- Favourites
-- Search behavior
-- Reviews
-- Preferred area
-- Preferred times
-- Budget
-- Skill progression
-- Accessibility needs
-- Current availability
-- Season
-- Provider quality
+The initial product uses deterministic, rule-based recommendations only. There is no behavioral, Instagram-style, or machine-learning recommendation engine in the current stage.
 
-The first frontend should use deterministic mock recommendations.
+For each selected participant:
+
+1. **Authoritative eligibility comes first.** A program is only recommendable when it passes:
+   - provider-defined `minimumAge` / `maximumAge` / `allAges` against the participant's age
+   - location
+   - availability
+   - other explicit program restrictions
+   - `Ladies only` applies only when the customer explicitly selects that filter — never inferred
+
+2. **Declared interests drive relevance.** Interests are selected during onboarding or participant-profile setup, remain optional, and are editable later.
+
+3. **Eligible programs are ranked using simple factors:**
+   - interest match
+   - area proximity
+   - relevant schedule
+   - availability
+   - rating or popularity
+   - offers or trials
+
+4. **Discovery diversity is preserved.** Include some related activities and some popular or new activities; never show only exact declared-interest matches.
+
+The current frontend uses deterministic mock interests:
+
+- Sarah (`Me`): Calisthenics, Pilates, Padel
+- Adam: Swimming, Football, Robotics
+- Lina: Coding, Art, Languages
+
+Possible customer-facing sections:
+
+- Recommended for you
+- Recommended for Adam
+- Recommended for Lina
+- Based on your interests
+- After school
+- Camps and holidays
+- Try something new
+- Popular near you
 
 Customer-facing explanations should be understandable:
 
 - Recommended for you
 - Recommended for Adam
-- Because you viewed Pilates
-- Continue Lina's robotics journey
 - Available near Khalifa City
 - Suitable for age 8
 
 Do not label every personalized section as "AI."
+
+### Future scope: behavioral personalization (deferred)
+
+Do not currently model or implement ranking based on:
+
+- search history
+- view history
+- dwell time
+- clicks
+- bookings
+- attendance
+- reviews
+- recommendation dismissals
+- similar-user behavior
+- machine learning
+
+Behavior-based explanations such as "Because you viewed Pilates" or "Continue Lina's robotics journey" belong to this future scope.
+
+Keep the architecture replaceable through a typed `RecommendationService` contract; the initial implementation may use straightforward deterministic rules behind it.
+
+The exact recommendation weighting (how the simple ranking factors combine) is an open future decision — see `docs/09_OPEN_DECISIONS.md`.

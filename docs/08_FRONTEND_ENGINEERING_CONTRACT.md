@@ -144,9 +144,13 @@ Use clear service or repository contracts, for example:
 interface HomeFeedService {
   getHomeFeed(input: HomeFeedInput): Promise<HomeFeed>;
 }
+
+interface RecommendationService {
+  getRecommendations(input: RecommendationInput): Promise<RecommendationSection[]>;
+}
 ```
 
-The first implementation may return deterministic local data.
+The first implementation may return deterministic local data. Recommendations in the current stage are deterministic and rule-based (see `docs/05_DISCOVERY_CATALOGUE_AND_FILTERS.md` section 9); the typed `RecommendationService` contract keeps that implementation replaceable by a behavioral engine later without redesigning screens.
 
 Later, the mock implementation can be replaced by an API implementation.
 

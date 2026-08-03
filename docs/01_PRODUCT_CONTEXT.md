@@ -71,7 +71,7 @@ Himma helps the individual:
 - Use credits and rewards
 - Gift an activity or credit to a friend
 - Add confirmed bookings to a preferred external calendar
-- Receive personalized recommendations based on interests and history
+- Receive personalized recommendations based on interests (history-based personalization is future scope — see `docs/05_DISCOVERY_CATALOGUE_AND_FILTERS.md` section 9)
 
 ### 4.2 Parents building beneficial routines for children and young people
 
