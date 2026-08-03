@@ -3,30 +3,11 @@ import { Badge } from '@/components/ui/badge';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { demoImage } from '@/data/mock/images';
 import { colors, fontFamily, radii, shadows, spacing, typography } from '@/theme';
-import type { PriceModel, Program } from '@/types/domain';
+import type { Program } from '@/types/domain';
 import { ageRangeLabel, isChildRelevant, isLadiesOnly, spokenAgeLabel } from '@/utils/eligibility';
+import { formatPrice } from '@/utils/price';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
-
-export function formatPrice(price: PriceModel): { amount: string; unit: string } {
-  const aed = (value: number) => `AED ${value.toLocaleString('en-US')}`;
-  switch (price.kind) {
-    case 'dropIn':
-      return { amount: aed(price.amount), unit: 'per session' };
-    case 'monthly':
-      return { amount: aed(price.amount), unit: '/month' };
-    case 'term':
-      return { amount: aed(price.amount), unit: 'per term' };
-    case 'camp':
-      return { amount: aed(price.amountPerWeek), unit: '/week' };
-    case 'package':
-      return { amount: aed(price.amount), unit: `for ${price.sessions} sessions` };
-    case 'free':
-      return { amount: 'Free', unit: '' };
-    case 'freeTrial':
-      return { amount: 'Free', unit: 'trial' };
-  }
-}
 
 interface Props {
   program: Program;
@@ -34,6 +15,9 @@ interface Props {
   areaLabel: string;
   isFavourite: boolean;
   onToggleFavourite: (programId: string) => void;
+  /** Opens Program Details (HMA-015). The provider name stays non-interactive
+      inside the card — docs/09 §20.2, no nested pressables. */
+  onPress?: () => void;
   /** Time-led surfaces show "Today, 7:30 PM" instead of the weekly schedule. */
   scheduleOverride?: string;
   /**
@@ -43,13 +27,14 @@ interface Props {
   showAgeRange?: boolean;
 }
 
-/** Program-first card — docs/11 §7. Card body tap is inert this milestone. */
+/** Program-first card — docs/11 §7. */
 export function ProgramCard({
   program,
   providerName,
   areaLabel,
   isFavourite,
   onToggleFavourite,
+  onPress,
   scheduleOverride,
   showAgeRange = false,
 }: Props) {
@@ -70,7 +55,9 @@ export function ProgramCard({
   return (
     <View style={styles.card}>
       <PressableFeedback
+        onPress={onPress}
         accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${badge ? ` ${badge.label}.` : ''}${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
+        accessibilityHint={onPress ? 'Opens program details' : undefined}
       >
         <View>
           <AppImage source={demoImage(program.imageKey)} style={styles.image} />

@@ -6,6 +6,7 @@ import { ProgramCard } from '@/components/domain/program-card';
 import { SearchEntryButton } from '@/components/domain/search-entry-button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { collections, providers } from '@/data/mock/catalogue';
+import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { HomeActionCard } from '@/features/home/home-action-card';
 import { HomeSkeleton } from '@/features/home/home-skeleton';
 import { PlanCard } from '@/features/home/plan-card';
@@ -52,6 +53,7 @@ export function HomeScreen() {
   const account = useAccount();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
   const { favourites, toggleFavourite } = useFavourites();
+  const { openProgram } = useDetailNavigation();
 
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   const [locationSheetOpen, setLocationSheetOpen] = useState(false);
@@ -133,6 +135,7 @@ export function HomeScreen() {
                   showAgeRange
                   isFavourite={favourites.has(program.id)}
                   onToggleFavourite={toggleFavourite}
+                  onPress={() => openProgram(program.id)}
                 />
               ))}
             </ScrollView>

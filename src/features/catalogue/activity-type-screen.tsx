@@ -8,6 +8,7 @@ import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { providers as allProviders } from '@/data/mock/catalogue';
 import { CataloguePageHeader } from '@/features/catalogue/catalogue-page-header';
 import { CataloguePageSkeleton } from '@/features/catalogue/category-screen';
+import { useDetailNavigation } from '@/features/details/detail-navigation';
 import type { ActivityTypePage } from '@/services/contracts/catalogue';
 import {
   activeFilterCount,
@@ -51,6 +52,7 @@ export function ActivityTypeScreen() {
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areaId, areaLabelById } = useAreaContext();
   const { favourites, toggleFavourite } = useFavourites();
+  const { openProgram } = useDetailNavigation();
 
   const [page, setPage] = useState<ActivityTypePage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -220,6 +222,7 @@ export function ActivityTypeScreen() {
                         areaLabel={areaLabelById.get(program.areaId) ?? ''}
                         isFavourite={favourites.has(program.id)}
                         onToggleFavourite={toggleFavourite}
+                        onPress={() => openProgram(program.id)}
                       />
                     ))}
                   </View>

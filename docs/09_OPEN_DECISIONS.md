@@ -270,3 +270,17 @@ These decisions were confirmed by the product owner and are specified fully in `
 6. **No default child-profile prompting.** Me-only and me-active Home feeds never render a permanent `Add a child profile` card. Participant creation belongs to future Profile/onboarding; a one-time setup suggestion may appear only after explicit family/child intent exists. No child-related prompt appears merely because the account has no child profiles (docs/18 §6).
 
 These decisions change Home's content hierarchy but not the approved visual system (tokens, typography, dock, card language, spacing).
+
+## 20. Product-owner decisions — 2026-08-03 (Program Details + Provider Storefront milestone)
+
+`docs/20_PROGRAM_AND_PROVIDER_DETAILS_PLAN.md` is approved. The following decisions resolve its §14 open items and govern the milestone:
+
+1. **Book CTA.** A production-ready Book button with press feedback, inert until the Booking milestone. No fake booking-preview, session-selection, checkout, or payment sheet of any kind.
+2. **Provider name on program cards.** Non-interactive inside the card — no nested pressables. Approved navigation: Program card → Program Details → Provider row → Provider Storefront.
+3. **Reviews.** Summary only: rating and review count. No written review content this milestone; never invent customer testimonials.
+4. **Cancellation policies.** Deterministic mock-only presets only (e.g. free cancellation up to 24 hours before the session; free cancellation up to 48 hours; non-refundable after confirmation). Do not invent partial-refund calculations, wallet-credit rules, provider penalties, or complex exception policies. Final policy wording comes from provider onboarding and backend configuration.
+5. **Share.** Native share behavior where supported, sharing a placeholder canonical web URL (`https://himma.app/program/<programId>` / `https://himma.app/provider/<providerId>`). No `himma://` custom deep links in shared content yet. On web: Web Share when available, safe copy-link fallback otherwise.
+6. **Branch model.** Blue Wave multi-branch extras approach approved. No duplicate catalogue programs to demonstrate branches; the catalogue stays at 36 programs and 11 providers.
+7. **Map pins.** Map-pin → Provider Storefront activation is deferred. The schematic map remains area-based; no undersized provider-pin actions, no implied accurate geography.
+8. **Gift action.** Deferred to the future Gifts milestone; no active Gift action on Program Details.
+9. **Available sessions.** Sessions display as information only (date, time, branch, availability where supported). No persisted session selection and no implied booking transaction while Book is inert; session selection becomes functional in the Booking milestone.

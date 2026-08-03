@@ -26,7 +26,7 @@ Rationale: docs/16 §6 keeps the dock on *browsing* surfaces and hides it on det
 
 - Standard pattern (existing convention): `if (router.canGoBack()) router.back(); else router.replace('/discover')`. Exact-origin back everywhere: Home → Program Details → back lands on Home; Results → Program Details → back lands on Results with the results session untouched (Results stays mounted beneath the root push, so query, tab, filters, sort, and page are preserved by construction — no session serialization needed).
 - iOS swipe-back enabled; Android back pops (sheet first when the branch selector is open, per docs/16 §6 priority).
-- **Cold deep link** (`himma://program/junior-swim-squad` with an empty stack): the back control falls back to `router.replace('/discover')`; app-level providers give default participant (`everyone`) and area (`khalifa-city`), so the page renders fully.
+- **Cold deep link** (opening `/program/junior-swim-squad` with an empty stack): the back control falls back to `router.replace('/discover')`; app-level providers give default participant (`everyone`) and area (`khalifa-city`), so the page renders fully.
 - **Unknown id**: the details service returns `undefined` (the established category/activity-type recovery precedent); the screen renders the docs/16 §2 contract state — program: `This program is no longer offered.`; provider: `This provider is no longer on Himma.` — each with a `Browse activities` recovery action to `/discover`.
 
 ### 2.3 Duplicate-route prevention and cross-links
@@ -91,7 +91,7 @@ Vertical scroll at ~390 × 844, top to bottom. Sections marked *(conditional)* r
 7. **Participant suitability** *(signed-in only)* — one line for the currently selected participant: eligible → `Suitable for Adam (age 8)`; ineligible → recovery banner (§6.1). Selected participant comes from the shared `ParticipantProvider`; `everyone` shows the age label only, no per-person line.
 8. **Price block** — exact pricing model emphasized per docs/05 §6 (`AED 85 per session`, `AED 450/month`, `AED 1,250/week camp`, `AED 400 for five sessions`, `Free`); offer/trial line beneath where present.
 9. **Schedule summary** — `scheduleLabel` (+ `Today, 7:30 PM` emphasis when `availableToday`).
-10. **Available sessions** — next-two-weeks deterministic session list (§8.3): day label · time · `4 places left` where weak. Selecting a session is a *visual selection only* this milestone (radio semantics, updates the CTA label); it triggers no booking behavior. Empty → `No upcoming sessions listed. Contact support for the next start date.` (no fake urgency).
+10. **Available sessions** — next-two-weeks deterministic session list (§8.3): day label · time · branch where relevant · `4 places left` where weak. **Informational display only** (owner decision, docs/09 §20.9): no selection state, no persisted choice, no implied transaction while Book is inert — session selection becomes functional in the Booking milestone. Empty → `No upcoming sessions listed. Contact support for the next start date.` (no fake urgency).
 11. **Area and branch** — area label + branch label where the provider is multi-branch; pressable row opens the provider's branch information (storefront section).
 12. **Description** — 2–4 sentence mock description per program (§8.2), no truncation games (short enough to show fully).
 13. **What's included** *(conditional)* — short bullet list.
@@ -104,7 +104,7 @@ Vertical scroll at ~390 × 844, top to bottom. Sections marked *(conditional)* r
 20. **Support row** — `Something wrong with this listing?` inert contract (future HMA-032 help entry). No provider phone numbers (docs/09 §11).
 21. **Sticky Book CTA** — pinned bottom bar above the home indicator: primary button `Book` + price reminder (`AED 85 · drop-in`; `Book free trial` for trials). **Inert with press feedback** per docs/09 §17.2 — it opens no sheet, alert, or placeholder (owner may choose a richer contract, §14.1). Ineligible selected child ⇒ CTA stays enabled and honest (booking-time participant selection is the real gate, docs/02 §8) while the §6.1 banner explains suitability.
 
-Save = heart toggle (shared favourites, §5). Share = native `Share` API sheet with program title + `himma://program/[id]` text (§14.5 records the open decision; no web fallback claims).
+Save = heart toggle (shared favourites, §5). Share (owner decision, docs/09 §20.5) = native share sheet with the program title + placeholder canonical web URL `https://himma.app/program/[programId]`; on Expo web, Web Share when available with a safe copy-link fallback. No `himma://` links in shared content.
 
 ## 4. Provider Storefront — page hierarchy (HMA-014)
 
@@ -237,7 +237,7 @@ export interface SessionOccurrence {
 }
 
 export interface CancellationPolicy {
-  id: 'flex-24' | 'standard-48' | 'trial-final';
+  id: 'flex-24' | 'flex-48' | 'non-refundable';
   title: string;            // 'Flexible cancellation'
   summaryLines: string[];   // 2–3 concise customer lines
 }
@@ -275,8 +275,11 @@ export interface ProviderDetailExtras {
 }
 export const providerDetailExtras: Record<string, ProviderDetailExtras>;
 
-// src/data/mock/policies.ts — the three presets; wording is MOCK-ONLY placeholder
-// policy copy (docs/09 §7 refund model is open) and must be replaced at provider onboarding.
+// src/data/mock/policies.ts — the three approved presets (docs/09 §20.4): free
+// cancellation up to 24 h, free cancellation up to 48 h, non-refundable after
+// confirmation. Wording is MOCK-ONLY placeholder copy; final policy wording comes
+// from provider onboarding and backend configuration. No partial-refund maths,
+// wallet-credit rules, provider penalties, or exception policies.
 export const cancellationPolicies: Record<CancellationPolicy['id'], CancellationPolicy>;
 ```
 
@@ -398,7 +401,7 @@ Review entries (summary rating + count only this milestone), multi-image galleri
 - **Save**: `accessibilityRole="button"` + `accessibilityState={{ selected }}` + label `Save {name}` / `Saved — double tap to remove`.
 - **Suitability**: banner is a polite live region; participant-switch chips announce the resulting context (`Browsing as Me`); age ranges use `spokenAgeLabel` (`Ages six to twelve`, `Ages sixteen and up`).
 - **Pricing**: labels expand abbreviations — `85 dirhams per session`, `450 dirhams per month`; never `AED`-only for screen readers.
-- **Sessions**: radio-group semantics; each occurrence labelled `Tuesday 5 August, 7:30 PM, 4 places left`; selection state non-color (check indicator).
+- **Sessions**: informational list semantics (no selection this milestone, docs/09 §20.9); each occurrence labelled `Tuesday 5 August, 7:30 PM, 4 places left`.
 - **Sticky CTA**: labelled `Book {program title}, 85 dirhams per session`; never obscured by or obscuring content (scroll padding accounts for CTA height + insets).
 - **Branch selector**: radio semantics; selected branch announced; sheet titled and dismissible per docs/16 §6.
 - **Segmented controls / grouped lists**: tab roles with selected state where a segmented control is used.
@@ -439,6 +442,8 @@ Review entries (summary rating + count only this milestone), multi-image galleri
 `src/features/details/__tests__/detail-navigation.test.ts`: `crossLinkAction` back-vs-push matrix (provider→program→same provider ⇒ back; distinct ⇒ push; undefined previous ⇒ push); href builders.
 
 `src/state/__tests__/favourites.test.ts` (new): keyed toggling, kind isolation (`program:x` vs `provider:x`), existing-call-site semantics preserved.
+
+Also in Commit 9: price-label formatting for all seven `PriceModel` kinds, and share-URL generation (`https://himma.app/program/[id]` / `.../provider/[id]` — no `himma://`).
 
 ### 12.2 Navigation / QA (Playwright over Expo web, 390 × 844 + 360 × 780)
 
@@ -500,16 +505,19 @@ Every row is captured at **both 390 × 844 and 360 × 780** (`-390` / `-360` fil
 - **Tests**: full jest, tsc, eslint, expo-doctor, all QA scripts, zero console errors, no horizontal overflow.
 - **Stop line**: milestone report delivered; stop for owner approval before any booking-flow work.
 
-## 14. Open product decisions (owner approval requested)
+## 14. Product-owner decisions (approved 2026-08-03 — recorded in docs/09 §20)
 
-1. **Book CTA behavior** — Recommended: inert with press feedback (docs/09 §17.2), CTA label carries price. Alternative: a read-only "booking preview" sheet naming the future flow. The recommendation avoids any fake-transaction impression.
-2. **Provider name link inside program cards** — Recommended: card body → Program Details; storefront reached via the program's provider row (nested pressables are invalid on native). This intentionally softens docs/04 §5's "provider name on a program card opens this screen" line.
-3. **Reviews presentation** — Recommended: rating + deterministic review count only; review entries and the verified-review pipeline are a future milestone (docs/09 §15).
-4. **Cancellation-policy presets** — three mock-only presets (§8.2) pending the open refund model (docs/09 §7). Wording needs owner sign-off as placeholder copy.
-5. **Share action** — Recommended: native `Share` sheet with `himma://` deep-link text now (public https links belong to the future customer web surface, docs/15 §10). Alternative: inert until web links exist.
-6. **Branch model** — Recommended: Blue Wave two-branch demo within Al Raha via extras only (§8.2), preserving the frozen catalogue. Alternative (rejected): appending programs in a new area.
-7. **Map pin → storefront** — `MapPin` already carries `providerId`; activating pins is possible but pin touch targets are below 44 pt today. Recommended: defer pin activation; the storefront's map entry covers the map connection this milestone.
-8. **Gift action on Program Details** — docs/04 HMA-015 lists a Gift action; this plan defers it to the Gifts milestone (HMA-028). Confirm.
+All §14 items were resolved by the owner when this plan was approved:
+
+1. **Book CTA** — production-ready Book button with press feedback, inert until the Booking milestone. No fake booking-preview, session-selection, checkout, or payment sheet.
+2. **Provider name inside program cards** — non-interactive; no nested pressables. Approved path: Program card → Program Details → Provider row → Provider Storefront.
+3. **Reviews** — summary only (rating + review count); no written review content, no invented testimonials.
+4. **Cancellation policies** — the three mock-only presets in §8.2; no partial-refund maths, wallet-credit rules, provider penalties, or exception policies. Final wording comes from provider onboarding and backend configuration.
+5. **Share** — native share where supported with placeholder canonical URLs `https://himma.app/program/<id>` / `https://himma.app/provider/<id>`; Web Share + copy-link fallback on web; no `himma://` links in shared content yet.
+6. **Branch model** — Blue Wave multi-branch extras approach approved; no appended catalogue programs; 36 programs / 11 providers stand.
+7. **Map pins** — pin → storefront activation deferred; the schematic map stays area-based with no undersized pin actions.
+8. **Gift action** — deferred to the Gifts milestone; no active Gift action on Program Details.
+9. **Available sessions** — informational only (date, time, branch, availability where supported); no persisted selection or implied transaction while Book is inert.
 
 ## 15. Contradiction review
 

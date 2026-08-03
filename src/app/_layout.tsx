@@ -45,8 +45,9 @@ export default function RootLayout() {
             <ResultsSessionProvider>
             <View style={{ flex: 1, backgroundColor: colors.background.main }}>
               <StatusBar style="dark" />
-              {/* Search and Map are root-level pushes: the dock (owned by the
-                  tab navigator) is hidden on them structurally — docs/16 §6. */}
+              {/* Search, Map, and detail surfaces are root-level pushes: the
+                  dock (owned by the tab navigator) is hidden on them
+                  structurally — docs/16 §6, docs/20 §2.1. */}
               <Stack
                 screenOptions={{
                   headerShown: false,
@@ -56,6 +57,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="search" />
                 <Stack.Screen name="map" />
+                <Stack.Screen name="program/[programId]" />
               </Stack>
             </View>
             </ResultsSessionProvider>

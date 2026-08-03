@@ -13,6 +13,7 @@ import { QuickFilterRow } from '@/components/domain/quick-filter-row';
 import { SearchEntryButton } from '@/components/domain/search-entry-button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { collections, providers } from '@/data/mock/catalogue';
+import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { DiscoverSkeleton } from '@/features/discover/discover-skeleton';
 import { needsBroadSession } from '@/features/map/map-navigation';
 import type { DiscoverFeed } from '@/services/contracts/discover-feed';
@@ -56,6 +57,7 @@ export function DiscoverScreen() {
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
   const { favourites, toggleFavourite } = useFavourites();
+  const { openProgram } = useDetailNavigation();
   const session = useResultsSession();
 
   const [quickFilterId, setQuickFilterId] = useState<QuickFilterId | undefined>(undefined);
@@ -247,6 +249,7 @@ export function DiscoverScreen() {
                           showAgeRange
                           isFavourite={favourites.has(program.id)}
                           onToggleFavourite={toggleFavourite}
+                          onPress={() => openProgram(program.id)}
                         />
                       ))}
                     </ScrollView>

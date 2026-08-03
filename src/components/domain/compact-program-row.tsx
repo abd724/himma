@@ -1,11 +1,11 @@
 import { AppImage } from '@/components/ui/app-image';
 import { Badge } from '@/components/ui/badge';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
-import { formatPrice } from '@/components/domain/program-card';
 import { demoImage } from '@/data/mock/images';
 import { colors, fontFamily, radii, shadows, spacing, typography } from '@/theme';
 import type { Program } from '@/types/domain';
 import { ageRangeLabel, isChildRelevant, isLadiesOnly, spokenAgeLabel } from '@/utils/eligibility';
+import { formatPrice } from '@/utils/price';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -15,13 +15,14 @@ interface Props {
   areaLabel: string;
   isFavourite: boolean;
   onToggleFavourite: (programId: string) => void;
+  /** Opens Program Details (HMA-015); the favourite toggle stays a sibling. */
+  onPress?: () => void;
 }
 
 /**
  * Dense vertical result card — same family and information hierarchy as the
- * approved carousel card, compressed for comparison (docs/14 §6). The card
- * body is inert until program details ship; the favourite toggle is a
- * sibling, never a nested control.
+ * approved carousel card, compressed for comparison (docs/14 §6). The
+ * favourite toggle is a sibling, never a nested control.
  */
 export function CompactProgramRow({
   program,
@@ -29,6 +30,7 @@ export function CompactProgramRow({
   areaLabel,
   isFavourite,
   onToggleFavourite,
+  onPress,
 }: Props) {
   const price = formatPrice(program.price);
   const ladies = isLadiesOnly(program.eligibility);
@@ -44,7 +46,9 @@ export function CompactProgramRow({
   return (
     <View style={styles.card}>
       <PressableFeedback
+        onPress={onPress}
         accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${program.scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${badge ? ` ${badge.label}.` : ''}${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
+        accessibilityHint={onPress ? 'Opens program details' : undefined}
         style={styles.pressable}
       >
         <AppImage source={demoImage(program.imageKey)} style={styles.thumbnail} />

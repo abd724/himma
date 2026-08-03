@@ -11,6 +11,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
 import { areas, categories as allCategories, programs as catalogue, providers } from '@/data/mock/catalogue';
+import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { sortOptions, type FilterSelection } from '@/services/contracts/filters';
 import type { ResultsPage } from '@/services/contracts/search';
 import { searchService } from '@/services/mock/mock-search-service';
@@ -445,6 +446,7 @@ function ProgramList({
   favourites: ReadonlySet<string>;
   onToggleFavourite: (id: string) => void;
 }) {
+  const { openProgram } = useDetailNavigation();
   return (
     <View style={styles.list}>
       {programs.map((program) => (
@@ -455,6 +457,7 @@ function ProgramList({
           areaLabel={areaLabel(program.areaId)}
           isFavourite={favourites.has(program.id)}
           onToggleFavourite={onToggleFavourite}
+          onPress={() => openProgram(program.id)}
         />
       ))}
     </View>

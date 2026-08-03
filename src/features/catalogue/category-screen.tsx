@@ -11,6 +11,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
 import { providers as allProviders } from '@/data/mock/catalogue';
 import { CataloguePageHeader } from '@/features/catalogue/catalogue-page-header';
+import { useDetailNavigation } from '@/features/details/detail-navigation';
 import type { CategoryPage } from '@/services/contracts/catalogue';
 import {
   activeFilterCount,
@@ -50,6 +51,7 @@ export function CategoryScreen() {
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
   const { favourites, toggleFavourite } = useFavourites();
+  const { openProgram } = useDetailNavigation();
 
   const [page, setPage] = useState<CategoryPage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -257,6 +259,7 @@ export function CategoryScreen() {
                           areaLabel={areaLabelById.get(program.areaId) ?? ''}
                           isFavourite={favourites.has(program.id)}
                           onToggleFavourite={toggleFavourite}
+                          onPress={() => openProgram(program.id)}
                         />
                       ))}
                     </View>
@@ -290,6 +293,7 @@ export function CategoryScreen() {
                             areaLabel={areaLabelById.get(program.areaId) ?? ''}
                             isFavourite={favourites.has(program.id)}
                             onToggleFavourite={toggleFavourite}
+                            onPress={() => openProgram(program.id)}
                           />
                         ))}
                       </View>

@@ -1,4 +1,4 @@
-import type { Eligibility, Participant } from '@/types/domain';
+import type { Eligibility, Participant, ParticipantId } from '@/types/domain';
 
 /**
  * Fixed mock "today" for deterministic age computation — docs/08 §10.
@@ -75,4 +75,56 @@ export function spokenAgeLabel(label: string): string {
 /** The optional Ladies-only customer filter — docs/05 §7. */
 export function isLadiesOnly(eligibility: Eligibility): boolean {
   return eligibility.genderEligibility === 'ladies';
+}
+
+/**
+ * Presentation of one participant's suitability on evaluation surfaces
+ * (docs/20 §6.1). Children hard-check the provider-defined age range;
+ * adults use `suitsAdult` — never gender (docs/05 §7).
+ */
+export interface ParticipantSuitability {
+  participantId: ParticipantId;
+  label: string;
+  suitable: boolean;
+  /** Customer wording, e.g. "Ages 6–12 — Adam is 8". */
+  reason: string;
+}
+
+export function participantSuitability(
+  eligibility: Eligibility,
+  participant: Participant,
+): ParticipantSuitability {
+  const ageLabel = ageRangeLabel(eligibility) ?? 'All ages';
+  if (participant.kind === 'child') {
+    const age = participantAge(participant) ?? 0;
+    const suitable = suitsChild(eligibility, age);
+    return {
+      participantId: participant.id,
+      label: participant.label,
+      suitable,
+      reason: suitable
+        ? `${participant.label} is ${age}`
+        : `${ageLabel} — ${participant.label} is ${age}`,
+    };
+  }
+  const suitable = suitsAdult(eligibility);
+  return {
+    participantId: participant.id,
+    label: participant.label,
+    suitable,
+    reason: suitable ? 'Open to adults' : `Designed for ${ageLabel.toLowerCase()}`,
+  };
+}
+
+/**
+ * Suitability for every real household participant (the `everyone` browsing
+ * entry is context, not a person). Order preserved: primary first.
+ */
+export function householdSuitability(
+  eligibility: Eligibility,
+  participants: Participant[],
+): ParticipantSuitability[] {
+  return participants
+    .filter((participant) => participant.kind !== 'everyone')
+    .map((participant) => participantSuitability(eligibility, participant));
 }

@@ -177,3 +177,43 @@ export interface CreditSummary {
   /** Fictional demo balance in AED. */
   availableCredit: number;
 }
+
+/**
+ * A provider location. Providers without explicit branch data have one
+ * implicit branch at their `areaId` (docs/20 §8.2). Branch metadata lives in
+ * mock extras modules, never in the frozen catalogue arrays.
+ */
+export interface ProviderBranch {
+  id: string;
+  label: string;
+  areaId: AreaId;
+  /** Fictional street line for realism — never a real address. */
+  addressLine: string;
+  openingHours?: string;
+}
+
+/** One dated occurrence of a program in the details session list — docs/20 §8.3. */
+export interface SessionOccurrence {
+  id: string;
+  /**
+   * Days after MOCK_TODAY. Recurring schedules stay inside a two-week window
+   * (0–13); a camp's single start entry falls on its real start date, which
+   * may be later in the month.
+   */
+  dayOffset: number;
+  dayLabel: string;
+  timeLabel: string;
+  /** Present only when places are genuinely limited; drives "4 places left". */
+  spotsLeft?: number;
+}
+
+/**
+ * Mock-only cancellation preset — docs/09 §20.4. Final policy wording comes
+ * from provider onboarding and backend configuration; no refund maths here.
+ */
+export interface CancellationPolicy {
+  id: 'flex-24' | 'flex-48' | 'non-refundable';
+  title: string;
+  /** 2–3 concise customer-facing lines. */
+  summaryLines: string[];
+}
