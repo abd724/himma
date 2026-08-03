@@ -13,13 +13,20 @@ interface Props {
    * when the handler ignores them (docs/09 §17.2).
    */
   onPressEntry?: (entry: BrowseEntry) => void;
+  /**
+   * Home keeps its approved single-line captions; All Categories passes 2 so
+   * full taxonomy labels stay readable (docs/04 HMA-011).
+   */
+  labelLines?: 1 | 2;
+  /** Home keeps the approved four columns; All Categories uses three. */
+  columns?: 3 | 4;
 }
 
 /**
  * Fixed four-column grid: all eight categories visible with zero interaction
  * cost — chosen over a scrolling grid for scanability at 390 pt (docs/11 §4.6).
  */
-export function CategoryGrid({ categories, onPressEntry }: Props) {
+export function CategoryGrid({ categories, onPressEntry, labelLines = 1, columns = 4 }: Props) {
   return (
     <View style={styles.grid}>
       {categories.map((category) => (
@@ -27,10 +34,13 @@ export function CategoryGrid({ categories, onPressEntry }: Props) {
           key={category.id}
           accessibilityLabel={`${category.label} category`}
           onPress={onPressEntry === undefined ? undefined : () => onPressEntry(category)}
-          style={styles.cell}
+          style={[styles.cell, columns === 3 && styles.cellWide]}
         >
           <AppImage source={demoImage(category.imageKey)} style={styles.tile} />
-          <Text style={styles.label} numberOfLines={1}>
+          <Text
+            style={[styles.label, labelLines === 2 && styles.labelWrapped]}
+            numberOfLines={labelLines}
+          >
             {category.label}
           </Text>
         </PressableFeedback>
@@ -52,6 +62,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  cellWide: {
+    width: '33.333%',
+  },
   tile: {
     width: '100%',
     aspectRatio: 1,
@@ -61,5 +74,8 @@ const styles = StyleSheet.create({
   label: {
     ...typography.caption,
     color: colors.text.primary,
+  },
+  labelWrapped: {
+    textAlign: 'center',
   },
 });

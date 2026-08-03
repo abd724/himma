@@ -118,6 +118,11 @@ export function ResultsScreen() {
     else router.replace('/discover');
   };
 
+  /** Category results enter the taxonomy — docs/15 §4.2. */
+  const openCategory = (categoryId: string) => {
+    router.push(`/discover/category/${categoryId}`);
+  };
+
   const participantLabel =
     participants.find((participant) => participant.id === participantId)?.label ?? 'Everyone';
 
@@ -309,13 +314,13 @@ export function ResultsScreen() {
                   }}
                 />
               ) : session.tab === 'all' ? (
-                <AllTab page={page} onSeeAll={session.setTab} favourites={favourites} onToggleFavourite={toggleFavourite} />
+                <AllTab page={page} onSeeAll={session.setTab} onOpenCategory={openCategory} favourites={favourites} onToggleFavourite={toggleFavourite} />
               ) : session.tab === 'programs' ? (
                 <ProgramsTab page={page} favourites={favourites} onToggleFavourite={toggleFavourite} onLoadMore={session.loadMore} />
               ) : session.tab === 'providers' ? (
                 <ProvidersTab page={page} onLoadMore={session.loadMore} />
               ) : (
-                <CategoriesTab page={page} />
+                <CategoriesTab page={page} onOpenCategory={openCategory} />
               )}
             </>
           )}
@@ -439,11 +444,13 @@ function ProgramList({
 function AllTab({
   page,
   onSeeAll,
+  onOpenCategory,
   favourites,
   onToggleFavourite,
 }: {
   page: ResultsPage;
   onSeeAll: (tab: ResultsTab) => void;
+  onOpenCategory: (categoryId: string) => void;
   favourites: ReadonlySet<string>;
   onToggleFavourite: (id: string) => void;
 }) {
@@ -492,6 +499,7 @@ function AllTab({
               key={category.id}
               category={category}
               programCount={categoryCountById.get(category.id) ?? 0}
+              onPress={() => onOpenCategory(category.id)}
             />
           ))}
         </View>
@@ -568,7 +576,13 @@ function ProvidersTab({ page, onLoadMore }: { page: ResultsPage; onLoadMore: () 
   );
 }
 
-function CategoriesTab({ page }: { page: ResultsPage }) {
+function CategoriesTab({
+  page,
+  onOpenCategory,
+}: {
+  page: ResultsPage;
+  onOpenCategory: (categoryId: string) => void;
+}) {
   return (
     <View style={styles.list}>
       {page.categories.map((category) => (
@@ -576,6 +590,7 @@ function CategoriesTab({ page }: { page: ResultsPage }) {
           key={category.id}
           category={category}
           programCount={categoryCountById.get(category.id) ?? 0}
+          onPress={() => onOpenCategory(category.id)}
         />
       ))}
     </View>

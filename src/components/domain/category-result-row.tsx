@@ -9,16 +9,19 @@ import { StyleSheet, Text, View } from 'react-native';
 interface Props {
   category: Category;
   programCount: number;
+  /** Opens the category page (docs/15 §4.2). */
+  onPress?: () => void;
 }
 
 /**
  * Compact category row for Results — adapted from the Home tile for list
- * comparison. Inert until category pages land in the catalogue-pages commit.
+ * comparison.
  */
-export function CategoryResultRow({ category, programCount }: Props) {
+export function CategoryResultRow({ category, programCount, onPress }: Props) {
   return (
     <PressableFeedback
       accessibilityLabel={`${category.label} category, ${programCount} activities`}
+      onPress={onPress}
       style={styles.card}
     >
       <AppImage source={demoImage(category.imageKey)} style={styles.thumbnail} />

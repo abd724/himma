@@ -102,10 +102,17 @@ export function DiscoverScreen() {
     if (collection !== undefined) openPresetResults(collectionFilterSelection(collection));
   };
 
+  /** Tile activations — docs/15 §4.2: every target now resolves. */
   const onPressBrowseEntry = (entry: BrowseEntry) => {
-    // Only collection lenses have destinations this commit; category and
-    // activity-type tiles stay inert until the catalogue pages land.
-    if (entry.target.kind === 'collection') openCollection(entry.target.collectionId);
+    if (entry.target.kind === 'category') {
+      router.push(`/discover/category/${entry.target.categoryId}`);
+      return;
+    }
+    if (entry.target.kind === 'activityType') {
+      router.push(`/discover/activity/${entry.target.activityTypeId}`);
+      return;
+    }
+    openCollection(entry.target.collectionId);
   };
 
   const openFilterSheet = () => {
@@ -166,7 +173,11 @@ export function DiscoverScreen() {
           ) : (
             <>
               <View>
-                <SectionHeader title="Browse categories" actionLabel="View all" />
+                <SectionHeader
+                  title="Browse categories"
+                  actionLabel="View all"
+                  onActionPress={() => router.push('/discover/categories')}
+                />
                 <CategoryGrid categories={feed.browseEntries} onPressEntry={onPressBrowseEntry} />
               </View>
 

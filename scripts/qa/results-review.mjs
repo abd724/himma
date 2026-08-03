@@ -48,7 +48,8 @@ await shot('07-results-all-390');
 await page.getByLabel('See all Programs').click();
 await idle();
 check('See all switches to Programs tab', (await page.getByRole('tab', { name: 'Programs' }).getAttribute('aria-selected')) === 'true');
-check('age badge shown on junior program', await visible(page.getByText('Ages 6–14').first()));
+// visible=true scope: the hidden Discover screen beneath also renders this badge.
+check('age badge shown on junior program', await visible(page.getByText('Ages 6–14').locator('visible=true').first()));
 
 // ——— Participant switching on Results keeps query ———
 await page.getByRole('button', { name: 'Adam' }).click();

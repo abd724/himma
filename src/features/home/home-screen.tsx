@@ -69,10 +69,16 @@ export function HomeScreen() {
     router.push('/discover/results');
   };
 
+  /** Approved tile activations — docs/15 §4.2: every target now resolves. */
   const onPressBrowseEntry = (entry: BrowseEntry) => {
-    // Collection lenses have destinations now; category and activity-type
-    // tiles stay inert with press feedback until the catalogue pages land.
-    if (entry.target.kind !== 'collection') return;
+    if (entry.target.kind === 'category') {
+      router.push(`/discover/category/${entry.target.categoryId}`);
+      return;
+    }
+    if (entry.target.kind === 'activityType') {
+      router.push(`/discover/activity/${entry.target.activityTypeId}`);
+      return;
+    }
     const collection = collectionById.get(entry.target.collectionId);
     if (collection !== undefined) openPresetResults(collectionFilterSelection(collection));
   };
@@ -121,7 +127,11 @@ export function HomeScreen() {
               />
 
               <View>
-                <SectionHeader title="Popular categories" actionLabel="View all" />
+                <SectionHeader
+                  title="Popular categories"
+                  actionLabel="View all"
+                  onActionPress={() => router.push('/discover/categories')}
+                />
                 <CategoryGrid categories={feed.categories} onPressEntry={onPressBrowseEntry} />
               </View>
 

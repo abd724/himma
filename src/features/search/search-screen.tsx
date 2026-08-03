@@ -1,5 +1,7 @@
 import { Chip } from '@/components/ui/chip';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
+import { collections } from '@/data/mock/catalogue';
+import { collectionFilterSelection } from '@/services/contracts/filters';
 import type { SearchSuggestion, SuggestionKind } from '@/services/contracts/search';
 import { searchService } from '@/services/mock/mock-search-service';
 import { useAreaContext } from '@/state/area-context';
@@ -7,7 +9,7 @@ import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession, type ResultsTab } from '@/state/results-session-context';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -87,10 +89,38 @@ export function SearchScreen() {
     router.push({ pathname: '/discover/results', params: { q: value, tab } });
   };
 
+  /** Dismiss the overlay so the destination stacks on the Discover feed. */
+  const pushOnDiscoverStack = (path: Href) => {
+    if (router.canGoBack()) router.dismiss();
+    router.push(path);
+  };
+
   const openSuggestion = (suggestion: SearchSuggestion) => {
-    // Category and activity suggestions route to Results until the category
-    // and activity-type pages land in the catalogue-pages commit (docs/17 §11).
+    // Category suggestions enter the taxonomy directly (docs/15 §4.2);
+    // activity, provider, and area suggestions submit as searches.
+    if (suggestion.kind === 'category') {
+      pushOnDiscoverStack(`/discover/category/${suggestion.targetId}`);
+      return;
+    }
     submit(suggestion.query, kindToTab[suggestion.kind]);
+  };
+
+  /** Pre-typing category shortcuts route like the browse tiles (docs/15 §4.2). */
+  const openBrowseShortcut = (entry: (typeof preSearch.categoryShortcuts)[number]) => {
+    if (entry.target.kind === 'category') {
+      pushOnDiscoverStack(`/discover/category/${entry.target.categoryId}`);
+      return;
+    }
+    if (entry.target.kind === 'activityType') {
+      pushOnDiscoverStack(`/discover/activity/${entry.target.activityTypeId}`);
+      return;
+    }
+    const collectionId = entry.target.collectionId;
+    const collection = collections.find((candidate) => candidate.id === collectionId);
+    if (collection === undefined) return;
+    resultsSession.newSearch('', 'programs');
+    resultsSession.setFilters(collectionFilterSelection(collection));
+    pushOnDiscoverStack('/discover/results');
   };
 
   const typing = query.trim().length > 0;
@@ -216,8 +246,8 @@ export function SearchScreen() {
                       key={entry.id}
                       label={entry.label}
                       selected={false}
-                      onPress={() => submit(entry.label, 'all')}
-                      accessibilityHint={`Searches ${entry.label} activities`}
+                      onPress={() => openBrowseShortcut(entry)}
+                      accessibilityHint={`Browses ${entry.label} activities`}
                     />
                   ))}
                 </View>
