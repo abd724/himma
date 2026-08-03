@@ -16,13 +16,13 @@ All eight docs/17 steps are complete and owner-approved, plus the docs/18 Home r
 | 6 catalogue pages | `ad65ff7 feat(catalogue-pages)` | ✅ approved |
 | 7 schematic mock map | `bfac2c6 feat(map)` | ✅ approved |
 | 8a Home rework (docs/18) | `23c0c78 feat(home)` + `2ca98e1 fix(home)` | ✅ approved (design + frontend + accessibility review) |
-| 8b milestone close | `chore(review)` (this commit) | reported, awaiting owner sign-off |
+| 8b milestone close | `ec79c7d chore(review)` | ✅ approved — milestone closed by the owner at this commit |
 
 **Completed surfaces:** Home · Navigation shell/dock · Search · Results + filtering · Discover feed · All Categories · Category pages · Activity-type pages · Schematic Map.
 
 **Not implemented (deferred, do not start without owner approval):** Provider storefront (HMA-014) · Program details (HMA-015) · Booking · Checkout · Authentication · Profile & participant management UI · Bookings calendar · Saved screen · Credits details · Gifts · Rewards · Backend · Arabic/RTL · Provider portal · Admin portal. Program/provider cards and Bookings/Saved/Profile dock items stay **inert with press feedback** (docs/09 §17.2).
 
-**Recommended next milestone:** Program details (HMA-015) + Provider storefront (HMA-014) — their contracts already exist in docs/15 §4.1, every inert card is waiting to activate, and they unblock the booking flow after that.
+**Current milestone:** Program details (HMA-015) + Provider storefront (HMA-014) — planned in `docs/20_PROGRAM_AND_PROVIDER_DETAILS_PLAN.md` (Commits 9–11: program details, provider storefront, connection/review pass). The plan awaits owner approval; no implementation has started. Their route contracts exist in docs/15 §4.1, every inert card is waiting to activate, and they unblock the booking flow after that.
 
 ## Approval status per surface (docs/12 three levels)
 
