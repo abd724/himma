@@ -1,6 +1,7 @@
 /**
- * Commits 9–10 QA — Program Details (HMA-015) + Provider Storefront
- * (HMA-014): states, activation, navigation, cross-links.
+ * Commits 9–11 QA — Program Details (HMA-015) + Provider Storefront
+ * (HMA-014): states, activation, navigation, cross-links, and the full
+ * milestone screenshot matrix (390 × 844 + 360 × 780, flow proofs).
  * Run: node scripts/qa/details-review.mjs (Expo web on 8081).
  */
 import { chromium } from 'playwright-core';
@@ -35,6 +36,25 @@ const visibleText = (text) => visible(page.getByText(text).locator('visible=true
 const visibleLabel = (label) => page.getByLabel(label).locator('visible=true').first();
 const noOverflow = (width) =>
   page.evaluate((w) => document.documentElement.scrollWidth <= w, width);
+/**
+ * Deterministic absolute scroll of the visible screen's scroller.
+ * `mouse.wheel` is position-dependent (a wheel over the header overlay never
+ * reaches the ScrollView) and produced duplicate captures — never use it here.
+ */
+const scrollToY = async (y) => {
+  await page.evaluate((top) => {
+    const scrollers = [...document.querySelectorAll('div')].filter(
+      (el) =>
+        el.scrollHeight > el.clientHeight + 40 &&
+        ['auto', 'scroll'].includes(getComputedStyle(el).overflowY) &&
+        el.checkVisibility({ checkVisibilityCSS: true }),
+    );
+    const target = scrollers[scrollers.length - 1] ?? document.scrollingElement;
+    // Direct assignment: RN-web swallows Element.scrollTo on its ScrollView.
+    if (target) target.scrollTop = top;
+  }, y);
+  await page.waitForTimeout(500);
+};
 
 // ——— Adult default page from Home (activation + exact-origin back) ———
 await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -51,21 +71,23 @@ check('sessions lead with Today', await visibleText('Today'));
 check('sticky Book CTA present', await visible(page.getByLabel(/^Book: Beginner Calisthenics/)));
 check('no dock on detail route', !(await visible(page.getByRole('tab', { name: 'Home' }))));
 await shot('01-program-adult-top-390');
-await page.mouse.wheel(0, 1400);
-await idle(400);
+await scrollToY(1400);
 await shot('01-program-adult-mid-390');
 check('policy preset shown', await visibleText('Free cancellation up to 24 hours before the session.'));
-await page.mouse.wheel(0, 2400);
-await idle(400);
+await scrollToY(99999);
 await shot('01-program-adult-bottom-390');
 check('more-from-provider listed', await visibleText('More from Gravity Movement Studio'));
 check('support contract shown', await visibleText('Something wrong with this listing?'));
+// Distinct sticky-CTA proof: content mid-scroll beneath the pinned bar.
+await scrollToY(700);
 await shot('07-program-sticky-cta-390');
+await scrollToY(0);
 
 // ——— Save persists across navigation (session favourites) ———
 await visibleLabel('Save Beginner Calisthenics to favourites').click();
 await idle(300);
 check('save toggles to checked', await visible(visibleLabel('Remove Beginner Calisthenics from favourites')));
+await shot('01-program-adult-saved-390');
 await visibleLabel('Back').click();
 await idle(900);
 check('back returns to Home (exact origin)', !page.url().includes('/program/'));
@@ -88,8 +110,7 @@ check('discover card opens details under child context', page.url().includes('/p
 check('child-eligible line shown', await visibleText(/Suitable for Adam/));
 check('branch shown for multi-branch provider', await visibleText(/Al Raha · Al Raha Beach/));
 await shot('02-program-child-eligible-390');
-await page.mouse.wheel(0, 3600);
-await idle(400);
+await scrollToY(3600);
 await page.getByLabel(/^Ladies Aqua Fitness by/).locator('visible=true').first().click();
 await idle(1000);
 check('cross-link to sibling program', page.url().includes('/program/ladies-aqua'));
@@ -166,6 +187,8 @@ check(
   'results session preserved (Programs tab still selected)',
   (await page.getByRole('tab', { name: 'Programs' }).getAttribute('aria-selected')) === 'true',
 );
+// Flow proof: Results → Program → back with the session intact.
+await shot('16-results-after-program-back-390');
 
 // ——— Activation from category, activity-type, and search-linked surfaces ———
 await page.goto(`${BASE}/discover/category/martial-arts`, { waitUntil: 'networkidle' });
@@ -210,11 +233,9 @@ check('programs immediately visible with count', await visibleText('5 programs')
 check('no dock on storefront route', !(await visible(page.getByRole('tab', { name: 'Home' }))));
 check('no offers section when provider has none', !(await visibleText('Offers & trials')));
 await shot('08-storefront-default-top-390');
-await page.mouse.wheel(0, 1600);
-await idle(400);
+await scrollToY(800);
 await shot('08-storefront-default-mid-390');
-await page.mouse.wheel(0, 2600);
-await idle(400);
+await scrollToY(99999);
 check('facilities shown', await visibleText('Facilities & amenities'));
 check('team shown', await visibleText('Khalid Mansour'));
 check('policy preset shown on storefront', await visibleText('Free cancellation up to 24 hours before the session.'));
@@ -297,9 +318,15 @@ await shot('14-storefront-from-program-390');
 await page.getByLabel(/^Ladies Strength Circuit by/).locator('visible=true').first().click();
 await idle(1000);
 check('storefront program card opens details', page.url().includes('/program/ladies-strength'));
+// Flow proof: Provider → Program (scrolled so the frame is distinct from 04).
+await scrollToY(400);
+await shot('14-program-from-storefront-390');
 await page.getByLabel('Gravity Movement Studio, verified provider').locator('visible=true').first().click();
 await idle(1000);
 check('provider round-trip resolves as back (no third route)', page.url().includes('/provider/gravity'));
+// Flow proof: Program A → Provider A → Program X → Provider A resolved by
+// back/reuse — the storefront beneath, not a third route.
+await shot('18-crosslink-reuse-390');
 await visibleLabel('Back').click();
 await idle(900);
 check('back returns to the originating program', page.url().includes('/program/beginner-calisthenics'));
@@ -322,15 +349,21 @@ check('search provider suggestion opens storefront directly', page.url().include
 check('child-eligible grouping announced', await visibleText('Showing programs suitable for Adam (age 8)'));
 check('eligible program listed first', await visible(page.getByLabel(/^Junior Swim Squad by/).locator('visible=true').first()));
 check('ineligible group collapsed, never hidden', await visibleText(/Not for Adam’s age \(1\)/));
+await page.getByText('Showing programs suitable for Adam (age 8)').locator('visible=true').first().scrollIntoViewIfNeeded();
+await idle(400);
 await shot('10-storefront-child-eligible-390');
 await page.getByLabel(/^Not for Adam’s age/).locator('visible=true').first().click();
 await idle(500);
-check('expanded group explains the age reason', await visibleText(/Ages 16 and up — Adam is 8/));
+check('expanded group explains the age reason', await visibleText(/Ages 16\+ — Adam is 8/));
 await shot('10-storefront-child-ineligible-open-390');
 
 // Child with no eligible programs — recovery keeps the provider visible.
 await visibleLabel('Back').click();
 await idle(900);
+// Flow proof: Search provider suggestion → Storefront → back lands on the
+// originating browsing surface with the child context intact.
+check('storefront back lands on Discover (search flow)', page.url().includes('/discover'));
+await shot('17-discover-after-storefront-back-390');
 await visibleLabel('Search activities, providers or classes').click();
 await idle(800);
 await page.getByLabel('Search activities or providers').fill('restore');
@@ -352,8 +385,10 @@ await page.goto(`${BASE}/provider/coastal-tennis`, { waitUntil: 'networkidle' })
 await idle(1200);
 check('weak supply is an honest short list', await visibleText('1 program'));
 check('monogram banner replaces missing cover', await visible(visibleLabel('Coastal Tennis Academy logo placeholder')));
-await shot('11-storefront-weak-supply-390');
 await shot('12-storefront-monogram-390');
+// Weak supply proof scrolls to the honest one-program list.
+await scrollToY(500);
+await shot('11-storefront-weak-supply-390');
 
 // ——— Error + retry ———
 await page.goto(`${BASE}/provider/falcon?qa-fail=1`, { waitUntil: 'networkidle' });
@@ -403,9 +438,19 @@ await idle(1200);
 check('adult page fits at 360', await noOverflow(360));
 check('sticky CTA present at 360', await visible(page.getByLabel(/^Book: Beginner Calisthenics/)));
 await shot('01-program-adult-top-360');
-await page.mouse.wheel(0, 1400);
-await idle(300);
+await scrollToY(1400);
 await shot('01-program-adult-mid-360');
+await scrollToY(99999);
+await shot('01-program-adult-bottom-360');
+await scrollToY(700);
+await shot('07-program-sticky-cta-360');
+await scrollToY(0);
+await visibleLabel('Save Beginner Calisthenics to favourites').click();
+await idle(300);
+check('save toggles at 360', await visible(visibleLabel('Remove Beginner Calisthenics from favourites')));
+await shot('01-program-adult-saved-360');
+await visibleLabel('Remove Beginner Calisthenics from favourites').click();
+await idle(200);
 await page.goto(`${BASE}/program/ladies-strength`, { waitUntil: 'networkidle' });
 await idle(1200);
 check('ladies-only fits at 360', await noOverflow(360));
@@ -423,6 +468,10 @@ await page.goto(`${BASE}/program/does-not-exist`, { waitUntil: 'networkidle' });
 await idle(1200);
 await shot('13-program-unknown-360');
 check('recovery fits at 360', await noOverflow(360));
+await page.goto(`${BASE}/program/beginner-calisthenics?qa-fail=1`, { waitUntil: 'networkidle' });
+await idle(1200);
+check('program error state at 360', await visibleText('Can’t load activities right now'));
+await shot('13-program-error-360');
 
 // Child flow at 360 (context via Discover, as at 390).
 await page.goto(`${BASE}/discover`, { waitUntil: 'networkidle' });
@@ -432,8 +481,7 @@ await idle(1000);
 await page.getByLabel(/^Junior Swim Squad by/).locator('visible=true').first().click();
 await idle(1000);
 await shot('02-program-child-eligible-360');
-await page.mouse.wheel(0, 3600);
-await idle(300);
+await scrollToY(3600);
 await page.getByLabel(/^Ladies Aqua Fitness by/).locator('visible=true').first().click();
 await idle(1000);
 check('child-ineligible banner at 360', await visibleText(/Not suitable for Adam/));
@@ -445,9 +493,21 @@ await page.goto(`${BASE}/provider/falcon`, { waitUntil: 'networkidle' });
 await idle(1200);
 check('storefront fits at 360', await noOverflow(360));
 await shot('08-storefront-default-top-360');
-await page.mouse.wheel(0, 1600);
-await idle(300);
+await scrollToY(800);
 await shot('08-storefront-default-mid-360');
+await scrollToY(99999);
+await shot('08-storefront-default-bottom-360');
+await scrollToY(0);
+await visibleLabel('Save Falcon Combat Academy to favourites').click();
+await idle(300);
+check('provider save toggles at 360', await visible(visibleLabel('Remove Falcon Combat Academy from favourites')));
+await shot('08-storefront-saved-360');
+await visibleLabel('Remove Falcon Combat Academy from favourites').click();
+await idle(200);
+await page.goto(`${BASE}/provider/falcon?qa-fail=1`, { waitUntil: 'networkidle' });
+await idle(1200);
+check('storefront error state at 360', await visibleText('Can’t load activities right now'));
+await shot('13-storefront-error-360');
 await page.goto(`${BASE}/provider/blue-wave`, { waitUntil: 'networkidle' });
 await idle(1200);
 check('multi-branch fits at 360', await noOverflow(360));
@@ -459,8 +519,9 @@ await shot('09-storefront-branch-switched-360');
 await page.goto(`${BASE}/provider/coastal-tennis`, { waitUntil: 'networkidle' });
 await idle(1200);
 check('monogram fallback fits at 360', await noOverflow(360));
-await shot('11-storefront-weak-supply-360');
 await shot('12-storefront-monogram-360');
+await scrollToY(500);
+await shot('11-storefront-weak-supply-360');
 await page.goto(`${BASE}/provider/does-not-exist`, { waitUntil: 'networkidle' });
 await idle(1200);
 await shot('13-storefront-unknown-360');
@@ -478,8 +539,63 @@ await idle(600);
 await page.getByLabel('Blue Wave Swimming, provider').locator('visible=true').first().click();
 await idle(1200);
 check('child grouping renders at 360', await visibleText(/Not for Adam’s age \(1\)/));
+await page.getByText('Showing programs suitable for Adam (age 8)').locator('visible=true').first().scrollIntoViewIfNeeded();
+await idle(400);
 await shot('10-storefront-child-eligible-360');
 check('child storefront fits at 360', await noOverflow(360));
+await page.getByLabel(/^Not for Adam’s age/).locator('visible=true').first().click();
+await idle(500);
+await shot('10-storefront-child-ineligible-open-360');
+
+// Search provider → Storefront → back flow proof at 360.
+await visibleLabel('Back').click();
+await idle(900);
+check('storefront back lands on Discover at 360', page.url().includes('/discover'));
+await shot('17-discover-after-storefront-back-360');
+
+// Child with no eligible programs at 360.
+await visibleLabel('Search activities, providers or classes').click();
+await idle(800);
+await page.getByLabel('Search activities or providers').fill('restore');
+await idle(600);
+await page.getByLabel('Restore Wellness Studio, provider').locator('visible=true').first().click();
+await idle(1200);
+check('child no-eligible recovery at 360', await visibleText(/No programs for Adam’s age at this provider yet/));
+await shot('10-storefront-child-none-360');
+
+// Results → Program → back flow proof at 360.
+await page.goto(`${BASE}/discover/results?q=swimming`, { waitUntil: 'networkidle' });
+await idle(1400);
+await page.getByRole('tab', { name: 'Programs' }).click();
+await idle(800);
+await page.getByLabel(/^Junior Swim Squad by/).locator('visible=true').first().click();
+await idle(1000);
+await visibleLabel('Back').click();
+await idle(900);
+check(
+  'results session preserved at 360 (Programs tab still selected)',
+  (await page.getByRole('tab', { name: 'Programs' }).getAttribute('aria-selected')) === 'true',
+);
+await shot('16-results-after-program-back-360');
+
+// Program ↔ Provider cross-link flow proofs at 360.
+await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+await idle(1200);
+await page.getByLabel(/^Beginner Calisthenics by/).locator('visible=true').first().click();
+await idle(1000);
+await page.getByLabel('Gravity Movement Studio, verified provider').locator('visible=true').first().click();
+await idle(1000);
+check('program provider row opens storefront at 360', page.url().includes('/provider/gravity'));
+await shot('14-storefront-from-program-360');
+await page.getByLabel(/^Ladies Strength Circuit by/).locator('visible=true').first().click();
+await idle(1000);
+check('storefront program card opens details at 360', page.url().includes('/program/ladies-strength'));
+await scrollToY(400);
+await shot('14-program-from-storefront-360');
+await page.getByLabel('Gravity Movement Studio, verified provider').locator('visible=true').first().click();
+await idle(1000);
+check('cross-link resolves as back at 360 (no third route)', page.url().includes('/provider/gravity'));
+await shot('18-crosslink-reuse-360');
 
 check('zero console errors', consoleErrors.length === 0);
 if (consoleErrors.length > 0) console.log(consoleErrors.slice(0, 5));

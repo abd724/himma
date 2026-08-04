@@ -9,16 +9,26 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   /** Passed to expo-image; defaults to cover. */
   contentFit?: 'cover' | 'contain';
+  /**
+   * Meaningful spoken label for standalone imagery (detail heroes, covers).
+   * Omit for decorative images inside already-labelled cards — they stay
+   * hidden from screen readers.
+   */
+  accessibilityLabel?: string;
 }
 
 /** Image with a branded placeholder when the source is missing or fails. */
-export function AppImage({ source, style, contentFit = 'cover' }: Props) {
+export function AppImage({ source, style, contentFit = 'cover', accessibilityLabel }: Props) {
   const [failed, setFailed] = useState(false);
   const showFallback = failed || source === undefined;
 
   if (showFallback) {
     return (
-      <View style={[styles.fallback, style]} accessibilityElementsHidden>
+      <View
+        style={[styles.fallback, style]}
+        accessibilityElementsHidden={accessibilityLabel === undefined}
+        accessibilityLabel={accessibilityLabel}
+      >
         <Ionicons name="image-outline" size={28} color={colors.brand.primary} />
       </View>
     );
@@ -31,6 +41,8 @@ export function AppImage({ source, style, contentFit = 'cover' }: Props) {
       contentFit={contentFit}
       transition={0}
       onError={() => setFailed(true)}
+      accessibilityLabel={accessibilityLabel}
+      accessible={accessibilityLabel !== undefined}
       accessibilityIgnoresInvertColors
     />
   );

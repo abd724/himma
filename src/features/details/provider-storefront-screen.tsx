@@ -172,7 +172,11 @@ export function ProviderStorefrontScreen() {
         ) : (
           <>
             {page.extras.coverImageKey !== undefined ? (
-              <AppImage source={demoImage(page.extras.coverImageKey)} style={styles.cover} />
+              <AppImage
+                source={demoImage(page.extras.coverImageKey)}
+                style={styles.cover}
+                accessibilityLabel={`${page.provider.name} cover photo`}
+              />
             ) : (
               // The monogram banner is the design for providers without
               // photography — not an error state (docs/20 §9.2).
@@ -397,11 +401,11 @@ export function ProviderStorefrontScreen() {
                               onToggleFavourite={(id) => toggleFavourite('program', id)}
                               onPress={() => openProgram(program.id)}
                             />
-                            <Text style={styles.ineligibleReason}>
-                              {ageRangeLabel(program.eligibility) === undefined
-                                ? `Not in ${childName}’s age range`
-                                : `${spokenAgeLabel(ageRangeLabel(program.eligibility)!)} — ${childName} is ${childAge}`}
-                            </Text>
+                            <IneligibleReason
+                              ageLabel={ageRangeLabel(program.eligibility)}
+                              childName={childName}
+                              childAge={childAge}
+                            />
                           </View>
                         ))}
                       </View>
@@ -545,6 +549,33 @@ export function ProviderStorefrontScreen() {
         </View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * Why a program misses a child's age — visible text uses the canonical
+ * compact label ("Ages 16+ — Adam is 8", docs/05 §7, matching the Program
+ * Details banner); screen readers get the spoken expansion.
+ */
+function IneligibleReason({
+  ageLabel,
+  childName,
+  childAge,
+}: {
+  ageLabel: string | undefined;
+  childName: string;
+  childAge: number | undefined;
+}) {
+  if (ageLabel === undefined) {
+    return <Text style={styles.ineligibleReason}>Not in {childName}’s age range</Text>;
+  }
+  return (
+    <Text
+      style={styles.ineligibleReason}
+      accessibilityLabel={`${spokenAgeLabel(ageLabel)} — ${childName} is ${childAge}`}
+    >
+      {ageLabel} — {childName} is {childAge}
+    </Text>
   );
 }
 

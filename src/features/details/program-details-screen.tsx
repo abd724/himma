@@ -11,7 +11,7 @@ import { demoImage } from '@/data/mock/images';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { shareEntity } from '@/features/details/share-entity';
 import type { ProgramDetailPage } from '@/services/contracts/details';
-import { detailsService } from '@/services/mock/mock-details-service';
+import { detailsService, providerMonogram } from '@/services/mock/mock-details-service';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
@@ -31,16 +31,6 @@ const SKILL_LABELS: Record<SkillLevel, string> = {
   advanced: 'Advanced',
   'all-levels': 'All levels',
 };
-
-/** Fictional provider monogram — never a real logo (docs/08 §11). */
-function monogram(name: string): string {
-  return name
-    .split(' ')
-    .filter((word) => word.length > 0)
-    .slice(0, 2)
-    .map((word) => word[0].toUpperCase())
-    .join('');
-}
 
 /**
  * HMA-015 — Program Details (docs/20 §3). Root-level route: the dock is
@@ -169,6 +159,7 @@ export function ProgramDetailsScreen() {
               <AppImage
                 source={demoImage(page.program.imageKey)}
                 style={styles.heroImage}
+                accessibilityLabel={`${page.program.title} photo`}
               />
               {page.program.offer !== undefined || isLadiesOnly(page.program.eligibility) ? (
                 <View style={styles.imageBadge}>
@@ -197,7 +188,7 @@ export function ProgramDetailsScreen() {
                 style={styles.providerRow}
               >
                 <View style={styles.monogram}>
-                  <Text style={styles.monogramText}>{monogram(page.provider.name)}</Text>
+                  <Text style={styles.monogramText}>{providerMonogram(page.provider.name)}</Text>
                 </View>
                 <View style={styles.providerText}>
                   <Text style={styles.providerName} numberOfLines={1}>
@@ -384,7 +375,7 @@ export function ProgramDetailsScreen() {
                   <View style={styles.instructorRow}>
                     <View style={styles.monogram}>
                       <Text style={styles.monogramText}>
-                        {monogram(page.extras.instructorName)}
+                        {providerMonogram(page.extras.instructorName)}
                       </Text>
                     </View>
                     <View style={styles.providerText}>

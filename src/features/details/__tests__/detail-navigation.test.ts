@@ -59,6 +59,41 @@ describe('Detail navigation policy (docs/20 §2.3)', () => {
     expect(rootStackRoutes({ routes: [{ name: '__root' }] })).toBeUndefined();
   });
 
+  test('rootStackRoutes handles nested wrappers and single-route stacks', () => {
+    const stack = [{ name: '(tabs)' }];
+    // A future extra wrapper level still resolves to the real stack.
+    expect(
+      rootStackRoutes({
+        routes: [
+          { name: '__root', state: { routes: [{ name: '__root', state: { routes: stack } }] } },
+        ],
+      }),
+    ).toBe(stack);
+    // A single non-synthetic route is the real stack, not a wrapper — a cold
+    // deep link's one-route stack must not be unwrapped away.
+    const coldStack = [
+      { name: 'program/[programId]', params: { programId: 'junior-swim-squad' } },
+    ];
+    expect(rootStackRoutes({ routes: coldStack })).toBe(coldStack);
+  });
+
+  test('cold deep link stacks resolve to push (no route beneath)', () => {
+    const routes = rootStackRoutes({
+      routes: [
+        {
+          name: '__root',
+          state: {
+            routes: [{ name: 'program/[programId]', params: { programId: 'junior-swim-squad' } }],
+          },
+        },
+      ],
+    });
+    expect(routes).toHaveLength(1);
+    // With no route beneath, the policy input is undefined — always push.
+    const beneath = routes !== undefined && routes.length >= 2 ? routes[routes.length - 2] : undefined;
+    expect(crossLinkAction(detailHrefForRoute(beneath?.name, beneath?.params), providerHref('blue-wave'))).toBe('push');
+  });
+
   test('the round-trip policy resolves via navigation-state entries', () => {
     // provider A → program X → provider A tap resolves as back.
     const beneath = detailHrefForRoute('provider/[providerId]', { providerId: 'falcon' });

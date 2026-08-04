@@ -1,6 +1,6 @@
 # 20 — Program Details + Provider Storefront Plan (Milestone 3)
 
-Status: for product-owner approval. No implementation has started. Governing docs: 04 (HMA-014/015 inventories), 05 (catalogue and eligibility), 06 (UX), 08 (engineering), 09 (open decisions), 12 (native), 14–16 (Discover specs), 15 §4.1 (route contracts), 18 (Home/Discover roles), 19 (established service/builder patterns), HANDOFF.md (frozen catalogue, inert-card inventory).
+Status: **milestone completed and closed** — Commit 9 (`b985456` Program Details, owner-approved), Commit 10 (`5a7b176` Provider Storefront, owner-approved), Commit 11 (`chore(details-review)` closing pass). Design and frontend implementation are approved for both surfaces; native validation is pending (no Xcode on the build machine). Deviations from this plan and current live state are recorded in HANDOFF.md, which supersedes this document for project status. Governing docs: 04 (HMA-014/015 inventories), 05 (catalogue and eligibility), 06 (UX), 08 (engineering), 09 (open decisions), 12 (native), 14–16 (Discover specs), 15 §4.1 (route contracts), 18 (Home/Discover roles), 19 (established service/builder patterns), HANDOFF.md (frozen catalogue, inert-card inventory).
 
 ## 1. Milestone objective and product purpose
 
