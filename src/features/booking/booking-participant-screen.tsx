@@ -5,6 +5,7 @@ import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
 import {
   bookingHref,
+  bookingStepHref,
   participantSelectionValid,
   participantStepAccess,
 } from '@/features/booking/booking-navigation';
@@ -28,8 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * Booking step — participant selection with inline eligibility (docs/21 §6,
  * docs/09 §21.2/§21.15). One participant per booking; the choice lives only
  * in the booking draft — the shared browsing context is never written here.
- * Continue stays inert with press feedback until the summary ships in
- * Commit 14 (docs/09 §17.2) — no scaffold, no temporary screen.
+ * A valid selection's Continue pushes the summary step (docs/21 §3.2).
  */
 export function BookingParticipantScreen() {
   const router = useRouter();
@@ -51,6 +51,7 @@ export function BookingParticipantScreen() {
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retried, setRetried] = useState(false);
+  const lastContinueAt = useRef(0);
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
@@ -248,11 +249,17 @@ export function BookingParticipantScreen() {
               {statusLine}
             </Text>
           </View>
-          {/* Continue is inert with press feedback until the summary ships in
-              Commit 14 (docs/09 §17.2) — the customer-invisible boundary. */}
           <PressableFeedback
             accessibilityLabel={selectionValid ? `Continue: ${statusLine}` : statusLine}
             accessibilityState={{ disabled: !selectionValid }}
+            onPress={() => {
+              if (!selectionValid) return;
+              // One press, one summary route (double-tap guard).
+              const now = Date.now();
+              if (now - lastContinueAt.current < 700) return;
+              lastContinueAt.current = now;
+              router.push(bookingStepHref(programId, 'summary'));
+            }}
             style={[styles.ctaButton, !selectionValid && styles.ctaButtonDisabled]}
           >
             <Text

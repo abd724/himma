@@ -1,5 +1,6 @@
 import { bookingExtras } from '@/data/mock/booking-extras';
 import { programs, providers } from '@/data/mock/catalogue';
+import { cancellationPolicies } from '@/data/mock/policies';
 import { programDetailExtras } from '@/data/mock/program-details';
 import { providerBranches } from '@/data/mock/provider-details';
 import type {
@@ -95,6 +96,80 @@ function campWeekOptions(program: Program): SessionOption[] {
       availability: 'available',
     },
   ];
+}
+
+/**
+ * Selection-block wording per program type — docs/21 §5, §8.4. Dated options
+ * summarize the chosen session/week; dateless options carry their plan
+ * orientation lines (schedule, start) unchanged from the option builder.
+ */
+function summarySelectionLines(
+  option: BookingOption,
+  session: SessionOption | undefined,
+): string[] {
+  if (session !== undefined) {
+    const dated = `${session.dayLabel} · ${session.timeLabel}`;
+    return session.branchLabel === undefined ? [dated] : [dated, session.branchLabel];
+  }
+  return option.detailLines;
+}
+
+/**
+ * Price-block line per type — docs/21 §9. One line, catalogue price only:
+ * no VAT, no fees, no discount arithmetic (docs/09 §21.10).
+ */
+function summaryPriceLine(
+  program: Program,
+  option: BookingOption,
+  session: SessionOption | undefined,
+): { label: string; value: string } {
+  const amount = formatPrice(program.price).amount;
+  switch (option.kind) {
+    case 'single-session':
+      return { label: '1 session', value: amount };
+    case 'free-session':
+      return { label: 'Free activity', value: 'Free' };
+    case 'trial':
+      // 'Free' or the structured trial amount ('AED 35') — never parsed
+      // from the offer label (docs/21 §9).
+      return option.priceLabel === 'Free'
+        ? { label: 'Free trial session', value: 'Free' }
+        : { label: 'Trial session', value: option.priceLabel };
+    case 'recurring':
+      return { label: 'Monthly enrolment', value: `${amount} per month` };
+    case 'term':
+      return { label: 'Term enrolment', value: `${amount} per term` };
+    case 'camp-week':
+      return { label: `1 week · ${session?.dayLabel ?? ''}`, value: `${amount} per week` };
+    case 'package':
+      // 'Package of N sessions' — size and price only (docs/09 §21.7).
+      return { label: option.title, value: amount };
+  }
+}
+
+/**
+ * The summary amount label — docs/09 §21.11: always `Booking price`, never
+ * `Total`, so no legally final checkout total is implied before VAT and fee
+ * decisions exist. Cadences stay cadence-labelled (docs/09 §21.10).
+ */
+function summaryBookingPriceLabel(program: Program, option: BookingOption): string {
+  const amount = formatPrice(program.price).amount;
+  switch (option.kind) {
+    case 'single-session':
+      return `Booking price · ${amount} per session`;
+    case 'free-session':
+      return 'Booking price · Free';
+    case 'trial':
+      return `Booking price · ${option.priceLabel}`;
+    case 'recurring':
+      return `Booking price · ${amount} per month`;
+    case 'term':
+      return `Booking price · ${amount} per term`;
+    case 'camp-week':
+      return `Booking price · ${amount} per week`;
+    case 'package':
+      return `Booking price · ${amount}`;
+  }
 }
 
 export class MockBookingService implements BookingService {
@@ -283,13 +358,73 @@ export class MockBookingService implements BookingService {
     return options;
   }
 
-  // Implemented in Commit 14 (docs/21 §18) — the contract is declared in
-  // full now so no churn lands later. Until then every draft resolves as
-  // invalid and screens redirect to the flow start.
   async getBookingSummary(input: BookingSummaryInput): Promise<BookingSummary | undefined> {
     await this.delay();
     if (input.simulateFailure) throw new Error('Simulated network failure (QA only)');
-    return undefined;
+    return this.buildBookingSummary(input);
+  }
+
+  /**
+   * Pure and synchronous so behavior is directly testable. Re-validates the
+   * whole draft against the same options derivation the flow rendered from
+   * (docs/21 §11): unknown program, missing/unknown option, missing or full
+   * session, and missing/ineligible participants all resolve undefined —
+   * screens redirect, a broken summary can never compose.
+   */
+  buildBookingSummary(input: BookingSummaryInput): BookingSummary | undefined {
+    const { draft } = input;
+    if (draft.optionId === undefined || draft.participantId === undefined) return undefined;
+
+    const page = this.buildBookingOptions({
+      programId: draft.programId,
+      participantId: draft.participantId,
+      participants: input.participants,
+      areaId: input.areaId,
+    });
+    if (page === undefined || page.availability.status !== 'bookable') return undefined;
+
+    // The option must belong to this program's current derivation — a draft
+    // carried over from any other program can never resolve.
+    const option = page.options.find((entry) => entry.id === draft.optionId);
+    if (option === undefined) return undefined;
+
+    let session: SessionOption | undefined;
+    if (option.requiresSession) {
+      session = option.sessions.find((entry) => entry.id === draft.sessionId);
+      if (session === undefined || session.availability === 'full') return undefined;
+    }
+
+    // Eligibility re-asserted at build time (docs/21 §8.3) — the §6 check is
+    // authoritative here too, not just on the participant step.
+    const participant = page.householdEligibility.find(
+      (entry) => entry.participantId === draft.participantId,
+    );
+    if (participant === undefined || !participant.suitable) return undefined;
+
+    const policy = cancellationPolicies[programDetailExtras[draft.programId].policyId];
+    if (policy === undefined) return undefined;
+
+    // Discount/promo offers stay informational lines with no arithmetic
+    // (docs/09 §21.10); trial offers are booking options, not offer lines.
+    const offer = page.program.offer;
+    const offerLine =
+      offer !== undefined && (offer.kind === 'discount' || offer.kind === 'promo')
+        ? offer.label
+        : undefined;
+
+    return {
+      program: page.program,
+      provider: page.provider,
+      branch: page.branch,
+      participant,
+      option,
+      session,
+      selectionLines: summarySelectionLines(option, session),
+      priceLines: [summaryPriceLine(page.program, option, session)],
+      bookingPriceLabel: summaryBookingPriceLabel(page.program, option),
+      offerLine,
+      policy,
+    };
   }
 
   private async delay(): Promise<void> {

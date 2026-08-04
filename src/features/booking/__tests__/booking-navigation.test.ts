@@ -4,6 +4,7 @@ import {
   bookingStepHref,
   participantSelectionValid,
   participantStepAccess,
+  summaryStepAccess,
 } from '@/features/booking/booking-navigation';
 import { MockBookingService } from '@/services/mock/mock-booking-service';
 import type { Participant } from '@/types/domain';
@@ -91,6 +92,89 @@ describe('participantStepAccess (docs/21 §3.2)', () => {
     ).toBe('redirect-selection');
     expect(
       participantStepAccess(pageFor('sunrise-breathwork'), { programId: 'sunrise-breathwork' }),
+    ).toBe('redirect-selection');
+  });
+});
+
+describe('summaryStepAccess (docs/21 §3.2, §11)', () => {
+  const datedDraft = () => {
+    const page = pageFor('beginner-calisthenics');
+    return {
+      page,
+      draft: {
+        programId: 'beginner-calisthenics',
+        optionId: page.options[0].id,
+        sessionId: page.options[0].sessions[0].id,
+        participantId: 'me',
+      },
+    };
+  };
+
+  test('a complete, eligible dated draft renders', () => {
+    const { page, draft } = datedDraft();
+    expect(summaryStepAccess(page, draft)).toBe('render');
+  });
+
+  test('a cold link’s empty draft returns to the flow start', () => {
+    expect(
+      summaryStepAccess(pageFor('beginner-calisthenics'), { programId: 'beginner-calisthenics' }),
+    ).toBe('redirect-selection');
+    // Skip-rule flows included: their auto-selected option only exists once
+    // the flow has actually been entered.
+    expect(
+      summaryStepAccess(pageFor('junior-swim-squad'), { programId: 'junior-swim-squad' }),
+    ).toBe('redirect-selection');
+  });
+
+  test('a missing or full session returns to the flow start', () => {
+    const { page, draft } = datedDraft();
+    expect(summaryStepAccess(page, { ...draft, sessionId: undefined })).toBe('redirect-selection');
+    const yoga = pageFor('morning-yoga');
+    const full = yoga.options[0].sessions.find((session) => session.availability === 'full')!;
+    expect(
+      summaryStepAccess(yoga, {
+        programId: 'morning-yoga',
+        optionId: yoga.options[0].id,
+        sessionId: full.id,
+        participantId: 'me',
+      }),
+    ).toBe('redirect-selection');
+  });
+
+  test('a missing or ineligible participant returns to the participant step', () => {
+    const { page, draft } = datedDraft();
+    expect(summaryStepAccess(page, { ...draft, participantId: undefined })).toBe(
+      'redirect-participant',
+    );
+    expect(summaryStepAccess(page, { ...draft, participantId: 'adam' })).toBe(
+      'redirect-participant',
+    );
+  });
+
+  test('a guest household never reaches the summary', () => {
+    const guestPage = service.buildBookingOptions({
+      programId: 'beginner-calisthenics',
+      participantId: 'everyone',
+      participants: [],
+      areaId: 'khalifa-city',
+    })!;
+    expect(
+      summaryStepAccess(guestPage, {
+        programId: 'beginner-calisthenics',
+        optionId: guestPage.options[0].id,
+        sessionId: guestPage.options[0].sessions[0].id,
+        participantId: 'me',
+      }),
+    ).toBe('redirect-participant');
+  });
+
+  test('non-bookable entry states are owned by the selection route', () => {
+    expect(
+      summaryStepAccess(pageFor('teen-arabic-summer'), {
+        programId: 'teen-arabic-summer',
+        optionId: 'x',
+        participantId: 'me',
+      }),
     ).toBe('redirect-selection');
   });
 });

@@ -43,6 +43,31 @@ export function participantStepAccess(
   return 'render';
 }
 
+/**
+ * Whether the summary may render for a draft — docs/21 §11: every slice is
+ * re-validated, and each failure redirects to the step that owns the fix
+ * (docs/21 §3.2). A cold deep link's empty draft has no option, so it lands
+ * on the flow start, which re-runs the skip rule.
+ */
+export function summaryStepAccess(
+  page: BookingOptionsPage,
+  draft: BookingDraft,
+): 'render' | 'redirect-selection' | 'redirect-participant' {
+  if (page.availability.status !== 'bookable') return 'redirect-selection';
+  const option = page.options.find((entry) => entry.id === draft.optionId);
+  if (option === undefined) return 'redirect-selection';
+  if (option.requiresSession) {
+    const session = option.sessions.find((entry) => entry.id === draft.sessionId);
+    if (session === undefined || session.availability === 'full') return 'redirect-selection';
+  }
+  // Guests (empty household) and ineligible or missing participants belong
+  // on the participant step, which owns those states.
+  if (!participantSelectionValid(page.householdEligibility, draft.participantId)) {
+    return 'redirect-participant';
+  }
+  return 'render';
+}
+
 /** A booking may continue only with an explicitly chosen eligible participant. */
 export function participantSelectionValid(
   eligibility: ParticipantEligibility[],

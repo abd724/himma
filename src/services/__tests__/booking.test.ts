@@ -2,7 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import { bookingExtras } from '@/data/mock/booking-extras';
 import { programs } from '@/data/mock/catalogue';
 import { programDetailExtras } from '@/data/mock/program-details';
-import type { BookingOptionsInput } from '@/services/contracts/booking';
+import type { BookingDraft, BookingOptionsInput } from '@/services/contracts/booking';
 import { MockBookingService } from '@/services/mock/mock-booking-service';
 import { buildUpcomingSessions, MockDetailsService } from '@/services/mock/mock-details-service';
 import type { Participant } from '@/types/domain';
@@ -395,13 +395,259 @@ describe('Lookup, failure, and data invariants (docs/21 §12, §16)', () => {
     }
   });
 
-  test('getBookingSummary is a Commit 14 contract: every draft resolves invalid for now', async () => {
-    await expect(
-      service.getBookingSummary({
-        draft: { programId: 'beginner-calisthenics' },
+});
+
+/**
+ * A valid draft for a program's option at `optionIndex`: first open session
+ * where one is required, plus the given participant. Overrides then break
+ * specific slices for the rejection matrix.
+ */
+function draftFor(
+  programId: string,
+  participantId: string,
+  optionIndex = 0,
+  overrides?: Partial<BookingDraft>,
+): BookingDraft {
+  const option = pageFor(programId).options[optionIndex];
+  return {
+    programId,
+    optionId: option.id,
+    sessionId: option.requiresSession
+      ? option.sessions.find((session) => session.availability !== 'full')?.id
+      : undefined,
+    participantId,
+    ...overrides,
+  };
+}
+
+function summaryFor(
+  programId: string,
+  participantId: string,
+  optionIndex = 0,
+  overrides?: Partial<BookingDraft>,
+) {
+  return service.buildBookingSummary({
+    draft: draftFor(programId, participantId, optionIndex, overrides),
+    participants: household,
+    areaId: 'khalifa-city',
+  });
+}
+
+describe('Booking summary per program type (docs/21 §5, §8, §9; docs/09 §21.11)', () => {
+  test('single session: dated selection line, per-session price, Booking price label', () => {
+    const summary = summaryFor('beginner-calisthenics', 'me')!;
+    expect(summary).toBeDefined();
+    expect(summary.option.kind).toBe('single-session');
+    expect(summary.session).toBeDefined();
+    expect(summary.selectionLines).toEqual([
+      `${summary.session!.dayLabel} · ${summary.session!.timeLabel}`,
+    ]);
+    expect(summary.priceLines).toEqual([{ label: '1 session', value: 'AED 85' }]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 85 per session');
+  });
+
+  test('recurring: cadence-labelled enrolment with schedule and start lines', () => {
+    const summary = summaryFor('junior-swim-squad', 'adam')!;
+    expect(summary.option.kind).toBe('recurring');
+    expect(summary.session).toBeUndefined();
+    expect(summary.selectionLines[0]).toBe('Sat & Sun · 10:00 AM');
+    expect(summary.selectionLines[1]).toMatch(/^Starts with the next session — /);
+    expect(summary.priceLines).toEqual([
+      { label: 'Monthly enrolment', value: 'AED 380 per month' },
+    ]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 380 per month');
+  });
+
+  test('term: term-cadence enrolment', () => {
+    const summary = summaryFor('junior-karate', 'adam')!;
+    expect(summary.option.kind).toBe('term');
+    expect(summary.priceLines).toEqual([{ label: 'Term enrolment', value: 'AED 1,800 per term' }]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 1,800 per term');
+  });
+
+  test('camp: selected week range with daily time and per-week price', () => {
+    const summary = summaryFor('holiday-swim-camp', 'adam')!;
+    expect(summary.option.kind).toBe('camp-week');
+    expect(summary.selectionLines).toEqual(['Week of 17–21 Aug · 9 AM–12 PM']);
+    expect(summary.priceLines).toEqual([
+      { label: '1 week · Week of 17–21 Aug', value: 'AED 850 per week' },
+    ]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 850 per week');
+  });
+
+  test('package: size and price only — no expiry, redemption, or scheduling claims', () => {
+    const summary = summaryFor('adult-swim-technique', 'me')!;
+    expect(summary.option.kind).toBe('package');
+    expect(summary.selectionLines).toEqual(['Tue & Thu · 8:00 PM']);
+    expect(summary.priceLines).toEqual([{ label: 'Package of 6 sessions', value: 'AED 480' }]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 480');
+    for (const text of [...summary.selectionLines, ...summary.priceLines.map((l) => l.label)]) {
+      expect(text).not.toMatch(/expir|redeem|valid for/i);
+    }
+  });
+
+  test('free activity: Free everywhere, never AED 0', () => {
+    const summary = summaryFor('community-park-football', 'me')!;
+    expect(summary.option.kind).toBe('free-session');
+    expect(summary.priceLines).toEqual([{ label: 'Free activity', value: 'Free' }]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · Free');
+    expect(JSON.stringify(summary.priceLines)).not.toContain('AED 0');
+  });
+
+  test('free trial: dated trial session priced Free', () => {
+    const summary = summaryFor('ladies-strength', 'me')!;
+    expect(summary.option.kind).toBe('trial');
+    expect(summary.session).toBeDefined();
+    expect(summary.priceLines).toEqual([{ label: 'Free trial session', value: 'Free' }]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · Free');
+  });
+
+  test('paid trial: structured trial amount, never the full-plan price', () => {
+    const summary = summaryFor('junior-football-u10', 'adam')!;
+    expect(summary.option.kind).toBe('trial');
+    expect(summary.priceLines).toEqual([{ label: 'Trial session', value: 'AED 35' }]);
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 35');
+  });
+
+  test('trial program, full-plan option: summarized as its own enrolment', () => {
+    const summary = summaryFor('ladies-strength', 'me', 1)!;
+    expect(summary.option.kind).toBe('recurring');
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 450 per month');
+  });
+
+  test('discount offer is an informational line; the catalogue price is unchanged', () => {
+    const summary = summaryFor('reformer-pilates', 'me')!;
+    expect(summary.offerLine).toBe('20% off first month');
+    expect(summary.bookingPriceLabel).toBe('Booking price · AED 650 per month');
+    // No discounted arithmetic anywhere: 20% off 650 must not appear.
+    expect(JSON.stringify(summary.priceLines)).not.toContain('520');
+  });
+
+  test('trial offers are options, not offer lines', () => {
+    expect(summaryFor('ladies-strength', 'me')!.offerLine).toBeUndefined();
+    expect(summaryFor('junior-football-u10', 'adam')!.offerLine).toBeUndefined();
+  });
+
+  test('participant eligibility is re-asserted and carried into the summary', () => {
+    const summary = summaryFor('junior-swim-squad', 'adam')!;
+    expect(summary.participant).toMatchObject({ participantId: 'adam', suitable: true });
+  });
+
+  test('branch and policy joins resolve', () => {
+    const summary = summaryFor('junior-swim-squad', 'adam')!;
+    expect(summary.branch?.label).toBeDefined();
+    expect(summary.policy.summaryLines.length).toBeGreaterThan(0);
+    expect(summaryFor('beginner-calisthenics', 'me')!.policy.id).toBeDefined();
+  });
+
+  test('every bookable program yields an honest summary for an eligible participant', () => {
+    for (const program of programs) {
+      const page = service.buildBookingOptions(input({ programId: program.id }))!;
+      if (page.availability.status !== 'bookable') continue;
+      const eligible = page.householdEligibility.find((entry) => entry.suitable);
+      if (eligible === undefined) continue;
+      page.options.forEach((_, index) => {
+        const summary = summaryFor(program.id, eligible.participantId, index);
+        expect(summary).toBeDefined();
+        // Owner wording rules (docs/09 §21.10–§21.11): always Booking price,
+        // never Total, VAT, fees, holds, or charged-today language.
+        expect(summary!.bookingPriceLabel).toMatch(/^Booking price · /);
+        const text = JSON.stringify([
+          summary!.selectionLines,
+          summary!.priceLines,
+          summary!.bookingPriceLabel,
+          summary!.offerLine ?? '',
+        ]);
+        expect(text).not.toMatch(/total|vat|\bfees?\b|reserv|\bhold\b|charged/i);
+      });
+    }
+  });
+});
+
+describe('Summary invalid-draft rejection (docs/21 §11)', () => {
+  test('missing option', () => {
+    expect(summaryFor('beginner-calisthenics', 'me', 0, { optionId: undefined })).toBeUndefined();
+  });
+
+  test('unknown option', () => {
+    expect(summaryFor('beginner-calisthenics', 'me', 0, { optionId: 'ghost' })).toBeUndefined();
+  });
+
+  test('missing required session', () => {
+    expect(summaryFor('beginner-calisthenics', 'me', 0, { sessionId: undefined })).toBeUndefined();
+    expect(summaryFor('beginner-calisthenics', 'me', 0, { sessionId: 'ghost' })).toBeUndefined();
+  });
+
+  test('full session', () => {
+    const page = pageFor('morning-yoga');
+    const full = page.options[0].sessions.find((session) => session.availability === 'full')!;
+    expect(summaryFor('morning-yoga', 'me', 0, { sessionId: full.id })).toBeUndefined();
+  });
+
+  test('missing participant', () => {
+    expect(summaryFor('beginner-calisthenics', 'me', 0, { participantId: undefined })).toBeUndefined();
+  });
+
+  test('unknown or ineligible participant', () => {
+    expect(summaryFor('beginner-calisthenics', 'ghost')).toBeUndefined();
+    // Adults-only program with a child participant.
+    expect(summaryFor('beginner-calisthenics', 'adam')).toBeUndefined();
+    // Child program with the adult.
+    expect(summaryFor('junior-swim-squad', 'me')).toBeUndefined();
+  });
+
+  test('draft pointing at another program never resolves', () => {
+    const foreign = draftFor('beginner-calisthenics', 'me');
+    expect(
+      service.buildBookingSummary({
+        draft: { ...foreign, programId: 'junior-swim-squad' },
         participants: household,
         areaId: 'khalifa-city',
       }),
+    ).toBeUndefined();
+  });
+
+  test('unknown program id', () => {
+    expect(
+      service.buildBookingSummary({
+        draft: { programId: 'does-not-exist', optionId: 'x', participantId: 'me' },
+        participants: household,
+        areaId: 'khalifa-city',
+      }),
+    ).toBeUndefined();
+  });
+
+  test('non-bookable programs reject every draft', () => {
+    for (const programId of ['teen-arabic-summer', 'sunrise-breathwork']) {
+      expect(
+        service.buildBookingSummary({
+          draft: { programId, optionId: `${programId}-x`, participantId: 'me' },
+          participants: household,
+          areaId: 'khalifa-city',
+        }),
+      ).toBeUndefined();
+    }
+  });
+
+  test('guest household rejects every draft', async () => {
+    const draft = draftFor('beginner-calisthenics', 'me');
+    expect(
+      service.buildBookingSummary({ draft, participants: [], areaId: 'khalifa-city' }),
+    ).toBeUndefined();
+    // The async boundary behaves identically (screens call this one).
+    await expect(
+      service.getBookingSummary({ draft, participants: [], areaId: 'khalifa-city' }),
     ).resolves.toBeUndefined();
+  });
+
+  test('summary simulateFailure rejects with the QA-only error', async () => {
+    await expect(
+      service.getBookingSummary({
+        draft: draftFor('beginner-calisthenics', 'me'),
+        participants: household,
+        areaId: 'khalifa-city',
+        simulateFailure: true,
+      }),
+    ).rejects.toThrow('Simulated network failure (QA only)');
   });
 });
