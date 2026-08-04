@@ -284,3 +284,24 @@ These decisions change Home's content hierarchy but not the approved visual syst
 7. **Map pins.** Map-pin → Provider Storefront activation is deferred. The schematic map remains area-based; no undersized provider-pin actions, no implied accurate geography.
 8. **Gift action.** Deferred to the future Gifts milestone; no active Gift action on Program Details.
 9. **Available sessions.** Sessions display as information only (date, time, branch, availability where supported). No persisted session selection and no implied booking transaction while Book is inert; session selection becomes functional in the Booking milestone.
+
+## 21. Product-owner decisions — 2026-08-04 (Booking flow milestone)
+
+`docs/21_BOOKING_FLOW_PLAN.md` is approved. Every starred default in its §20 is approved as written; where wording below refines docs/21, this section governs:
+
+1. **Booking sequence.** Option A — Session/plan → Participant → Summary — with the exact type-conditional skip rule of docs/21 §2 (skip the selection step only when a program yields exactly one bookable option requiring no date choice).
+2. **Participants.** One participant per booking this milestone. Multi-participant booking is deferred.
+3. **Full sessions.** Visible, disabled, and explained — never hidden.
+4. **Waitlist.** Fully deferred. No waitlist UI or placeholder of any kind.
+5. **Program Details availability.** Approved: a zero-spot occurrence shows `Full` on the Program Details informational session list so details and booking share one availability derivation and can never disagree.
+6. **Branches.** No branch selector in booking. The program's existing branch from extras is displayed. Revisit only when a program genuinely spans multiple branches.
+7. **Program-type semantics.** Recurring enrolment starts from the next derived session with cadence-labelled pricing and no auto-renewal claim (§6 of this document stands). Camps book at week granularity. Packages show only package size, price, and known schedule orientation — no invented expiry or redemption rules.
+8. **Continue to checkout.** The summary CTA stays inert with press feedback. No CheckoutIntent object, checkout UI, payment, confirmation, or success state.
+9. **Guest booking.** The sign-in-required contract state (docs/21 §6.5); the sign-in action stays inert until authentication exists.
+10. **Pricing.** Catalogue price only. Offers remain informational lines. No VAT, no platform/booking/payment fees, no discounted-total arithmetic, and no "charged today" language.
+11. **Summary price wording.** The summary uses the label **`Booking price`** rather than `Total` throughout this milestone (e.g. `Booking price · AED 85`, `Booking price · AED 450 per month`, `Booking price · Free`) so no legally final checkout total is implied before VAT and fee decisions exist. The docs/21 §11 `totalLabel` field is implemented as `bookingPriceLabel` accordingly.
+12. **Terms and cancellation acknowledgment.** No checkbox this milestone; the cancellation summary is display-only. Acceptance belongs to Checkout.
+13. **Draft persistence.** In-memory only. Leaving the flow, reload, restart, or app termination discards the draft.
+14. **Membership.** `monthly` remains the membership representation; no new price kind is added.
+15. **Eligibility review.** Inline on the participant step (HMA-019's purpose honored there); no separate eligibility screen.
+16. **Inputs and participant management.** Promo codes deferred to Checkout; booking notes and special requests deferred; adding a child profile during booking is not offered.
