@@ -318,6 +318,9 @@ function SessionRow({
         accessible
         accessibilityRole="radio"
         accessibilityState={{ checked: false, disabled: true }}
+        // RN-web doesn't emit aria state from accessibilityState (HANDOFF rule).
+        aria-checked={false}
+        aria-disabled
         accessibilityLabel={`${session.dayLabel}, ${session.timeLabel}, full. This session is full.`}
         style={[styles.sessionRow, styles.sessionRowFull]}
       >

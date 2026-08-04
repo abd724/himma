@@ -11,6 +11,8 @@ Every advisory reported by `npm audit` chains back to a single package:
 
 Re-checked 2026-08-03 (milestone close): still 11 moderate, same single root cause, zero advisories in shipped bundle code. The path list above was corrected to name all 11 flagged packages (`@expo/inline-modules` and `@expo/local-build-cache-provider` are additional intermediates). `npm audit fix --force` now advertises a downgrade to `expo@46` — rule 2 below stands. One dependency added since this doc was written: `playwright-core` (devDependency, QA scripts only, justified in docs/08; carries no advisory).
 
+Re-checked 2026-08-04 (booking milestone close). Between Commits 13 and 14 the SDK 57 registry published patch bumps and **reversed its own Commit-11 prescription of `react-native-gesture-handler` 3.1.0 back to ~2.32.0**. Handled as a dedicated owner-approved commit `chore(deps): align packages with Expo SDK 57` (`npx expo install --fix`, no force flags): expo ~57.0.10, expo-router ~57.0.10, @expo/ui ~57.0.9, expo-image ~57.0.2 (whose now-required config plugin was auto-registered in app.json), expo-linking ~57.0.5, gesture-handler ~2.32.0 (no direct imports in `src/`; lockfile re-adds its own 2.x dependencies hammerjs and hoist-non-react-statics). expo-doctor restored to 20/20; `npm audit` unchanged — same 11 moderate advisories, same single `uuid` root, zero in shipped code.
+
 ## Assessment
 
 - These packages are **development- and build-time tooling** (Expo CLI, config plugins, prebuild). None of this code ships inside the customer app bundle.

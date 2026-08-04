@@ -292,6 +292,9 @@ function ParticipantRowControl({
         accessible
         accessibilityRole="radio"
         accessibilityState={{ checked: false, disabled: true }}
+        // RN-web doesn't emit aria state from accessibilityState (HANDOFF rule).
+        aria-checked={false}
+        aria-disabled
         accessibilityLabel={row.accessibilityLabel}
         style={[styles.participantRow, styles.participantRowDisabled]}
       >

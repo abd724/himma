@@ -1,11 +1,13 @@
 /**
- * Commits 12–14 QA — Booking foundation, session/plan selection, participant
- * selection with eligibility, and the booking summary with flow connections
- * (docs/21 §16, §18): entry activation, per-type selection states,
- * availability states, skip rule, participant preselection and recovery,
- * guest contract, draft behavior, per-type summaries, edit round-trips, the
- * inert Continue-to-checkout contract, and provisional screenshot rows
- * 01–20 at 390 × 844 and 360 × 780.
+ * Commits 12–15 QA — the complete booking-flow review (docs/21 §13, §14,
+ * §16–§18): entry activation, per-type selection states, availability
+ * states, skip rule, participant preselection and recovery, guest contract,
+ * draft behavior, per-type summaries, edit round-trips, the inert
+ * Continue-to-checkout contract, structural accessibility assertions
+ * (radiogroup/radio semantics, checked and disabled states, heading roles,
+ * summary reading order), copy audit (no reservation implication, no
+ * Total/VAT/fee wording), and the full screenshot matrix rows 01–20 at
+ * 390 × 844 and 360 × 780.
  * Run: node scripts/qa/booking-review.mjs (Expo web on 8081).
  */
 import { chromium } from 'playwright-core';
@@ -84,6 +86,15 @@ check('entry: continue gated until a session is chosen', await visibleText('Choo
 await visibleLabel('Today, 7:30 PM').click();
 await idle(300);
 check('select: status line reflects the draft', await visibleText('AED 85 per session · Today'));
+
+// Structural accessibility (docs/21 §14): radio semantics with explicit
+// checked state (RN-web needs the explicit aria-checked — HANDOFF rule).
+check('a11y: session list is a radiogroup',
+  (await page.locator('[role="radiogroup"]:visible').count()) > 0);
+check('a11y: exactly one session radio is checked',
+  (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 1);
+check('a11y: step heading exposes a heading role',
+  await visible(page.getByRole('heading', { name: 'Choose a session' }).locator('visible=true').first()));
 await shot('01-booking-single-session-390');
 await visibleLabel(/^Continue: /).click();
 await idle();
@@ -92,6 +103,10 @@ check('participant: three-step progress after a dated selection', await visibleT
 check('participant: everyone context preselects nothing', await visibleText('Choose who is attending'));
 check('participant: ineligible child visible with the age reason', await visibleText('Ages 16+ — Adam is 8'));
 check('participant: not-suitable pill', await visibleText('Not suitable'));
+check('a11y: participant list is a radiogroup',
+  (await page.locator('[role="radiogroup"]:visible').count()) > 0);
+check('a11y: ineligible participant row exposes disabled state',
+  (await page.locator('[role="radio"][aria-disabled="true"]:visible').count()) > 0);
 
 // No reservation implication anywhere in the flow copy.
 check('copy: no reservation/hold/charged-today implication', !/reserv|holding|charged today/i.test(await bodyText()));
@@ -261,6 +276,8 @@ await shot('02-booking-few-left-390');
 await page.goto(`${BASE}/booking/morning-yoga`, { waitUntil: 'networkidle' });
 await idle();
 check('full: Full pill visible', await visibleText('Full'));
+check('a11y: full session exposes disabled state',
+  (await page.locator('[role="radio"][aria-disabled="true"]:visible').count()) > 0);
 await page.getByLabel(/full\. This session is full\.$/).locator('visible=true').first().click({ force: true });
 await idle(300);
 check('full: tapping a full session selects nothing', await visibleText('Choose a session to continue'));
@@ -359,7 +376,17 @@ check('summary: checkout CTA present', await visible(visibleLabel(/^Continue to 
   check('summary: no VAT or fee lines', !/VAT|\bfees?\b/i.test(body));
   check('summary: no reservation or confirmation copy',
     !/reserv|holding|charged today|booking confirmed|you.re booked/i.test(body));
+  // Reading order (docs/21 §14): program → participant → selection → price
+  // → policy — asserted on the rendered text order (lowercased because the
+  // block labels render through textTransform: uppercase).
+  const lower = body.toLowerCase();
+  const order = ['beginner calisthenics', 'participant', 'your selection', 'price', 'cancellation policy']
+    .map((marker) => lower.indexOf(marker));
+  check('a11y: summary reading order matches the visual order',
+    order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])));
 }
+check('a11y: summary heading exposes a heading role',
+  await visible(page.getByRole('heading', { name: 'Review your booking' }).locator('visible=true').first()));
 await shot('12-booking-summary-single-390');
 
 // Sticky CTA over scrolled content (rows 12 bottom + 16).
@@ -602,6 +629,7 @@ const smallShots = [
   ['booking/junior-karate?qa-scenario=me-only', '10-booking-participant-none-360', 'None of your profiles can join this program.'],
   ['booking/junior-swim-squad?qa-scenario=guest', '20-booking-guest-360', 'Sign in to book'],
   ['booking/does-not-exist', '18-booking-unknown-360', 'This program is no longer offered.'],
+  ['booking/beginner-calisthenics?qa-fail=1', '17-booking-error-360', 'Can’t load activities right now'],
 ];
 for (const [path, name, marker] of smallShots) {
   await page.goto(`${BASE}/${path}`, { waitUntil: 'networkidle' });
@@ -663,6 +691,7 @@ check('360 summary single: renders', await visibleText('Booking price · AED 85 
 await shot('12-booking-summary-single-360');
 await scrollToY(4000);
 check('360 summary: CTA sticky over scrolled content', await visibleText('Booking price · AED 85 per session'));
+await shot('12-booking-summary-single-bottom-360');
 await shot('16-booking-summary-sticky-360');
 await scrollToY(0);
 await visibleLabel('Change session').click();
@@ -684,6 +713,15 @@ await visibleLabel(/^Continue: /).click();
 await idle();
 check('360 summary recurring: renders', await visibleText('Booking price · AED 380 per month'));
 await shot('13-booking-summary-recurring-360');
+
+await page.goto(`${BASE}/booking/mens-strength-basics`, { waitUntil: 'networkidle' });
+await idle();
+await visibleLabel(/^You$/).click();
+await idle(300);
+await visibleLabel(/^Continue: /).click();
+await idle();
+check('360 summary membership: renders', await visibleText('Booking price · AED 400 per month'));
+await shot('13-booking-summary-membership-360');
 
 await page.goto(`${BASE}/booking/holiday-swim-camp`, { waitUntil: 'networkidle' });
 await idle();
