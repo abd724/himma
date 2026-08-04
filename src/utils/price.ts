@@ -55,6 +55,16 @@ export function spokenPriceLabel(price: PriceModel): string {
   }
 }
 
+/**
+ * Spoken form of an already-composed price label — the separator dot becomes
+ * a pause and 'AED N' becomes 'N dirhams' ('Booking price · AED 85 per
+ * session' → 'Booking price, 85 dirhams per session'). Single source for
+ * every surface that speaks a composed label (booking summary, checkout).
+ */
+export function spokenLabel(label: string): string {
+  return label.replaceAll(' · ', ', ').replace(/AED ([\d,]+)/g, '$1 dirhams');
+}
+
 /** Commercial-shape label for the details key-facts strip — docs/15 §2. */
 export function programFormatLabel(program: Pick<Program, 'price' | 'isCamp'>): string {
   if (program.isCamp) return 'Camp';

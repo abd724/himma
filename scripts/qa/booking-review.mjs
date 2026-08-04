@@ -2,8 +2,10 @@
  * Commits 12–15 QA — the complete booking-flow review (docs/21 §13, §14,
  * §16–§18): entry activation, per-type selection states, availability
  * states, skip rule, participant preselection and recovery, guest contract,
- * draft behavior, per-type summaries, edit round-trips, the inert
- * Continue-to-checkout contract, structural accessibility assertions
+ * draft behavior, per-type summaries, edit round-trips, the
+ * Continue-to-checkout activation (live since Commit 16 —
+ * checkout-review.mjs owns the checkout surface), structural accessibility
+ * assertions
  * (radiogroup/radio semantics, checked and disabled states, heading roles,
  * summary reading order), copy audit (no reservation implication, no
  * Total/VAT/fee wording), and the full screenshot matrix rows 01–20 at
@@ -396,10 +398,15 @@ check('summary: bottom content clears the sticky CTA', await visibleText('Full d
 await shot('12-booking-summary-single-bottom-390');
 await shot('16-booking-summary-sticky-390');
 
-// Continue to checkout is a contract: inert, no route, no dialog (docs/09 §21.8).
+// Continue to checkout is live since Commit 16 (docs/09 §22.1): it pushes
+// the checkout step and nothing further — checkout-review.mjs owns the
+// checkout surface. Back returns to the summary with the draft intact.
 await visibleLabel(/^Continue to checkout/).click();
-await idle(500);
-check('summary: Continue to checkout produces no route change', page.url().endsWith('/booking/beginner-calisthenics/summary'));
+await idle();
+check('summary: Continue to checkout pushes the checkout step', page.url().endsWith('/booking/beginner-calisthenics/checkout'));
+await visibleLabel('Back').click();
+await idle();
+check('summary: back from checkout restores the summary draft', await visibleText('Booking price · AED 85 per session'));
 
 // Change session round-trip: selection preserved, participant preserved.
 await scrollToY(0);

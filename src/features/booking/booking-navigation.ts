@@ -12,7 +12,7 @@ import { useRef } from 'react';
  * through the Program Details Book CTA; each step is its own route so the
  * route is the step (no separate step state to diverge).
  */
-export type BookingStep = 'participant' | 'summary';
+export type BookingStep = 'participant' | 'summary' | 'checkout';
 
 export function bookingHref(programId: string): `/booking/${string}` {
   return `/booking/${programId}`;
@@ -66,6 +66,20 @@ export function summaryStepAccess(
     return 'redirect-participant';
   }
   return 'render';
+}
+
+/**
+ * Whether checkout may render — docs/22 §3.3: checkout requires exactly the
+ * same fully-valid draft as the summary (the order it re-derives), so the
+ * policy is the summary's, shared deliberately. A cold deep link's empty
+ * draft therefore lands on the flow start; a missing or ineligible
+ * participant lands on the participant step. No silent draft repair.
+ */
+export function checkoutStepAccess(
+  page: BookingOptionsPage,
+  draft: BookingDraft,
+): 'render' | 'redirect-selection' | 'redirect-participant' {
+  return summaryStepAccess(page, draft);
 }
 
 /** A booking may continue only with an explicitly chosen eligible participant. */

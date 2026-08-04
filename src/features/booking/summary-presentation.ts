@@ -1,6 +1,7 @@
 import type { ParticipantEligibility } from '@/services/contracts/booking';
 import type { Participant } from '@/types/domain';
 import { participantAge } from '@/utils/eligibility';
+import { spokenLabel } from '@/utils/price';
 
 /**
  * Presentation of the summary's participant block — docs/21 §8.3. Pure and
@@ -40,8 +41,9 @@ export function summaryParticipantBlock(
 /**
  * Spoken form of the Booking price label — docs/21 §14: currency in words,
  * no 'AED', no separator dot: 'Booking price, 85 dirhams per session',
- * 'Booking price, Free'.
+ * 'Booking price, Free'. Delegates to the shared spokenLabel util so the
+ * summary and checkout can never pronounce the same label differently.
  */
 export function spokenBookingPriceLabel(label: string): string {
-  return label.replace(' · ', ', ').replace(/AED ([\d,]+)/, '$1 dirhams');
+  return spokenLabel(label);
 }

@@ -22,6 +22,7 @@ export default function BookingLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="participant" />
         <Stack.Screen name="summary" />
+        <Stack.Screen name="checkout" />
       </Stack>
     </BookingSessionProvider>
   );

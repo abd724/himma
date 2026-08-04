@@ -7,15 +7,14 @@ import { SkeletonBlock } from '@/components/ui/skeleton-block';
 import {
   bookingHref,
   bookingStepHref,
-  summaryStepAccess,
+  checkoutStepAccess,
 } from '@/features/booking/booking-navigation';
-import {
-  spokenBookingPriceLabel,
-  summaryParticipantBlock,
-} from '@/features/booking/summary-presentation';
+import { summaryParticipantBlock } from '@/features/booking/summary-presentation';
 import { demoImage } from '@/data/mock/images';
-import type { BookingOptionsPage, BookingSummary } from '@/services/contracts/booking';
+import type { BookingOptionsPage } from '@/services/contracts/booking';
+import type { CheckoutPage } from '@/services/contracts/checkout';
 import { bookingService } from '@/services/mock/mock-booking-service';
+import { checkoutService } from '@/services/mock/mock-checkout-service';
 import { useAreaContext } from '@/state/area-context';
 import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';
@@ -27,14 +26,14 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
- * Booking summary — docs/21 §8, owner decisions docs/09 §21. Renders only a
- * fully re-validated draft (invalid drafts redirect, never render broken);
- * shows the catalogue price as `Booking price` with no VAT, fees, or
- * discount arithmetic (docs/09 §21.10–§21.11). Continue to checkout pushes
- * the checkout step (live since docs/09 §22.1); nothing is reserved, paid,
- * or confirmed anywhere in the flow (docs/08 §14).
+ * Checkout — docs/22 §4, owner decisions docs/09 §22. One screen over the
+ * re-derived BookingSummary: order recap, `Booking price` breakdown (no
+ * `Total`, no VAT, no fees, no discount arithmetic), the cancellation-policy
+ * summary displayed with no acceptance claim, and an inert production-styled
+ * CTA (`Continue to payment` / `Confirm booking`). Nothing here reserves,
+ * pays, or confirms anything (docs/08 §14, docs/09 §22.11).
  */
-export function BookingSummaryScreen() {
+export function CheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ programId?: string; 'qa-fail'?: string }>();
@@ -49,12 +48,10 @@ export function BookingSummaryScreen() {
     draftRef.current = draft;
   }, [draft]);
 
-  const [page, setPage] = useState<BookingOptionsPage | null>(null);
-  const [summary, setSummary] = useState<BookingSummary | null>(null);
+  const [page, setPage] = useState<CheckoutPage | null>(null);
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retried, setRetried] = useState(false);
-  const lastCheckoutAt = useRef(0);
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
@@ -69,14 +66,14 @@ export function BookingSummaryScreen() {
         areaId,
         simulateFailure,
       }),
-      bookingService.getBookingSummary({
+      checkoutService.getCheckoutPage({
         draft: draftRef.current,
         participants,
         areaId,
         simulateFailure,
       }),
     ]).then(
-      ([optionsPage, summaryResult]) => {
+      ([optionsPage, checkoutPage]: [BookingOptionsPage | undefined, CheckoutPage | undefined]) => {
         if (cancelled) return;
         if (optionsPage === undefined) {
           setMissing(true);
@@ -84,9 +81,10 @@ export function BookingSummaryScreen() {
           return;
         }
         // Invalid or incomplete drafts never render — each failure redirects
-        // to the step that owns the fix (docs/21 §3.2, §11).
-        const access = summaryStepAccess(optionsPage, draftRef.current);
-        if (access === 'redirect-selection' || summaryResult === undefined) {
+        // to the step that owns the fix (docs/22 §3.3). A cold link's empty
+        // draft lands on the flow start, which re-runs the skip rule.
+        const access = checkoutStepAccess(optionsPage, draftRef.current);
+        if (access === 'redirect-selection' || checkoutPage === undefined) {
           router.replace(bookingHref(programId));
           return;
         }
@@ -94,8 +92,7 @@ export function BookingSummaryScreen() {
           router.replace(bookingStepHref(programId, 'participant'));
           return;
         }
-        setPage(optionsPage);
-        setSummary(summaryResult);
+        setPage(checkoutPage);
         setMissing(false);
         setFailed(false);
       },
@@ -108,48 +105,38 @@ export function BookingSummaryScreen() {
     };
   }, [programId, participants, areaId, simulateFailure, router]);
 
-  // Back returns to the participant step — the summary is only ever pushed
-  // from it (docs/21 §3.2); the replace fallback covers stackless edge cases.
+  // Back returns to the Booking Summary — checkout is only ever pushed from
+  // it (docs/22 §3.3); the replace fallback covers stackless edge cases.
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace(bookingStepHref(programId, 'participant'));
+    else router.replace(bookingStepHref(programId, 'summary'));
   };
   const browse = () => router.replace('/discover');
-  const changeParticipant = goBack;
-  // Change session pops back to the selection step so the flow's exact-origin
-  // back chain stays intact; the draft (and its participant) survives because
-  // the flow's provider stays mounted (docs/21 §10).
-  const changeSession = () => router.dismissTo(bookingHref(programId));
+  // The summary owns Change participant / Change session — Edit booking just
+  // returns there (docs/22 §4.2, no duplicate edit affordances).
+  const editBooking = goBack;
 
-  const ready = page !== null && summary !== null;
   const participantBlock =
-    summary === null ? undefined : summaryParticipantBlock(summary.participant, participants);
-  const spokenPrice = summary === null ? '' : spokenBookingPriceLabel(summary.bookingPriceLabel);
+    page === null ? undefined : summaryParticipantBlock(page.summary.participant, participants);
 
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
         <IconButton icon="chevron-back" accessibilityLabel="Back" onPress={goBack} />
-        <View style={styles.headerText}>
-          <Text style={styles.heading} accessibilityRole="header">
-            Review your booking
-          </Text>
-          {ready ? (
-            <Text style={styles.progress}>
-              {page.skipSelectionStep ? 'Step 2 of 2' : 'Step 3 of 3'}
-            </Text>
-          ) : null}
-        </View>
+        <Text style={styles.heading} accessibilityRole="header">
+          Checkout
+        </Text>
       </View>
 
       <ScrollView
         contentContainerStyle={{
-          paddingBottom: ready ? 132 + insets.bottom + spacing.xl : insets.bottom + spacing.xl,
+          paddingBottom:
+            page !== null ? 132 + insets.bottom + spacing.xl : insets.bottom + spacing.xl,
         }}
         showsVerticalScrollIndicator={false}
       >
-        {!ready && !missing && !failed ? (
-          <SummarySkeleton />
+        {page === null && !missing && !failed ? (
+          <CheckoutSkeleton />
         ) : missing ? (
           <View style={styles.stateWrap}>
             <EmptyFeedCard
@@ -163,161 +150,165 @@ export function BookingSummaryScreen() {
           <View style={styles.stateWrap}>
             <ErrorStateCard onRetry={() => setRetried(true)} />
           </View>
-        ) : !ready || participantBlock === undefined ? null : (
+        ) : page === null || participantBlock === undefined ? null : (
           <View style={styles.content}>
-            {/* Program block — docs/21 §8.2. */}
-            <View style={styles.programCard}>
-              <AppImage source={demoImage(summary.program.imageKey)} style={styles.thumbnail} />
-              <View style={styles.programText}>
-                <Text style={styles.programTitle} numberOfLines={2}>
-                  {summary.program.title}
-                </Text>
-                <View style={styles.providerRow}>
-                  <Text style={styles.programMeta} numberOfLines={1}>
-                    {summary.provider.name}
+            {/* Order recap — docs/22 §4.2: condensed, single edit action. */}
+            <View style={styles.recapCard}>
+              <View style={styles.recapProgramRow}>
+                <AppImage source={demoImage(page.summary.program.imageKey)} style={styles.thumbnail} />
+                <View style={styles.recapProgramText}>
+                  <Text style={styles.recapTitle} numberOfLines={2}>
+                    {page.summary.program.title}
                   </Text>
-                  {summary.provider.verified ? (
-                    <Ionicons
-                      name="shield-checkmark"
-                      size={13}
-                      color={colors.brand.primary}
-                      accessibilityLabel="Verified provider"
-                    />
-                  ) : null}
+                  <View style={styles.providerRow}>
+                    <Text style={styles.recapMeta} numberOfLines={1}>
+                      {page.summary.provider.name}
+                    </Text>
+                    {page.summary.provider.verified ? (
+                      <Ionicons
+                        name="shield-checkmark"
+                        size={13}
+                        color={colors.brand.primary}
+                        accessibilityLabel="Verified provider"
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={styles.recapMeta} numberOfLines={1}>
+                    {areaLabelById.get(page.summary.program.areaId) ?? ''}
+                    {page.summary.branch === undefined ? '' : ` · ${page.summary.branch.label}`}
+                  </Text>
                 </View>
-                <Text style={styles.programMeta} numberOfLines={1}>
-                  {areaLabelById.get(summary.program.areaId) ?? ''}
-                  {summary.branch === undefined ? '' : ` · ${summary.branch.label}`}
-                </Text>
               </View>
-            </View>
-
-            {/* Participant block — docs/21 §8.3. */}
-            <View style={styles.block}>
-              <View style={styles.blockHeader}>
-                <Text style={styles.blockLabel}>Participant</Text>
-                <PressableFeedback
-                  accessibilityRole="button"
-                  accessibilityLabel="Change participant"
-                  onPress={changeParticipant}
-                  style={styles.changeAction}
-                >
-                  <Text style={styles.changeActionLabel}>Change participant</Text>
-                </PressableFeedback>
-              </View>
-              <View accessible accessibilityLabel={participantBlock.accessibilityLabel}>
-                <Text style={styles.blockTitle}>
+              <View style={styles.recapDivider} />
+              <View
+                accessible
+                accessibilityLabel={`${participantBlock.accessibilityLabel}${
+                  page.guardianContextLine === undefined
+                    ? ''
+                    : `, ${page.guardianContextLine.toLowerCase()}`
+                }`}
+              >
+                <Text style={styles.recapLine}>
                   {participantBlock.displayName}
                   {participantBlock.detailLine === undefined
                     ? ''
                     : ` · ${participantBlock.detailLine}`}
                 </Text>
-                <View style={styles.confirmationRow}>
-                  <Ionicons name="checkmark-circle" size={16} color={colors.status.success} />
-                  <Text style={styles.confirmationText}>{participantBlock.confirmation}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Selection block — docs/21 §8.4; Change session only when a
-                real selection step exists (skip rule). */}
-            <View style={styles.block}>
-              <View style={styles.blockHeader}>
-                <Text style={styles.blockLabel}>Your selection</Text>
-                {page.skipSelectionStep ? null : (
-                  <PressableFeedback
-                    accessibilityRole="button"
-                    accessibilityLabel="Change session"
-                    onPress={changeSession}
-                    style={styles.changeAction}
-                  >
-                    <Text style={styles.changeActionLabel}>Change session</Text>
-                  </PressableFeedback>
+                {/* Guardian context display only — no consent mechanics
+                    exist this milestone (docs/09 §22.8). */}
+                {page.guardianContextLine === undefined ? null : (
+                  <Text style={styles.recapSupporting}>{page.guardianContextLine}</Text>
                 )}
               </View>
-              <Text style={styles.blockTitle}>{summary.option.title}</Text>
-              {summary.selectionLines.map((line) => (
-                <Text key={line} style={styles.blockLine}>
-                  {line}
-                </Text>
-              ))}
+              <View style={styles.recapDivider} />
+              <View>
+                <Text style={styles.recapLine}>{page.summary.option.title}</Text>
+                {page.summary.selectionLines.map((line) => (
+                  <Text key={line} style={styles.recapSupporting}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+              <PressableFeedback
+                accessibilityRole="button"
+                accessibilityLabel="Edit booking"
+                onPress={editBooking}
+                style={styles.editAction}
+              >
+                <Text style={styles.editActionLabel}>Edit booking</Text>
+              </PressableFeedback>
             </View>
 
-            {/* Price block — docs/21 §9: catalogue price only. */}
+            {/* Price breakdown — docs/22 §6: Booking price, never Total. */}
             <View style={styles.block}>
-              <Text style={styles.blockLabel}>Price</Text>
-              {summary.priceLines.map((line) => (
-                <View key={line.label} style={styles.priceRow}>
+              <Text style={styles.blockLabel} accessibilityRole="header">
+                Price
+              </Text>
+              {page.price.lines.map((line) => (
+                <View key={line.id} style={styles.priceRow}>
                   <Text style={styles.blockLine}>{line.label}</Text>
                   <Text style={styles.priceValue}>{line.value}</Text>
                 </View>
               ))}
-              {summary.offerLine === undefined ? null : (
+              {page.price.offerLine === undefined ? null : (
                 <View style={styles.offerRow}>
                   <Ionicons name="pricetag-outline" size={14} color={colors.brand.primary} />
-                  <Text style={styles.offerText}>{summary.offerLine}</Text>
+                  <Text style={styles.offerText}>{page.price.offerLine}</Text>
                 </View>
               )}
               <View
                 style={styles.bookingPriceRow}
                 accessible
-                accessibilityLabel={spokenPrice}
+                accessibilityLabel={page.price.spokenBookingPriceLabel}
               >
-                <Text style={styles.bookingPriceText}>{summary.bookingPriceLabel}</Text>
+                <Text style={styles.bookingPriceText}>{page.price.bookingPriceLabel}</Text>
               </View>
             </View>
 
-            {/* Cancellation summary — display-only preset (docs/09 §21.12). */}
+            {/* Cancellation policy — displayed only; no acceptance is claimed
+                and nothing is gated on legal text (docs/09 §22.7). */}
             <View style={styles.block}>
-              <Text style={styles.blockLabel}>Cancellation policy</Text>
-              <Text style={styles.blockTitle}>{summary.policy.title}</Text>
-              {summary.policy.summaryLines.map((line) => (
+              <Text style={styles.blockLabel} accessibilityRole="header">
+                Cancellation policy
+              </Text>
+              <Text style={styles.blockTitle}>{page.summary.policy.title}</Text>
+              {page.summary.policy.summaryLines.map((line) => (
                 <Text key={line} style={styles.blockLine}>
                   {line}
                 </Text>
               ))}
+              {/* Inert contract row — future HMS-008 (details-page precedent). */}
+              <PressableFeedback
+                accessibilityRole="button"
+                accessibilityLabel="Full policy"
+                style={styles.inlineAction}
+              >
+                <Text style={styles.inlineActionLabel}>Full policy</Text>
+              </PressableFeedback>
             </View>
+
+            {/* Support contract row — HMA-032 pattern; inert. */}
+            <PressableFeedback
+              accessibilityRole="button"
+              accessibilityLabel="Something wrong with your booking?"
+              style={styles.supportRow}
+            >
+              <Ionicons name="help-circle-outline" size={18} color={colors.text.secondary} />
+              <Text style={styles.supportText}>Something wrong with your booking?</Text>
+            </PressableFeedback>
           </View>
         )}
       </ScrollView>
 
-      {ready ? (
+      {page === null ? null : (
         <View style={[styles.ctaBar, { paddingBottom: insets.bottom + spacing.md }]}>
           <View style={styles.ctaStatus} accessibilityLiveRegion="polite">
             <Text style={styles.ctaStatusText} numberOfLines={2}>
-              {summary.bookingPriceLabel}
+              {page.price.bookingPriceLabel}
             </Text>
           </View>
-          {/* Live since the Checkout milestone (docs/09 §22.1): pushes the
-              checkout step; the double-tap guard keeps one press to one
-              route (docs/22 §3.3). */}
+          {/* Production-styled, duplicate-press-safe (inert: no press does
+              anything), and truthful — no navigation, dialog, success,
+              failure, reservation, or payment exists (docs/09 §22.11). */}
           <PressableFeedback
             accessibilityRole="button"
-            accessibilityLabel={`Continue to checkout, ${spokenPrice}`}
-            onPress={() => {
-              const now = Date.now();
-              if (now - lastCheckoutAt.current < 700) return;
-              lastCheckoutAt.current = now;
-              router.push(bookingStepHref(programId, 'checkout'));
-            }}
+            accessibilityLabel={page.spokenCtaLabel}
             style={styles.ctaButton}
           >
             <Text style={styles.ctaButtonLabel} maxFontSizeMultiplier={1.4}>
-              Continue to checkout
+              {page.ctaLabel}
             </Text>
           </PressableFeedback>
         </View>
-      ) : null}
+      )}
     </View>
   );
 }
 
-function SummarySkeleton() {
+function CheckoutSkeleton() {
   return (
     <View style={styles.content}>
       <SkeletonBlock style={styles.skeletonCard} />
-      <SkeletonBlock style={styles.skeletonRow} />
-      <SkeletonBlock style={styles.skeletonRow} />
       <SkeletonBlock style={styles.skeletonRow} />
       <SkeletonBlock style={styles.skeletonRow} />
     </View>
@@ -333,15 +324,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: pagePadding,
     paddingBottom: spacing.md,
   },
-  headerText: { flex: 1, gap: 1 },
   heading: {
     ...typography.sectionTitle,
     letterSpacing: -0.3,
     color: colors.text.primary,
-  },
-  progress: {
-    ...typography.caption,
-    color: colors.text.secondary,
+    flex: 1,
   },
   content: {
     paddingHorizontal: pagePadding,
@@ -349,21 +336,24 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   stateWrap: { paddingTop: spacing.xl },
-  programCard: {
+  recapCard: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.card,
+    backgroundColor: colors.brand.primarySoft,
+  },
+  recapProgramRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radii.card,
-    backgroundColor: colors.brand.primarySoft,
   },
   thumbnail: {
     width: 64,
     height: 64,
     borderRadius: radii.image,
   },
-  programText: { flex: 1, gap: 2 },
-  programTitle: {
+  recapProgramText: { flex: 1, gap: 2 },
+  recapTitle: {
     ...typography.cardTitle,
     color: colors.text.primary,
   },
@@ -372,10 +362,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  programMeta: {
+  recapMeta: {
     ...typography.supporting,
     color: colors.text.secondary,
     flexShrink: 1,
+  },
+  recapDivider: {
+    height: 1,
+    backgroundColor: colors.border.default,
+    opacity: 0.6,
+  },
+  recapLine: {
+    ...typography.cardTitle,
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.text.primary,
+  },
+  recapSupporting: {
+    ...typography.supporting,
+    color: colors.text.secondary,
+  },
+  editAction: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  editActionLabel: {
+    ...typography.chip,
+    fontFamily: fontFamily.bold,
+    color: colors.brand.primary,
   },
   block: {
     gap: spacing.xs,
@@ -385,30 +400,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.default,
   },
-  blockHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
   blockLabel: {
     ...typography.caption,
     fontFamily: fontFamily.bold,
     letterSpacing: 0.4,
     textTransform: 'uppercase',
     color: colors.text.secondary,
-  },
-  changeAction: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
-    marginRight: -spacing.sm,
-    marginVertical: -spacing.sm,
-  },
-  changeActionLabel: {
-    ...typography.chip,
-    fontFamily: fontFamily.bold,
-    color: colors.brand.primary,
   },
   blockTitle: {
     ...typography.cardTitle,
@@ -419,18 +416,6 @@ const styles = StyleSheet.create({
   blockLine: {
     ...typography.supporting,
     color: colors.text.secondary,
-    flexShrink: 1,
-  },
-  confirmationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  confirmationText: {
-    ...typography.supporting,
-    color: colors.status.success,
-    fontFamily: fontFamily.semiBold,
     flexShrink: 1,
   },
   priceRow: {
@@ -465,6 +450,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     color: colors.text.primary,
+  },
+  inlineAction: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  inlineActionLabel: {
+    ...typography.chip,
+    fontFamily: fontFamily.bold,
+    color: colors.brand.primary,
+  },
+  supportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  supportText: {
+    ...typography.supporting,
+    fontFamily: fontFamily.semiBold,
+    color: colors.text.secondary,
   },
   ctaBar: {
     position: 'absolute',
@@ -501,6 +508,6 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     color: colors.text.inverse,
   },
-  skeletonCard: { height: 88, borderRadius: radii.card },
-  skeletonRow: { height: 96, borderRadius: radii.card },
+  skeletonCard: { height: 200, borderRadius: radii.card },
+  skeletonRow: { height: 120, borderRadius: radii.card },
 });

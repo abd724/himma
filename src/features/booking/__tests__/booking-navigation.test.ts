@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import {
   bookingHref,
   bookingStepHref,
+  checkoutStepAccess,
   participantSelectionValid,
   participantStepAccess,
   summaryStepAccess,
@@ -21,6 +22,9 @@ describe('booking hrefs', () => {
     );
     expect(bookingStepHref('beginner-calisthenics', 'summary')).toBe(
       '/booking/beginner-calisthenics/summary',
+    );
+    expect(bookingStepHref('beginner-calisthenics', 'checkout')).toBe(
+      '/booking/beginner-calisthenics/checkout',
     );
   });
 });
@@ -171,6 +175,44 @@ describe('summaryStepAccess (docs/21 §3.2, §11)', () => {
   test('non-bookable entry states are owned by the selection route', () => {
     expect(
       summaryStepAccess(pageFor('teen-arabic-summer'), {
+        programId: 'teen-arabic-summer',
+        optionId: 'x',
+        participantId: 'me',
+      }),
+    ).toBe('redirect-selection');
+  });
+});
+
+describe('checkoutStepAccess (docs/22 §3.3)', () => {
+  test('checkout requires exactly the summary-valid draft — the policies agree', () => {
+    const page = pageFor('beginner-calisthenics');
+    const option = page.options[0];
+    const drafts = [
+      { programId: 'beginner-calisthenics' }, // cold link, empty draft
+      { programId: 'beginner-calisthenics', optionId: option.id }, // no session
+      {
+        programId: 'beginner-calisthenics',
+        optionId: option.id,
+        sessionId: option.sessions[0].id,
+      }, // no participant
+      {
+        programId: 'beginner-calisthenics',
+        optionId: option.id,
+        sessionId: option.sessions[0].id,
+        participantId: 'me',
+      }, // fully valid
+    ];
+    for (const draft of drafts) {
+      expect(checkoutStepAccess(page, draft)).toBe(summaryStepAccess(page, draft));
+    }
+    expect(checkoutStepAccess(page, drafts[0])).toBe('redirect-selection');
+    expect(checkoutStepAccess(page, drafts[2])).toBe('redirect-participant');
+    expect(checkoutStepAccess(page, drafts[3])).toBe('render');
+  });
+
+  test('non-bookable entry states redirect to the flow start', () => {
+    expect(
+      checkoutStepAccess(pageFor('teen-arabic-summer'), {
         programId: 'teen-arabic-summer',
         optionId: 'x',
         participantId: 'me',
