@@ -59,6 +59,7 @@ export default function RootLayout() {
                 <Stack.Screen name="map" />
                 <Stack.Screen name="program/[programId]" />
                 <Stack.Screen name="provider/[providerId]" />
+                <Stack.Screen name="booking/[programId]" />
               </Stack>
             </View>
             </ResultsSessionProvider>

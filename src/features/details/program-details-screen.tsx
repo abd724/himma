@@ -8,6 +8,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
 import { demoImage } from '@/data/mock/images';
+import { useBookingEntry } from '@/features/booking/booking-navigation';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { shareEntity } from '@/features/details/share-entity';
 import type { ProgramDetailPage } from '@/services/contracts/details';
@@ -35,8 +36,8 @@ const SKILL_LABELS: Record<SkillLevel, string> = {
 /**
  * HMA-015 — Program Details (docs/20 §3). Root-level route: the dock is
  * hidden structurally and the sticky Book CTA owns the bottom region. The
- * Book action is production-ready but inert until the Booking milestone
- * (docs/09 §20.1); sessions are informational only (docs/09 §20.9).
+ * Book action opens the booking flow (docs/21 §3); the session list here
+ * stays informational only — selection happens in the flow (docs/09 §20.9).
  */
 export function ProgramDetailsScreen() {
   const router = useRouter();
@@ -48,6 +49,7 @@ export function ProgramDetailsScreen() {
   const { areaId } = useAreaContext();
   const { isFavourite, toggleFavourite } = useFavourites();
   const { openProgram, openProvider } = useDetailNavigation();
+  const { openBooking } = useBookingEntry();
 
   const [page, setPage] = useState<ProgramDetailPage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -317,14 +319,23 @@ export function ProgramDetailsScreen() {
                         key={session.id}
                         style={styles.sessionRow}
                         accessibilityLabel={`${session.dayLabel}, ${session.timeLabel}${
-                          session.spotsLeft !== undefined
-                            ? `, ${session.spotsLeft} places left`
-                            : ''
+                          session.spotsLeft === 0
+                            ? ', full'
+                            : session.spotsLeft !== undefined
+                              ? `, ${session.spotsLeft} places left`
+                              : ''
                         }`}
                       >
                         <Text style={styles.sessionDay}>{session.dayLabel}</Text>
                         <Text style={styles.sessionTime}>{session.timeLabel}</Text>
-                        {session.spotsLeft !== undefined ? (
+                        {/* A zero-spot occurrence reads Full here too, so the
+                            informational list and the booking flow share one
+                            availability truth (docs/09 §21.5). */}
+                        {session.spotsLeft === 0 ? (
+                          <View style={styles.fullPill}>
+                            <Text style={styles.fullPillText}>Full</Text>
+                          </View>
+                        ) : session.spotsLeft !== undefined ? (
                           <View style={styles.spotsPill}>
                             <Ionicons name="flame-outline" size={12} color={colors.text.primary} />
                             <Text style={styles.spotsText}>{session.spotsLeft} places left</Text>
@@ -506,10 +517,12 @@ export function ProgramDetailsScreen() {
               <Text style={styles.ctaPriceUnit}>{price.unit}</Text>
             ) : null}
           </View>
-          {/* Production-ready Book button; inert until the Booking milestone
-              (docs/09 §20.1) — no fake checkout or selection sheet. */}
+          {/* Opens the booking flow (docs/21 §3.2). The CTA stays enabled even
+              when the browsing participant is ineligible — booking-time
+              participant selection is the real gate (docs/02 §8). */}
           <PressableFeedback
             accessibilityLabel={`${ctaLabel}: ${page.program.title}, ${spokenPriceLabel(page.program.price)}`}
+            onPress={() => openBooking(page.program.id)}
             style={styles.ctaButton}
           >
             <Text style={styles.ctaButtonLabel} maxFontSizeMultiplier={1.4}>
@@ -795,6 +808,17 @@ const styles = StyleSheet.create({
   spotsText: {
     ...typography.caption,
     color: colors.text.primary,
+  },
+  fullPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radii.chip,
+    backgroundColor: colors.border.default,
+  },
+  fullPillText: {
+    ...typography.caption,
+    fontFamily: fontFamily.bold,
+    color: colors.text.secondary,
   },
   bodyText: {
     ...typography.body,

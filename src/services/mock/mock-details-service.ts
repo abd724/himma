@@ -1,3 +1,4 @@
+import { bookingExtras, type BookingExtras } from '@/data/mock/booking-extras';
 import { activityTypes, areas, categories, programs, providers } from '@/data/mock/catalogue';
 import { cancellationPolicies } from '@/data/mock/policies';
 import { programDetailExtras, type ProgramDetailExtras } from '@/data/mock/program-details';
@@ -39,13 +40,17 @@ export function dayLabelForOffset(offset: number): string {
 /**
  * Deterministic informational sessions derived from the catalogue schedule
  * fields — docs/20 §8.3, docs/09 §20.9. No randomness, no device clock;
- * extras may override with 'none' or an explicit list.
+ * extras may override with 'none' or an explicit list. Booking extras
+ * overlay per-index places (`sessionSpots`, 0 = full) or an empty list
+ * (`noUpcomingSessions`) so Program Details and the booking flow share one
+ * availability source (docs/09 §21.5).
  */
 export function buildUpcomingSessions(
   program: Program,
   extras: ProgramDetailExtras,
+  booking?: BookingExtras,
 ): SessionOccurrence[] {
-  if (extras.sessions === 'none') return [];
+  if (extras.sessions === 'none' || booking?.noUpcomingSessions === true) return [];
   if (Array.isArray(extras.sessions)) return extras.sessions;
 
   if (program.isCamp) {
@@ -93,6 +98,12 @@ export function buildUpcomingSessions(
   const capped = occurrences.slice(0, SESSION_DISPLAY_CAP);
   if (capped.length > 0 && extras.spotsLeft !== undefined) {
     capped[0] = { ...capped[0], spotsLeft: extras.spotsLeft };
+  }
+  if (booking?.sessionSpots !== undefined) {
+    for (const [index, spots] of Object.entries(booking.sessionSpots)) {
+      const at = Number(index);
+      if (at >= 0 && at < capped.length) capped[at] = { ...capped[at], spotsLeft: spots };
+    }
   }
   return capped;
 }
@@ -152,7 +163,7 @@ export class MockDetailsService implements DetailsService {
       ageLabel: ageRangeLabel(program.eligibility) ?? 'All ages',
       formatLabel: programFormatLabel(program),
       priceLabel: priceLabel(program.price),
-      sessions: buildUpcomingSessions(program, extras),
+      sessions: buildUpcomingSessions(program, extras, bookingExtras[program.id]),
       branch: branches?.find((branch) => branch.id === extras.branchId),
       policy: cancellationPolicies[extras.policyId],
       suitability:
