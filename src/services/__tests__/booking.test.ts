@@ -264,6 +264,22 @@ describe('Participant preselection and eligibility (docs/21 §2, §6)', () => {
     );
   });
 
+  test('the only eligible participant is never auto-selected (docs/09 §21)', () => {
+    // me-only account on an adults-only program: exactly one eligible
+    // participant, browsing as everyone — preselection must stay empty.
+    const page = service.buildBookingOptions(
+      input({ programId: 'beginner-calisthenics', participants: [everyone, me] }),
+    )!;
+    expect(page.householdEligibility.filter((entry) => entry.suitable)).toHaveLength(1);
+    expect(page.preselectedParticipantId).toBeUndefined();
+  });
+
+  test('guest input yields empty eligibility and no preselection', () => {
+    const page = service.buildBookingOptions(input({ participants: [] }))!;
+    expect(page.householdEligibility).toEqual([]);
+    expect(page.preselectedParticipantId).toBeUndefined();
+  });
+
   test('preselection derives from arbitrary participant data, not demo names', () => {
     const lena: Participant = {
       id: 'lena',

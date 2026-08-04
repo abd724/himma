@@ -13,6 +13,7 @@ export type BookingDraftAction =
   | { type: 'selectOption'; optionId: string }
   | { type: 'selectSession'; sessionId: string }
   | { type: 'selectParticipant'; participantId: ParticipantId }
+  | { type: 'preselectParticipant'; participantId: ParticipantId }
   | { type: 'reset' };
 
 /** Pure reducer — the unit-test surface (established pure-core pattern). */
@@ -26,6 +27,11 @@ export function draftReducer(draft: BookingDraft, action: BookingDraftAction): B
       return { ...draft, sessionId: action.sessionId };
     case 'selectParticipant':
       return { ...draft, participantId: action.participantId };
+    case 'preselectParticipant':
+      // docs/21 §2: preselection never overrides an explicit user choice.
+      return draft.participantId === undefined
+        ? { ...draft, participantId: action.participantId }
+        : draft;
     case 'reset':
       return { programId: draft.programId };
   }

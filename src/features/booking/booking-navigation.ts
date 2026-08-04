@@ -1,3 +1,8 @@
+import type {
+  BookingDraft,
+  BookingOptionsPage,
+  ParticipantEligibility,
+} from '@/services/contracts/booking';
 import { useRouter } from 'expo-router';
 import { useRef } from 'react';
 
@@ -15,6 +20,36 @@ export function bookingHref(programId: string): `/booking/${string}` {
 
 export function bookingStepHref(programId: string, step: BookingStep): `/booking/${string}` {
   return `/booking/${programId}/${step}`;
+}
+
+/**
+ * Whether the participant step may render for a draft, or must send the
+ * user back to the flow start (docs/21 §3.2: cold links with an incomplete
+ * draft redirect; entry states are owned by the selection route).
+ */
+export function participantStepAccess(
+  page: BookingOptionsPage,
+  draft: BookingDraft,
+): 'render' | 'redirect-selection' {
+  if (page.availability.status !== 'bookable') return 'redirect-selection';
+  // Skip-rule flows have nothing to select; the step stands on its own.
+  if (page.skipSelectionStep) return 'render';
+  const option = page.options.find((entry) => entry.id === draft.optionId);
+  if (option === undefined) return 'redirect-selection';
+  if (option.requiresSession) {
+    const session = option.sessions.find((entry) => entry.id === draft.sessionId);
+    if (session === undefined || session.availability === 'full') return 'redirect-selection';
+  }
+  return 'render';
+}
+
+/** A booking may continue only with an explicitly chosen eligible participant. */
+export function participantSelectionValid(
+  eligibility: ParticipantEligibility[],
+  participantId: string | undefined,
+): boolean {
+  if (participantId === undefined) return false;
+  return eligibility.some((entry) => entry.participantId === participantId && entry.suitable);
 }
 
 /** One press never pushes two copies of the booking flow (details precedent). */

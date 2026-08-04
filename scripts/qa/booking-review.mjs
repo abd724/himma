@@ -1,9 +1,10 @@
 /**
- * Commit 12 QA — Booking foundation + session/plan selection (docs/21 §16,
- * §18): entry activation, per-type selection states, availability states,
- * draft validity, inert Continue, stubs, recovery, and the provisional
- * screenshot rows 01–07 + 18 at 390 × 844 and 360 × 780.
- * Run: node scripts/qa/booking-review.mjs (Expo web on 8081).
+ * Commits 12–13 QA — Booking foundation, session/plan selection, and
+ * participant selection with eligibility (docs/21 §16, §18): entry
+ * activation, per-type selection states, availability states, skip rule,
+ * participant preselection and recovery, guest contract, draft behavior,
+ * and provisional screenshot rows 01–11, 17–18, 20 at 390 × 844 and
+ * 360 × 780. Run: node scripts/qa/booking-review.mjs (Expo web on 8081).
  */
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -53,21 +54,34 @@ check('entry: price orientation on program card', await visibleText('AED 85 per 
 check('entry: session radio present', await visible(visibleLabel('Today, 7:30 PM')));
 check('entry: continue gated until a session is chosen', await visibleText('Choose a session to continue'));
 
-// Select a session → status updates, Continue becomes valid but stays inert.
+// Select a session → status updates → Continue reaches the participant step.
 await visibleLabel('Today, 7:30 PM').click();
 await idle(300);
 check('select: status line reflects the draft', await visibleText('AED 85 per session · Today'));
 await shot('01-booking-single-session-390');
 await visibleLabel(/^Continue: /).click();
-await idle(500);
-check('continue: inert this commit — still on the selection step', page.url().endsWith('/booking/beginner-calisthenics'));
-check('continue: no fake next step rendered', await visibleText('Choose a session'));
+await idle();
+check('continue: selection leads to the participant step', await visibleText('Who is attending?'));
+check('participant: three-step progress after a dated selection', await visibleText('Step 2 of 3'));
+check('participant: everyone context preselects nothing', await visibleText('Choose who is attending'));
+check('participant: ineligible child visible with the age reason', await visibleText('Ages 16+ — Adam is 8'));
+check('participant: not-suitable pill', await visibleText('Not suitable'));
 
 // No reservation implication anywhere in the flow copy.
-const selectionCopy = await bodyText();
-check('copy: no reservation/hold/charged-today implication', !/reserv|holding|charged today/i.test(selectionCopy));
+check('copy: no reservation/hold/charged-today implication', !/reserv|holding|charged today/i.test(await bodyText()));
 
-// Exact-origin back to Program Details.
+// Explicit selection announces; Continue stays inert until Commit 14.
+await visibleLabel(/^You$/).click();
+await idle(300);
+check('participant: explicit selection announces', await visibleText('Booking for you'));
+await visibleLabel(/^Continue: /).click();
+await idle(500);
+check('participant: continue inert until the summary ships', page.url().endsWith('/participant'));
+
+// Back preserves the selection draft, then lands on the exact origin.
+await visibleLabel('Back').click();
+await idle();
+check('back: selection step preserves the draft', await visibleText('AED 85 per session · Today'));
 await visibleLabel('Back').click();
 await idle();
 check('back: returns to Program Details', await visible(visibleLabel(/^Book: Beginner Calisthenics/)));
@@ -95,6 +109,14 @@ await idle(300);
 check('trial: switching to enrolment shows plan lines', await visibleText('Sun & Wed · 9:30 AM'));
 check('trial: enrolment start line present', await visibleText(/Starts with the next session/));
 check('trial: option switch cleared the stale session', await visibleText('AED 450 per month'));
+await visibleLabel('Free trial session, Free').click();
+await idle(300);
+await visibleLabel('Today, 9:30 AM').click();
+await idle(300);
+await visibleLabel(/^Continue: /).click();
+await idle();
+check('trial: continue reaches the participant step', await visibleText('Who is attending?'));
+check('trial: ladies-only never gender-blocks the adult', await visible(visibleLabel(/^You$/)));
 
 // ——— Paid trial priced from structured extras ———
 await page.goto(`${BASE}/booking/junior-football-u10`, { waitUntil: 'networkidle' });
@@ -102,19 +124,103 @@ await idle();
 check('paid trial: AED 35 option', await visible(visibleLabel('Trial session, AED 35')));
 await shot('06-booking-trial-paid-390');
 
-// ——— Dateless single option (recurring) — temporary pre-skip rendering ———
+// ——— Skip rule: dateless single options land directly on participant ———
 await page.goto(`${BASE}/booking/junior-swim-squad`, { waitUntil: 'networkidle' });
 await idle();
-check('recurring: plan heading', await visibleText('Your plan'));
-check('recurring: cadence price', await visibleText('AED 380 per month'));
-check('recurring: schedule orientation', await visibleText('Sat & Sun · 10:00 AM'));
-check('recurring: start line', await visibleText(/Starts with the next session/));
+check('skip: recurring flow lands on the participant step', await visibleText('Who is attending?'));
+check('skip: two-step progress', await visibleText('Step 1 of 2'));
+check('skip: plan recap on the program card', await visibleText('Monthly enrolment'));
+check('skip: eligible children listed with ages', (await visibleText('Age 8')) && (await visibleText('Age 12')));
+check('skip: adult honestly ineligible', await visibleText('Designed for ages 6–14'));
+check('skip: no preselection under everyone', await visibleText('Choose who is attending'));
 
-// ——— Package: size + price only ———
+// Participant change (row 11): explicit switches announce politely.
+await visibleLabel(/^Adam, age 8$/).click();
+await idle(300);
+check('change: booking for Adam', await visibleText('Booking for Adam'));
+await visibleLabel(/^Lina, age 12$/).click();
+await idle(300);
+check('change: booking for Lina', await visibleText('Booking for Lina'));
+await shot('11-booking-participant-changed-390');
+
 await page.goto(`${BASE}/booking/adult-swim-technique`, { waitUntil: 'networkidle' });
 await idle();
-check('package: title shows size', await visibleText('Package of 6 sessions'));
+check('skip: package flow lands on the participant step', await visibleText('Who is attending?'));
+check('skip: package recap shows size', await visibleText('Package of 6 sessions'));
 check('package: no redemption/expiry rules invented', !/expir|redeem|valid for/i.test(await bodyText()));
+
+// Exact-origin back after a skipped selection: details, never an empty step.
+await page.goto(`${BASE}/program/junior-swim-squad`, { waitUntil: 'networkidle' });
+await idle();
+await visibleLabel(/^Book: Junior Swim Squad/).click();
+await idle();
+check('skip: Book lands on participant directly', await visibleText('Who is attending?'));
+await visibleLabel('Back').click();
+await idle();
+check('skip: one back returns to Program Details', await visible(visibleLabel(/^Book: Junior Swim Squad/)));
+
+// ——— Preselection + no silent context mutation (browsing as Adam) ———
+await page.goto(`${BASE}/discover`, { waitUntil: 'networkidle' });
+await idle();
+await page.getByText('Adam', { exact: true }).locator('visible=true').first().click();
+await idle(400);
+await visibleLabel('Search activities, providers or classes').click();
+await idle();
+await page.keyboard.type('swim');
+await page.keyboard.press('Enter');
+await idle();
+await page.getByText('Junior Swim Squad').locator('visible=true').first().click();
+await idle();
+check('context: details shows suitability for Adam', await visibleText(/Suitable for Adam/));
+await visibleLabel(/^Book: Junior Swim Squad/).click();
+await idle();
+check('preselect: eligible browsing participant preselected', await visibleText('Booking for Adam'));
+await shot('08-booking-participant-preselected-390');
+await visibleLabel(/^Lina, age 12$/).click();
+await idle(300);
+check('preselect: switching in the flow announces Lina', await visibleText('Booking for Lina'));
+await visibleLabel('Back').click();
+await idle();
+check('no-mutation: details still browses as Adam', await visibleText(/Suitable for Adam/));
+
+// Ineligible browsing participant (still Adam): adult-only programs are
+// hard-excluded from child-context results by design, so the realistic
+// route is the storefront's honest ineligible group.
+await visibleLabel(/^Blue Wave Swimming/).click();
+await idle();
+await page.getByText(/^Not for Adam’s age/).locator('visible=true').first().click();
+await idle(300);
+await page.getByText('Adult Swim Technique Clinic').locator('visible=true').first().click();
+await idle();
+check('ineligible: details warns before booking', await visibleText(/Not suitable for Adam/));
+await visibleLabel(/^Book: Adult Swim Technique Clinic/).click();
+await idle();
+check('ineligible: package flow opens straight to participant', await visibleText('Who is attending?'));
+check('ineligible: browsing participant not preselected', await visibleText('Choose who is attending'));
+check('ineligible: Adam visible with the age reason', await visibleText('Ages 16+ — Adam is 8'));
+check('ineligible: eligible alternative offered', await visible(visibleLabel(/^You$/)));
+await shot('09-booking-participant-ineligible-390');
+
+// ——— No eligible participants (me-only account, junior program) ———
+await page.goto(`${BASE}/booking/junior-karate?qa-scenario=me-only`, { waitUntil: 'networkidle' });
+await idle();
+check('none: recovery headline', await visibleText('None of your profiles can join this program.'));
+check('none: canonical age eligibility', await visibleText(/is for ages 6–12/));
+check('none: back to program action', await visible(visibleLabel('Back to program')));
+check('none: browse action', await visible(visibleLabel('Browse activities')));
+check('none: no add-child or profile-editing action', !/add (a )?child|edit participant/i.test(await bodyText()));
+await shot('10-booking-participant-none-390');
+
+// ——— Guest: sign-in-required contract state ———
+await page.goto(`${BASE}/booking/junior-swim-squad?qa-scenario=guest`, { waitUntil: 'networkidle' });
+await idle();
+check('guest: sign-in heading', await visibleText('Sign in to book'));
+check('guest: program context preserved', await visibleText('Junior Swim Squad'));
+check('guest: no participant radios and no fabricated Me', !/Who is attending|Booking for/.test(await bodyText()));
+await visibleLabel(/^Sign in$/).click();
+await idle(400);
+check('guest: sign-in action is inert', page.url().includes('/booking/junior-swim-squad'));
+await shot('20-booking-guest-390');
 
 // ——— Few places left ———
 await page.goto(`${BASE}/booking/padel-beginners`, { waitUntil: 'networkidle' });
@@ -178,31 +284,38 @@ await idle();
 check('unknown: recovery state', await visibleText('This program is no longer offered.'));
 await shot('18-booking-unknown-390');
 
-// ——— Step stubs redirect to the flow start (no dead routes) ———
+// ——— Cold links with an empty draft land on the flow start ———
 await page.goto(`${BASE}/booking/beginner-calisthenics/participant`, { waitUntil: 'networkidle' });
 await idle();
-check('stub: participant deep link lands on the flow start', await visibleText('Choose a session'));
+check('cold link: dated participant link redirects to selection', await visibleText('Choose a session'));
 await page.goto(`${BASE}/booking/beginner-calisthenics/summary`, { waitUntil: 'networkidle' });
 await idle();
-check('stub: summary deep link lands on the flow start', await visibleText('Choose a session'));
-
-// ——— Cold deep link: back falls back to Program Details ———
+check('cold link: summary stub redirects to the flow start', await visibleText('Choose a session'));
 await visibleLabel('Back').click();
 await idle();
 check('cold link: back lands on Program Details', await visible(visibleLabel(/^Book: Beginner Calisthenics/)));
+await page.goto(`${BASE}/booking/junior-swim-squad/participant`, { waitUntil: 'networkidle' });
+await idle();
+check('cold link: skip-flow participant link renders directly', await visibleText('Who is attending?'));
 
-// ——— Error and retry ———
+// ——— Error and retry (both steps) ———
 await page.goto(`${BASE}/booking/beginner-calisthenics?qa-fail=1`, { waitUntil: 'networkidle' });
 await idle();
-check('error: state renders', await visibleText('Can’t load activities right now'));
+check('error: selection state renders', await visibleText('Can’t load activities right now'));
 await shot('17-booking-error-390');
 await visibleLabel('Retry').click();
 await idle();
 check('error: retry recovers to the selection step', await visibleText('Choose a session'));
+await page.goto(`${BASE}/booking/junior-swim-squad/participant?qa-fail=1`, { waitUntil: 'networkidle' });
+await idle();
+check('error: participant state renders', await visibleText('Can’t load activities right now'));
+await visibleLabel('Retry').click();
+await idle();
+check('error: participant retry recovers', await visibleText('Who is attending?'));
 
 check('390: no horizontal overflow', await noOverflow(390));
 
-// ——— 360 × 780 pass: provisional screenshot rows + overflow ———
+// ——— 360 × 780 pass: provisional rows + participant states + overflow ———
 await page.setViewportSize({ width: 360, height: 780 });
 const smallShots = [
   ['booking/beginner-calisthenics', '01-booking-single-session-360', 'Choose a session'],
@@ -213,6 +326,8 @@ const smallShots = [
   ['booking/ladies-strength', '06-booking-trial-free-360', 'How would you like to start?'],
   ['booking/junior-football-u10', '06-booking-trial-paid-360', 'Trial session'],
   ['booking/active-summer-camp', '07-booking-camp-weeks-360', 'Choose a week'],
+  ['booking/junior-karate?qa-scenario=me-only', '10-booking-participant-none-360', 'None of your profiles can join this program.'],
+  ['booking/junior-swim-squad?qa-scenario=guest', '20-booking-guest-360', 'Sign in to book'],
   ['booking/does-not-exist', '18-booking-unknown-360', 'This program is no longer offered.'],
 ];
 for (const [path, name, marker] of smallShots) {
@@ -221,6 +336,45 @@ for (const [path, name, marker] of smallShots) {
   check(`360 ${name}: renders`, await visibleText(marker));
   await shot(name);
 }
+
+// Participant change at 360 (row 11).
+await page.goto(`${BASE}/booking/junior-swim-squad`, { waitUntil: 'networkidle' });
+await idle();
+await visibleLabel(/^Lina, age 12$/).click();
+await idle(300);
+check('360 participant change: booking for Lina', await visibleText('Booking for Lina'));
+await shot('11-booking-participant-changed-360');
+
+// Preselected + ineligible journeys at 360 (rows 08–09; in-app, no reloads).
+await page.goto(`${BASE}/discover`, { waitUntil: 'networkidle' });
+await idle();
+await page.getByText('Adam', { exact: true }).locator('visible=true').first().click();
+await idle(400);
+await visibleLabel('Search activities, providers or classes').click();
+await idle();
+await page.keyboard.type('swim');
+await page.keyboard.press('Enter');
+await idle();
+await page.getByText('Junior Swim Squad').locator('visible=true').first().click();
+await idle();
+await visibleLabel(/^Book: Junior Swim Squad/).click();
+await idle();
+check('360 preselect: booking for Adam', await visibleText('Booking for Adam'));
+await shot('08-booking-participant-preselected-360');
+await visibleLabel('Back').click();
+await idle();
+await visibleLabel(/^Blue Wave Swimming/).click();
+await idle();
+await page.getByText(/^Not for Adam’s age/).locator('visible=true').first().click();
+await idle(300);
+await page.getByText('Adult Swim Technique Clinic').locator('visible=true').first().click();
+await idle();
+await visibleLabel(/^Book: Adult Swim Technique Clinic/).click();
+await idle();
+check('360 ineligible: reason visible, nothing selected',
+  (await visibleText('Ages 16+ — Adam is 8')) && (await visibleText('Choose who is attending')));
+await shot('09-booking-participant-ineligible-360');
+
 check('360: no horizontal overflow', await noOverflow(360));
 
 check('zero console errors', consoleErrors.length === 0);

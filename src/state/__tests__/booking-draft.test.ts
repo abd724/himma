@@ -50,6 +50,33 @@ describe('draftReducer', () => {
     expect(next.participantId).toBe('me');
   });
 
+  test('preselection fills an empty choice but never overrides the user', () => {
+    const preselected = draftReducer(start, {
+      type: 'preselectParticipant',
+      participantId: 'adam',
+    });
+    expect(preselected.participantId).toBe('adam');
+    const explicit = draftReducer(preselected, { type: 'selectParticipant', participantId: 'me' });
+    // A re-run of preselection (screen reload, participant-context change)
+    // must not silently switch the user's explicit choice (docs/09 §21.15).
+    expect(
+      draftReducer(explicit, { type: 'preselectParticipant', participantId: 'adam' }),
+    ).toBe(explicit);
+  });
+
+  test('participant selection preserves the chosen option and session', () => {
+    const complete = draftReducer(
+      draftReducer(start, { type: 'selectOption', optionId: 'option-a' }),
+      { type: 'selectSession', sessionId: 'session-1' },
+    );
+    const withParticipant = draftReducer(complete, {
+      type: 'selectParticipant',
+      participantId: 'adam',
+    });
+    expect(withParticipant.optionId).toBe('option-a');
+    expect(withParticipant.sessionId).toBe('session-1');
+  });
+
   test('a later participant choice replaces the earlier one', () => {
     const next = draftReducer(
       draftReducer(start, { type: 'selectParticipant', participantId: 'me' }),

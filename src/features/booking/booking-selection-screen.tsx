@@ -3,6 +3,7 @@ import { ErrorStateCard } from '@/components/domain/error-state-card';
 import { IconButton } from '@/components/ui/icon-button';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
+import { bookingStepHref } from '@/features/booking/booking-navigation';
 import { programHref } from '@/features/details/detail-navigation';
 import type {
   BookingOption,
@@ -16,16 +17,16 @@ import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
  * Booking step 1 — session/plan selection (docs/21 §5, owner decisions
  * docs/09 §21). Selection is the only thing that happens here: nothing is
- * reserved, held, or implied to be held (docs/08 §14). The Continue action
- * is inert with press feedback until the participant step ships in
- * Commit 13 (docs/09 §17.2).
+ * reserved, held, or implied to be held (docs/08 §14). Single dateless
+ * options skip this step entirely (docs/21 §2); Continue pushes the
+ * participant step once the draft is valid.
  */
 export function BookingSelectionScreen() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export function BookingSelectionScreen() {
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retried, setRetried] = useState(false);
+  const lastContinueAt = useRef(0);
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
@@ -51,11 +53,19 @@ export function BookingSelectionScreen() {
       .then(
         (result) => {
           if (cancelled) return;
+          // docs/21 §2 skip rule (live since Commit 13): one dateless option
+          // has nothing to select — replace with the participant step so back
+          // lands directly on Program Details, never an empty selection step.
+          if (result !== undefined && result.skipSelectionStep) {
+            dispatch({ type: 'selectOption', optionId: result.options[0].id });
+            router.replace(bookingStepHref(programId, 'participant'));
+            return;
+          }
           setPage(result ?? null);
           setMissing(result === undefined);
           setFailed(false);
           // A single option needs no explicit choice — select it so the
-          // session list (or plan card) is immediately actionable.
+          // session list is immediately actionable.
           if (result !== undefined && result.options.length === 1) {
             dispatch({ type: 'selectOption', optionId: result.options[0].id });
           }
@@ -67,7 +77,7 @@ export function BookingSelectionScreen() {
     return () => {
       cancelled = true;
     };
-  }, [programId, participantId, participants, areaId, simulateFailure, dispatch]);
+  }, [programId, participantId, participants, areaId, simulateFailure, dispatch, router]);
 
   // Exact-origin back; a cold deep link falls back to the evaluation surface
   // (docs/21 §3.2), never to a dead end.
@@ -87,16 +97,16 @@ export function BookingSelectionScreen() {
     (!selectedOption.requiresSession ||
       (selectedSession !== undefined && selectedSession.availability !== 'full'));
 
+  // Single dateless options never render here — the skip rule replaces this
+  // route with the participant step (docs/21 §2).
   const heading =
     page === null || page.availability.status !== 'bookable'
       ? 'Book'
       : page.options.length > 1
         ? 'How would you like to start?'
-        : page.options[0].requiresSession
-          ? page.options[0].kind === 'camp-week'
-            ? 'Choose a week'
-            : 'Choose a session'
-          : 'Your plan';
+        : page.options[0].kind === 'camp-week'
+          ? 'Choose a week'
+          : 'Choose a session';
 
   const statusLine =
     selectedOption === undefined
@@ -188,14 +198,10 @@ export function BookingSelectionScreen() {
                   </View>
                 ) : null}
 
-                {selectedOption !== undefined && !selectedOption.requiresSession ? (
+                {selectedOption !== undefined &&
+                !selectedOption.requiresSession &&
+                selectedOption.detailLines.length > 0 ? (
                   <View style={styles.planCard}>
-                    {page.options.length === 1 ? (
-                      <>
-                        <Text style={styles.planTitle}>{selectedOption.title}</Text>
-                        <Text style={styles.planPrice}>{selectedOption.priceLabel}</Text>
-                      </>
-                    ) : null}
                     {selectedOption.detailLines.map((line) => (
                       <Text key={line} style={styles.planLine}>
                         {line}
@@ -238,11 +244,17 @@ export function BookingSelectionScreen() {
               {statusLine}
             </Text>
           </View>
-          {/* Continue is inert with press feedback until the participant step
-              ships in Commit 13 (docs/09 §17.2) — no placeholder screen. */}
           <PressableFeedback
             accessibilityLabel={selectionValid ? `Continue: ${statusLine}` : statusLine}
             accessibilityState={{ disabled: !selectionValid }}
+            onPress={() => {
+              if (!selectionValid) return;
+              // One press, one participant route (double-tap guard).
+              const now = Date.now();
+              if (now - lastContinueAt.current < 700) return;
+              lastContinueAt.current = now;
+              router.push(bookingStepHref(programId, 'participant'));
+            }}
             style={[styles.ctaButton, !selectionValid && styles.ctaButtonDisabled]}
           >
             <Text
@@ -441,17 +453,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.elevated,
     borderWidth: 1,
     borderColor: colors.border.default,
-  },
-  planTitle: {
-    ...typography.cardTitle,
-    fontSize: 15,
-    lineHeight: 20,
-    color: colors.text.primary,
-  },
-  planPrice: {
-    ...typography.supporting,
-    fontFamily: fontFamily.bold,
-    color: colors.text.primary,
   },
   planLine: {
     ...typography.supporting,
