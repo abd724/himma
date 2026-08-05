@@ -1,6 +1,7 @@
 import { CompactProgramRow } from '@/components/domain/compact-program-row';
 import { EmptyFeedCard } from '@/components/domain/empty-feed-card';
 import { ErrorStateCard } from '@/components/domain/error-state-card';
+import { StatusBarScrim } from '@/components/domain/status-bar-scrim';
 import { AppImage } from '@/components/ui/app-image';
 import { Chip } from '@/components/ui/chip';
 import { IconButton } from '@/components/ui/icon-button';
@@ -19,8 +20,11 @@ import { ageRangeLabel, participantAge, spokenAgeLabel } from '@/utils/eligibili
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+/** Cover/monogram-banner height shared with the status-bar scrim fade band. */
+const COVER_HEIGHT = 220;
 
 /**
  * HMA-014 — Provider Storefront (docs/20 §4). Root-level route: the dock is
@@ -46,6 +50,9 @@ export function ProviderStorefrontScreen() {
   const [ineligibleOpen, setIneligibleOpen] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const shareNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Drives the status-bar scrim (shared with Program Details); native-driver
+  // opacity only. Held in state per the react-hooks v6 ref rules.
+  const [scrollY] = useState(() => new Animated.Value(0));
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
@@ -163,9 +170,13 @@ export function ProviderStorefrontScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView
+      <Animated.ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
+        scrollEventThrottle={16}
       >
         {page === null ? (
           <StorefrontSkeleton topInset={insets.top} />
@@ -508,7 +519,9 @@ export function ProviderStorefrontScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+
+      <StatusBarScrim scrollY={scrollY} heroHeight={COVER_HEIGHT} />
 
       <View style={[styles.headerOverlay, { top: insets.top + spacing.sm }]}>
         <IconButton icon="chevron-back" accessibilityLabel="Back" onPress={goBack} />
@@ -635,11 +648,11 @@ const styles = StyleSheet.create({
   missingWrap: { flex: 1 },
   cover: {
     width: '100%',
-    height: 220,
+    height: COVER_HEIGHT,
   },
   monogramBanner: {
     width: '100%',
-    height: 220,
+    height: COVER_HEIGHT,
     backgroundColor: colors.brand.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',

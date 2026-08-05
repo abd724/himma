@@ -1,6 +1,7 @@
 import { CompactProgramRow } from '@/components/domain/compact-program-row';
 import { EmptyFeedCard } from '@/components/domain/empty-feed-card';
 import { ErrorStateCard } from '@/components/domain/error-state-card';
+import { StatusBarScrim } from '@/components/domain/status-bar-scrim';
 import { AppImage } from '@/components/ui/app-image';
 import { Badge } from '@/components/ui/badge';
 import { Chip } from '@/components/ui/chip';
@@ -23,8 +24,11 @@ import { formatPrice, spokenPriceLabel } from '@/utils/price';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+/** Hero height shared by the image style and the status-bar scrim fade band. */
+const HERO_HEIGHT = 264;
 
 const SKILL_LABELS: Record<SkillLevel, string> = {
   beginner: 'Beginner',
@@ -57,6 +61,10 @@ export function ProgramDetailsScreen() {
   const [retried, setRetried] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const shareNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Drives the status-bar scrim; native-driver opacity only, so scroll
+  // performance and edge-swipe navigation are untouched. Held in state (not
+  // a ref) so render-time reads satisfy the react-hooks v6 ref rules.
+  const [scrollY] = useState(() => new Animated.Value(0));
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
@@ -149,9 +157,13 @@ export function ProgramDetailsScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView
+      <Animated.ScrollView
         contentContainerStyle={{ paddingBottom: contentBottomPadding }}
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
+        scrollEventThrottle={16}
       >
         {page === null ? (
           <ProgramDetailsSkeleton topInset={insets.top} />
@@ -468,7 +480,9 @@ export function ProgramDetailsScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+
+      <StatusBarScrim scrollY={scrollY} heroHeight={HERO_HEIGHT} />
 
       <View style={[styles.headerOverlay, { top: insets.top + spacing.sm }]}>
         <IconButton icon="chevron-back" accessibilityLabel="Back" onPress={goBack} />
@@ -597,7 +611,7 @@ const styles = StyleSheet.create({
   missingWrap: { flex: 1 },
   heroImage: {
     width: '100%',
-    height: 264,
+    height: HERO_HEIGHT,
   },
   imageBadge: {
     position: 'absolute',
