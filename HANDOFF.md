@@ -2,15 +2,15 @@
 
 Read this after README.md, CLAUDE.md, and docs/01–23. It captures live project state as of 2026-08-05 so a fresh session can continue without re-deriving anything.
 
-## Where we are: the Booking flow milestone (docs/21) is CLOSED
+## Where we are: the Checkout milestone (docs/22) is CLOSED
 
-Three customer milestones are complete and owner-approved:
+Four customer milestones are complete and owner-approved:
 
 **Milestone 2 — customer discovery (docs/17 + docs/18), closed at `ec79c7d`.** Home · Navigation shell/dock · Search · Results + filtering · Discover feed · All Categories · Category pages · Activity-type pages · Schematic Map. Details in git history and docs/17–19.
 
 **Milestone 3 — evaluation surfaces (docs/20), closed at `38c5ecb chore(details-review)`.** Program Details · Provider Storefront · Program ↔ Provider cross-navigation with stack reuse · typed favourites · participant suitability with explicit recovery · Blue Wave multi-branch model · mock cancellation-policy presets · informational session lists · save/share. Details in git history and docs/20.
 
-**Milestone 4 — booking flow (docs/21), closed at this commit:**
+**Milestone 4 — booking flow (docs/21), closed at `454ee91 chore(booking-review)`:**
 
 | Step | Commit | Status |
 |---|---|---|
@@ -18,16 +18,30 @@ Three customer milestones are complete and owner-approved:
 | 13 Participant selection + eligibility (HMA-018/019 inline) | `df06260 feat(booking)` | ✅ approved (design + frontend + accessibility review) |
 | 14 Booking summary + flow connections (HMA-020) | `6d952d0 feat(booking)` | ✅ approved (design + frontend + flow connections + accessibility review) |
 | deps | `01b6f73 chore(deps)` | SDK 57 registry re-alignment (docs/13 note) |
-| 15 milestone close | `chore(booking-review)` (this commit) | review/polish/documentation pass |
+| 15 milestone close | `454ee91 chore(booking-review)` | review/polish/documentation pass |
 
 **Delivered by this milestone:** the full pre-checkout booking flow behind the Program Details Book CTA — type-appropriate selection (single session, camp weeks, trial dual options, skip rule for dateless single-option programs) · deterministic availability states (few left, full-disabled-explained, no sessions, registration closed) · single-select participant step with inline eligibility, preselection rule, no-eligible recovery, and the guest sign-in contract · fully re-validated booking summary per program type with `Booking price` wording, informational offer lines, edit round-trips, and the **inert Continue-to-checkout contract** (docs/09 §21.8) · in-memory `BookingDraft` whose lifetime equals the flow's (docs/09 §21.13) · shared session derivation keeping details and booking availability identical (docs/09 §21.5).
 
-**Not implemented (deferred, do not start without owner approval):** checkout · payment · CheckoutIntent or any checkout handoff · booking confirmation · reservation/capacity holds of any kind · multi-participant booking (docs/09 §21.2) · waitlists (§21.4) · promo codes, notes, special requests (§21.16) · draft persistence (§21.13) · cart · written review content · favourites persistence · real provider policies · universal links · real maps · provider support actions · gifts · authentication · profile/participant management UI · Bookings calendar · Saved screen · Credits · Rewards · backend · Arabic/RTL · provider portal · admin portal. The Continue-to-checkout CTA, guest Sign-in action, and Bookings/Saved/Profile dock items stay **inert with press feedback** (docs/09 §17.2, §21.8, §21.9).
+**Milestone 5 — checkout (docs/22), closed at this commit:**
+
+| Step | Commit | Status |
+|---|---|---|
+| 16 Checkout foundation + price review (HMA-021) | `31f11b9 feat(checkout)` | ✅ approved (design + frontend) |
+| 17 Payment-method contract + checkout readiness | `a04df62 feat(checkout)` | ✅ approved (conditional approval resolved by the correction below) |
+| 17 accessibility correction | `07b0865 fix(checkout)` | ✅ approved (unready CTA `aria-disabled`/native disabled semantics; pure `ctaPressAllowed` gate) |
+| 18 Revalidation states + flow hardening | `00e50de feat(checkout)` | ✅ logic approved (visuals superseded by the correction below) |
+| 18 visual correction — CheckoutIssueCard | `fc583d0 fix(checkout)` | ✅ approved: **interaction design approved · provisional Orbit Indigo visual implementation approved · final brand styling pending the design-system engagement** |
+| 19 milestone close | `chore(checkout-review)` (this commit) | review/verification/documentation pass |
+
+**Delivered by this milestone:** one-screen checkout at `/booking/[programId]/checkout` inside the booking stack over the re-derived, re-validated `BookingSummary` (no CheckoutDraft copy, no CheckoutSessionProvider) — order recap with guardian context (`Booked by you`) on child bookings and a single `Edit booking` action · price breakdown with structured reconciling amounts, `Booking price` label continuity end-to-end (no `Total`, no VAT, no fees, no discount arithmetic, `Free` never `AED 0`) · cancellation-policy summary displayed with an inert `Full policy` contract and **no acceptance claim of any kind** · the single generic **`Card payment`** contract method (radio semantics, no card details; Apple/Google Pay declared-only) · pure `checkoutReducer`/`checkoutReadiness` with the named blocker `Choose a payment method to continue` in a polite live region · free-vs-paid CTA behavior (`Confirm booking` / `Continue to payment`), production-styled, duplicate-press-guarded (700 ms, pure `ctaPressAllowed`), **inert** — the unready CTA exposes `aria-disabled` + native disabled semantics on web and `accessibilityState.disabled` on native · typed `CheckoutValidation` revalidation states on the dedicated **CheckoutIssueCard** (per-code icon/state label/headline/support, structured `CheckoutPriceComparison` old → new display, `No payment has been made.` reassurance row, one full-width recovery CTA; no checkout CTA and no payment controls while an issue is unresolved; re-derive for review-style codes, owning-step returns otherwise) · `?qa-revalidate` review reachability for all seven issue codes (captured once at flow entry) · `checkoutStepAccess` sharing the summary's validation for cold-link/invalid-draft/unknown-program recovery · a source-scan guard proving `PaymentSubmitRequest`/`PaymentSubmitResult` exist only as contract declarations with no submit path anywhere.
+
+**Not implemented (deferred, scheduled per docs/23 §16 — do not start without owner approval):** payment submission of any kind (prohibited until every docs/23 §19 condition exists) · payment status/confirmation routes (HMA-022/023) · reservation/capacity holds · legal-acceptance UI (required before real submission per docs/09 §22.7) · Marketplace Credit application (§22.12) · promo codes · saved cards, card entry, tokenization, Apple/Google Pay execution · multi-participant booking (docs/09 §21.2) · waitlists (§21.4) · draft persistence (§21.13) · cart · written review content · favourites persistence · real provider policies · universal links · real maps · provider support actions · gifts · authentication · profile/participant management UI · Bookings calendar · Saved screen · Credits · Rewards · backend · Arabic/RTL · provider portal · admin portal. The checkout CTA, `Full policy` row, support row, guest Sign-in action, and Bookings/Saved/Profile dock items stay **inert with press feedback** (docs/09 §17.2, §22.11).
 
 **Current work: Phase P0 of the production platform plan.** `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` is **owner-approved and binding (2026-08-05)**, including Amendment A1 (`a315c36`) and Amendment A2 (`a8a4480`): Himma is the final production marketplace — seven workstreams, three connected frontends (customer app, provider portal, admin portal) before backend completion, canonical domain model, lifecycle state machines, authorization model, production architecture, correctness-gated scale tiers, and launch gates. Governance was synchronized across CLAUDE.md, README.md, and the stale strategic docs in the same commit as this note.
 
 Live status:
-- **Checkout milestone (docs/22):** Commit 16 (`31f11b9` foundation/price review), Commit 17 (`a04df62` payment-method contract/readiness), and the Commit 17 accessibility correction (`07b0865` — the unready CTA passes `disabled` so web exposes `aria-disabled="true"` plus the browser's coupled native disabled semantics while `accessibilityState.disabled` carries the native contract; pure `ctaPressAllowed` gate) are **complete and owner-approved**. Commit 18 (revalidation states and flow hardening) is **complete in this commit, awaiting owner review**; **Commit 19 not started** — it begins only on explicit owner go-ahead. Commit 18 delivered: the `?qa-revalidate=sessionFull|priceChanged|offerExpired` review states (QA-only demonstrations of the future backend `CheckoutValidation` contract; the code rides the flow's entry URL and is captured once at `BookingSessionProvider` mount — the established qa-param pattern, since pushed routes drop search params), typed honest recovery states (spec copy verbatim, `No payment has been made.` reassurance, no CTA and no payment controls while an issue is unresolved), the priceChanged old → new display composed from structured amounts (QA demo previous = current − AED 10; the payable amount everywhere remains the catalogue price), a pure `checkoutIssueRecovery` mapping covering all seven issue codes (re-derive only for priceChanged/offerExpired; step codes return to the owning step), repeated-activation and abandoned-checkout hardening, and screenshot rows 12–13 both widths (docs/22 §16's "rows 16–18" is a doc slip — §15 assigns rows 12–13 to Commit 18).
+- **Checkout milestone (docs/22): CLOSED at this commit** — all four commits plus the two owner-approved corrections (see the Milestone 5 table above). The checkout approval record: **interaction design approved · provisional Orbit Indigo visual implementation approved · final brand styling pending the professional branding/design-system engagement · native validation pending · real payment submission prohibited (docs/23 §19)**. The `?qa-revalidate` demo detail worth remembering: the code rides the flow's *entry* URL and is captured once at `BookingSessionProvider` mount (pushed routes drop search params); the priceChanged demo previous price is current − AED 10 from structured data (the payable amount everywhere remains the catalogue price). docs/22 §16's "rows 16–18" screenshot reference is a recorded doc slip — §15 assigns rows 12–13, and rows 17–19 were added for the extra reviewable states.
+- **Next customer work is sequenced by docs/23 §16, not momentum:** the Payment & Confirmation milestone cannot be planned honestly until the W5 gateway selection and docs/23 §18 decisions exist. The Bookings/Saved/Profile mock milestone is the recommended next W1 item (P1, RTL-safe per docs/23 §3.1) — **do not start it without an owner-approved plan document.**
 - **Phase: P0** (docs/23 §16). Open P0 items: **Batch-1 owner decisions open** (docs/23 §18.1–10 — rebaseline ratified; scale tiers, hosting region, gateway, counsel, brand, commercial model, customer web, language launch, device procurement still open) · **native-validation environment procurement open** (first full device pass pending it) · **provider design-partner recruitment open** (docs/23 §8.6) · **canonical-model specification (docs/23 §5–§7 spec document) not started**.
 - The deferral list below still holds item-by-item, but its items are scheduled workstreams under docs/23 §3/§16, not indefinite futures.
 - **Real payment submission remains prohibited** platform-wide until every docs/23 §19 condition exists (legal acknowledgments, server-side validation, certified gateway, operational controls).
@@ -50,6 +64,7 @@ Live status:
 | Booking selection step (HMA-017) | ✅ (docs/21) | ✅ (Commit 12; Commit 14 edit-return wiring; Commit 15 web aria-disabled fix) | ⏳ pending |
 | Booking participant step (HMA-018/019 inline) | ✅ (docs/21) | ✅ (Commit 13; Commit 14 Continue wiring; Commit 15 web aria-disabled fix) | ⏳ pending |
 | Booking summary (HMA-020) | ✅ (docs/21) | ✅ (Commit 14, incl. accessibility review) | ⏳ pending |
+| Checkout (HMA-021, docs/22) | ✅ (docs/22 + owner-directed CheckoutIssueCard) | ✅ (Commits 16–18 + `07b0865`/`fc583d0` corrections — interaction design approved; **provisional Orbit Indigo visual implementation approved; final brand styling pending** the design-system engagement) | ⏳ pending |
 
 **Native validation is pending for every surface** — this Mac has CommandLineTools only, no Xcode; web review never upgrades a screen to "native validated" (docs/12 §1). All code is written native-safe per docs/12; the device-only checklist is under "Native validation backlog" below.
 
@@ -70,8 +85,9 @@ Live status:
 | `/booking/[programId]` (root push, nested stack) | Booking selection step (skip rule may `<Redirect>` to participant) | hidden structurally |
 | `/booking/[programId]/participant` | Booking participant step | hidden structurally |
 | `/booking/[programId]/summary` | Booking summary | hidden structurally |
+| `/booking/[programId]/checkout` | Checkout (HMA-021) | hidden structurally |
 
-QA-only params: `?qa-scenario=guest|me-only|me-active|household` (Home/Discover/Booking account fixtures), `?qa-fail=1` (Discover/Results/Map/Program/Provider/Booking-step error state), `?qa-nocount=1` (Map missing counts).
+QA-only params: `?qa-scenario=guest|me-only|me-active|household` (Home/Discover/Booking account fixtures), `?qa-fail=1` (Discover/Results/Map/Program/Provider/Booking-step/Checkout error state), `?qa-nocount=1` (Map missing counts), `?qa-revalidate=<CheckoutIssueCode>` on the **booking flow's entry URL** (all seven codes; captured once at `BookingSessionProvider` mount because pushed routes drop search params — surfaces at checkout as the typed revalidation review state).
 
 ### Detail-route activation matrix (docs/20 §2.4, all verified in QA)
 
@@ -85,6 +101,13 @@ Program Details opens from: Home rails, Discover carousels, Results (All + Progr
 - Edit actions: Change participant pops to the participant step; Change session uses `router.dismissTo` to the selection step (participant survives; option switches clear stale session ids in the reducer). The summary CTA price line is a polite live region so edit round-trips re-announce.
 - The flow reads `ParticipantProvider` once for preselection and never writes it; `ResultsSessionProvider` and the Program Details instance stay mounted beneath the whole flow (exact-origin back chain Summary → Participant → Selection → Details → origin).
 
+### Checkout behavior (docs/22 §3–§9 — all verified in QA)
+
+- Checkout is the booking stack's fourth screen over the **re-derived** `BookingSummary` (docs/22 §2 model A): the summary's Continue-to-checkout CTA pushes it behind the 700 ms guard; back pops to the intact summary; `Edit booking` is just back (the summary owns Change participant/session); returning re-derives everything with clean checkout-local state.
+- `checkoutStepAccess` = `summaryStepAccess` (shared deliberately): invalid/missing drafts, full sessions, guests, ineligible participants, and cold links all redirect to the owning step; unknown programs render the standard recovery. Checkout-local state is only `{ paymentMethodId? }` in a screen-level reducer — no provider.
+- CTA readiness (`checkoutReadiness`): free → always ready; paid → the generic `Card payment` contract method must be selected and `contractOnly` — otherwise the CTA is disabled-styled with `aria-disabled`/native disabled semantics and the polite live region names `Choose a payment method to continue`. Every press path (click, Enter, Space, native, repeated) is inert through the Pressable-layer block plus the pure `ctaPressAllowed` gate.
+- Revalidation: a not-ok `CheckoutValidation` replaces the content with the `CheckoutIssueCard` (no CTA bar, no payment controls); `checkoutIssueRecovery` maps all seven codes — priceChanged/offerExpired re-derive in place, sessionFull/branchUnavailable/invalidDraft return to the flow start, participantIneligible to the participant step, registrationClosed to Program Details. Deterministic mock issues are QA-param demonstrations only; `priceComparison` labels come from structured amounts (demo previous = current − AED 10; never rendered on any customer-reachable path).
+
 ### Stack behavior (docs/20 §2.2–2.3)
 
 - Exact-origin back everywhere; root pushes leave the origin (and the Results session) mounted beneath.
@@ -93,11 +116,21 @@ Program Details opens from: Home rails, Discover carousels, Results (All + Progr
 - Double-tap guard (700 ms) prevents duplicate detail routes from one action; QA double-clicks to prove it.
 - Storefront taxonomy chips `dismiss()` then push the category/activity route so browsing surfaces never stack on top of a root detail route (cold-link fallback: replace).
 
-## Automated verification (Commit 15 final run, exact totals)
+## Automated verification (Commit 19 final run, exact totals)
+
+- TypeScript `tsc --noEmit`: clean · ESLint `--max-warnings=0`: clean · Jest: **407/407 across 23 suites** · expo-doctor: **20/20**
+- Playwright QA (playwright-core + system Chrome, Expo web :8081): **808 checks, 0 failures** — home 79, discover 64, search 22, results 35, catalogue 36, map 52, details 127, booking 183, **checkout 210**. Every suite asserts zero console errors and no horizontal overflow (390 and 360). The checkout suite additionally asserts: `Booking price` continuity with no `Total`/VAT/fee/discount/`AED 0`/card-detail/acceptance copy · payment-method radiogroup semantics with explicit aria state · CTA readiness (unready `aria-disabled="true"` + native disabled semantics, named blocker, focus refusal, Enter/Space/forced-click inertness; ready enabled semantics with focus acceptance and inert presses; repeated activation swallowed) · method-selection persistence through ordinary interactions and clean state on re-entry/edit round-trips/abandonment · all revalidation states on the CheckoutIssueCard (per-state copy, structured old → new comparison, reassurance, no CTA/no payment controls, recovery navigation, re-derivation) · exact-origin back chains and cold-link/unknown/error recovery · the inert-submit contract (zero route changes, zero dialogs). A source-scan unit guard proves `PaymentSubmitRequest`/`PaymentSubmitResult` exist only as declarations in `services/contracts/checkout.ts` with no submit-like call site anywhere in `src/`.
+- Note: earlier commit messages counted the QA banner line, inflating totals by one (e.g. "211" = 210 checks); this section uses exact `^PASS`-line counts.
+
+## Automated verification (Commit 15 booking-milestone run, historical)
 
 - TypeScript `tsc --noEmit`: clean · ESLint `--max-warnings=0`: clean · Jest: **325/325 across 19 suites** · expo-doctor: **20/20**
 - Playwright QA (playwright-core + system Chrome, Expo web :8081): **597 checks, 0 failures** — home 79, discover 64, search 22, results 35, catalogue 36, map 52, details 127, **booking 182**. Every suite asserts zero console errors and no horizontal overflow (390 and 360); the booking suite additionally asserts the inert-checkout contract (no route change, zero dialogs), no reservation/Total/VAT/fee copy, and structural accessibility (radiogroup/radio semantics with explicit checked/disabled states, heading roles, summary reading order).
 - Dependency note: `01b6f73 chore(deps)` re-aligned to the current SDK 57 registry (expo ~57.0.10 line; `react-native-gesture-handler` back to ~2.32.0 — the registry reversed its own Commit-11 prescription of 3.1.0; full history in docs/13). npm audit: same 11 known moderate advisories, all under the Expo-tooling `uuid` root — zero in shipped code.
+
+## Screenshot inventory — `artifacts/checkout-review/` (38 captures, docs/22 §15 complete + extensions)
+
+Every row at both 390 × 844 and 360 × 780 (`-390`/`-360` suffixes): `01`-single (readiness-blocker entry state) · `02`-monthly · `03`-camp · `04`-package · `05`-free (`Confirm booking`, no payment section) · `06`-free-trial · `07`-paid-trial · `08`-child (guardian context) · `09`-offer (informational line) · `10`-method-selected (= matrix row 11's "ready" frame — deliberate pairing) · `11`-readiness-blocker · `12`-revalidate-sessionfull · `13`-revalidate-pricechanged (structured old → new) · `14`-error · `15`-cold-link · `16`-sticky · extension rows `17`-revalidate-ineligible · `18`-revalidate-closed · `19`-revalidate-invalid (owner-directed CheckoutIssueCard review set). Deferred states (submitting, payment failure, saved cards) are **not captured** — deferred states are never faked for screenshots (docs/22 §15).
 
 ## Screenshot inventory — `artifacts/details-review/` (62 captures, all regenerated in Commit 11)
 
@@ -127,7 +160,7 @@ Every matrix row 01–20 exists at both 390 × 844 and 360 × 780 (`-390`/`-360`
 **Implemented, not screenshot-demonstrated:** per-step loading skeletons (300 ms mock delay — transient, exercised on every QA navigation; same standing limitation as the details milestone).
 **Copy audit (Commit 15):** QA asserts the rendered flow never contains reservation/hold/charged-today, `Total`, VAT/fee, auto-renewal, or package expiry/redemption wording; a source grep confirms no such customer copy exists in `src/features/booking/` or the booking service.
 
-## Commit 15 review changes (this commit)
+## Commit 15 review changes (`454ee91`, historical)
 
 - **Accessibility (web parity):** the two disabled radio rows (full session, ineligible participant) now set explicit `aria-checked={false}` / `aria-disabled` — RN-web does not emit aria state from `accessibilityState` (the standing HANDOFF rule PressableFeedback already follows); native behavior is unchanged. Only code change in the commit.
 - **QA:** `booking-review.mjs` extended with structural accessibility assertions (radiogroup roles, exactly-one-checked radio, disabled-state exposure, heading roles, summary reading order) and the three missing matrix captures (`12-…-single-bottom-360`, `13-…-membership-360`, `17-…-error-360`); header updated to the Commits 12–15 scope. Booking checks 172 → 182.
@@ -136,10 +169,26 @@ Every matrix row 01–20 exists at both 390 × 844 and 360 × 780 (`-390`/`-360`
 
 No approved-screen redesigns; no new product features.
 
+## State coverage — checkout (Commit 19 audit, docs/22 §8)
+
+**Implemented and QA/screenshot-demonstrated:** every §8 in-scope state — paid one-off/monthly/term/camp/package/free/free-trial/paid-trial checkouts · offer informational-only · child booking with guardian context and no consent artifacts · policy displayed with no checkbox and no acceptance claim · generic `Card payment` selected / not-yet-selected with the named readiness blocker · registration-closed and ineligible entry redirects via the access policy · missing-draft/cold-link/unknown-program recovery · error/retry and the offline-equivalent deterministic failure · abandoned checkout and re-entry with clean state · duplicate-submit protection (real 700 ms mechanics, inert contract).
+**Contract-only (QA-param-reachable):** all seven `CheckoutValidation` revalidation states on the CheckoutIssueCard (`?qa-revalidate` — sessionFull/priceChanged/offerExpired per the spec plus the four additional codes made review-reachable for the visual approval round).
+**Deferred (never rendered, never faked):** submitting state, payment success/failure UI, Apple/Google Pay as usable methods, saved cards (docs/22 §8) — `PaymentSubmitRequest`/`PaymentSubmitResult` remain declarations only, enforced by the source-scan guard test.
+
+## Visual-branding debt register (for the design-system engagement — do not re-polish provisional styling)
+
+Owner decision (2026-08-05): the CheckoutIssueCard and checkout surfaces are approved as the **provisional Orbit Indigo implementation**; final typography, iconography, shadows, colors, spacing polish, and brand expression belong to the professional branding engagement (docs/23 §18.6). Register (append here instead of iterating on provisional styling):
+
+1. CheckoutIssueCard: Ionicons glyph choices per issue code, icon-chip tile treatment, uppercase state-label letter-spacing, comparison-block `primarySoft` tint, struck-through previous-price treatment, reassurance shield glyph/`status.success` pairing.
+2. Checkout screen: recap card `primarySoft` surface, price/policy/method block border treatment vs. the issue card's shadow treatment (two card languages on one screen — unify at rebrand), sticky-CTA bar shadow (`shadows.sheet`) and 132 px scroll-clearance literal, blocker-line multi-line wrap at 360.
+3. Booking/checkout shared: `letterSpacing: -0.3` heading de-facto style, CTA button 52 px height literal vs. a token, `EmptyFeedCard` magnifier glyph reused for program-missing recovery states across surfaces.
+4. The pre-existing 8b token-debt list below stands unchanged; all of it folds into the same brand-token pass.
+
 ## Known limitations / polish debt (recorded, deliberately NOT fixed in Commit 11)
 
 - **Documented assumptions (details milestone):** branch selector is a wrapping chip row treated as a segmented control and assumes **max two branches per provider** (docs/20 §4.6's "sheet for more than 2" is unimplemented — no provider has >2); session lists render at most **6 upcoming occurrences** from the two-week window (scannability cap in `buildUpcomingSessions`); sessions are informational only on details (docs/09 §20.9 — the booking flow owns selection); provider name inside program cards stays non-interactive (docs/09 §20.2 — path is card → Program Details → provider row).
-- **Documented assumptions (booking milestone):** the booking draft is in-memory only — reload, restart, or OS termination discards it (docs/09 §21.13); one participant per booking, contracts keep the multi-participant widening path (docs/09 §21.2); membership-style products book through the `monthly` mapping (docs/09 §21.14); the `freeTrial` price kind stays unused (trials derive from offers); at 360 width the sticky-CTA price line may ellipsize on long cadence labels (`AED 85 per …`) — the full label is in the price block and the accessible CTA label.
+- **Documented assumptions (booking milestone):** the booking draft is in-memory only — reload, restart, or OS termination discards it (docs/09 §21.13); one participant per booking, contracts keep the multi-participant widening path (docs/09 §21.2); membership-style products book through the `monthly` mapping (docs/09 §21.14); the `freeTrial` price kind stays unused (trials derive from offers); at 360 width the sticky-CTA price line may ellipsize on long cadence labels (`AED 85 per …`) — the full label is in the price block and the accessible CTA label (the checkout readiness *blocker* deliberately wraps in full instead — the reason a CTA is unready is never truncated).
+- **Documented assumptions (checkout milestone):** the unready checkout CTA carries the browser's native disabled semantics on web (RN-web structurally couples `aria-disabled` with the `disabled` attribute on button hosts), so it is not tab-focusable while unready — screen readers reach it in browse mode and the live region announces the blocker; `registrationClosed` recovery replaces checkout with a new Program Details instance on top of the stack (back from it lands on the summary — acceptable for this future-backend-only path, revisit if it ever becomes deterministic-reachable); the priceChanged headline is booking-generic (`Your booking price has changed`, owner decision 2026-08-05); `react-test-renderer` (shipped inside jest-expo) is used by the PressableFeedback contract test — no new dependency.
 - **Token debt (8b visual audit)** stands unchanged: compact-card-title 15/20 de-facto style, two 18 px group-title variants, monogram sizes, off-scale micro-gaps, badge padding, dock literals, sheet-handle triplication, etc. The details screens add: `letterSpacing: -0.3` on section titles (both screens, consistent), price block 26/32 hero variant, CTA 96 px content-clearance literal. All fold into the brand-token pass at rebranding.
 - **Copy register drift** (8b list) unchanged; details copy follows the same register. One copy pass belongs with final brand voice.
 - **RN-web vs native rendering divergences (device-verify):** 8b list plus: hero/cover `AppImage` heights (264/220) under `contentFit: cover` on device; scrim-chip overlay contrast over bright photos; `shadows.sheet` on the sticky CTA bar vs Android elevation.
@@ -161,6 +210,11 @@ The booking milestone adds:
 
 10. **Booking flow, iOS:** swipe-back through Summary → Participant → Selection → Details; the skip-rule `<Redirect>` replace keeps one-step back to Details; sticky Continue bars sit above the home indicator on both steps; VoiceOver pass for the radio groups (session/option/participant), disabled-with-reason rows, polite live-region announcements (`Booking for Adam`, summary price after edits), and the spoken `Booking price` CTA label.
 11. **Booking flow, Android:** hardware back pops exactly one step (no sheets exist in the flow); TalkBack equivalents of item 10; font-metric tolerance on session rows and the two-line CTA status text.
+
+The checkout milestone adds:
+
+12. **Checkout, iOS:** swipe-back from checkout to the intact summary; sticky CTA above the home indicator; VoiceOver pass for the payment-method radiogroup (explicit checked state), the disabled-CTA state with the live-region blocker announcement and its resolution on selection, the spoken CTA label (`Continue to payment, Booking price, …`), the CheckoutIssueCard reading order (state label → headline → support → price comparison with its paired spoken label → reassurance → recovery action), and guardian-context grouping on child bookings.
+13. **Checkout, Android:** hardware back pops to the summary; TalkBack equivalents of item 12; Dynamic Type tolerance on the price-comparison rows, the multi-line readiness blocker, and the issue-card headline; `shadows.card` on the CheckoutIssueCard vs Android elevation.
 
 ## Architecture map (stable — see git history for details)
 
