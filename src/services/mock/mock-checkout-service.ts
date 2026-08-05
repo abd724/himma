@@ -1,15 +1,18 @@
 import { bookingExtras } from '@/data/mock/booking-extras';
 import type { BookingOption, BookingSummary } from '@/services/contracts/booking';
 import type {
+  CheckoutIssueCode,
   CheckoutPage,
   CheckoutPageInput,
   CheckoutPriceLine,
   CheckoutPriceSummary,
   CheckoutService,
+  CheckoutValidation,
   PaymentMethod,
 } from '@/services/contracts/checkout';
 import { MockBookingService } from '@/services/mock/mock-booking-service';
-import { spokenLabel } from '@/utils/price';
+import type { PriceModel } from '@/types/domain';
+import { priceLabel, spokenLabel } from '@/utils/price';
 
 /**
  * Deterministic checkout mock — docs/22, owner decisions docs/09 §22.
@@ -105,6 +108,69 @@ const cardPaymentContractMethod: PaymentMethod = {
   availability: { status: 'contractOnly' },
 };
 
+/**
+ * QA-only demonstration of a superseded price for the `priceChanged` review
+ * state (docs/22 §7.10: "shows old → new"). The demo previous amount is the
+ * current structured amount minus a fixed AED 10 — a display fixture like
+ * the `sessionSpots` full-session override, reachable only through
+ * `qaRevalidate`. The current, payable price everywhere remains the true
+ * catalogue price; no arithmetic exists on any customer-reachable path.
+ */
+function qaDemoPreviousPrice(price: PriceModel): PriceModel | undefined {
+  switch (price.kind) {
+    case 'dropIn':
+    case 'monthly':
+    case 'term':
+    case 'package':
+      return { ...price, amount: price.amount - 10 };
+    case 'camp':
+      return { ...price, amountPerWeek: price.amountPerWeek - 10 };
+    case 'free':
+    case 'freeTrial':
+      return undefined;
+  }
+}
+
+/**
+ * Deterministic issue composition for the docs/09 §22.10 codes — typed
+ * development contracts for the future server implementation (docs/23 §12.2
+ * names these codes the platform vocabulary). Copy is honest and specific:
+ * no reservation, payment, confirmation, or success implication; spec-worded
+ * states use the docs/22 §7.10 copy verbatim. Only sessionFull /
+ * priceChanged / offerExpired are QA-reachable; the rest are composed so the
+ * screen's full code → recovery mapping is exercised by tests today and by
+ * the real backend later.
+ */
+function revalidationIssue(
+  code: CheckoutIssueCode,
+  price: PriceModel,
+): { code: CheckoutIssueCode; message: string } {
+  switch (code) {
+    case 'sessionFull':
+      return { code, message: 'This session filled up while you were checking out.' };
+    case 'priceChanged': {
+      const previous = qaDemoPreviousPrice(price);
+      return {
+        code,
+        message:
+          previous === undefined
+            ? 'The booking price changed while you were checking out.'
+            : `The booking price changed from ${priceLabel(previous)} to ${priceLabel(price)} while you were checking out.`,
+      };
+    }
+    case 'offerExpired':
+      return { code, message: 'This offer ended while you were checking out.' };
+    case 'registrationClosed':
+      return { code, message: 'Registration for this program has closed.' };
+    case 'participantIneligible':
+      return { code, message: 'This participant can no longer join this program.' };
+    case 'branchUnavailable':
+      return { code, message: 'This location is no longer available for this program.' };
+    case 'invalidDraft':
+      return { code, message: 'This booking needs to be started again.' };
+  }
+}
+
 export class MockCheckoutService implements CheckoutService {
   private readonly booking = new MockBookingService(0);
 
@@ -121,7 +187,11 @@ export class MockCheckoutService implements CheckoutService {
    * BookingSummary from the live draft (docs/22 §2) — every invalid or stale
    * draft that cannot compose a summary resolves undefined, and the screen
    * redirects via `checkoutStepAccess` instead of rendering a broken page.
-   * `qaRevalidate` is declared in the contract and wired in Commit 18.
+   * `qaRevalidate` (Commit 18) attaches a typed not-ok CheckoutValidation to
+   * an otherwise-valid page — the QA-only demonstration of the future
+   * backend revalidation contract (docs/22 §7.10); it never alters pricing,
+   * methods, or any other composed field, and access-policy redirects take
+   * precedence (an invalid draft still resolves undefined).
    */
   buildCheckoutPage(input: CheckoutPageInput): CheckoutPage | undefined {
     const summary = this.booking.buildBookingSummary({
@@ -141,6 +211,11 @@ export class MockCheckoutService implements CheckoutService {
       (candidate) => candidate.id === summary.participant.participantId,
     );
 
+    const validation: CheckoutValidation =
+      input.qaRevalidate === undefined
+        ? { ok: true }
+        : { ok: false, issues: [revalidationIssue(input.qaRevalidate, summary.program.price)] };
+
     return {
       summary,
       price,
@@ -150,7 +225,7 @@ export class MockCheckoutService implements CheckoutService {
       // have no payment-method section at all (docs/22 §4, §7.5–7.6).
       paymentMethods: paymentRequired ? [cardPaymentContractMethod] : [],
       paymentRequired,
-      validation: { ok: true },
+      validation,
       ctaLabel,
       spokenCtaLabel: `${ctaLabel}, ${price.spokenBookingPriceLabel}`,
     };

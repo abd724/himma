@@ -110,8 +110,11 @@ export interface CheckoutPage {
   /** [generic Card payment] for paid bookings (composed in Commit 17); empty for free. */
   paymentMethods: PaymentMethod[];
   paymentRequired: boolean;
-  /** Deterministic {ok: true} at entry once the access policy has passed;
-   * QA-only review states arrive in Commit 18 (docs/09 §22.10). */
+  /** Deterministic {ok: true} at entry once the access policy has passed.
+   * Not-ok values are QA-only review demonstrations of the future backend
+   * revalidation contract (docs/09 §22.10, docs/22 §7.10) — the screen maps
+   * every issue code to an honest recovery action and renders no CTA while
+   * an issue is unresolved. */
   validation: CheckoutValidation;
   /** docs/09 §22.11: paid → 'Continue to payment', free → 'Confirm booking'. */
   ctaLabel: 'Continue to payment' | 'Confirm booking';
@@ -141,7 +144,9 @@ export interface CheckoutPageInput {
   areaId: AreaId;
   /** QA/Playwright-only deterministic failure trigger — never customer-reachable. */
   simulateFailure?: boolean;
-  /** QA-only revalidation review states (docs/09 §22.10); wired in Commit 18. */
+  /** QA-only revalidation review states (docs/09 §22.10) — attaches a typed
+   * not-ok validation to an otherwise-valid page; never customer-reachable,
+   * never alters pricing or composition. */
   qaRevalidate?: CheckoutIssueCode;
 }
 

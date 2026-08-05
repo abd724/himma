@@ -368,6 +368,141 @@ describe('Checkout invalid-draft rejection (docs/22 §2, §3.3)', () => {
   });
 });
 
+describe('QA revalidation states (Commit 18, docs/22 §7.10, docs/09 §22.10)', () => {
+  const allCodes = [
+    'sessionFull',
+    'registrationClosed',
+    'priceChanged',
+    'offerExpired',
+    'participantIneligible',
+    'branchUnavailable',
+    'invalidDraft',
+  ] as const;
+
+  test('qaRevalidate attaches a typed not-ok validation carrying exactly that code', () => {
+    for (const code of allCodes) {
+      const page = service.buildCheckoutPage({
+        draft: draftFor('beginner-calisthenics', 'me'),
+        participants: household,
+        areaId: 'khalifa-city',
+        qaRevalidate: code,
+      });
+      expect(page).toBeDefined();
+      expect(page!.validation.ok).toBe(false);
+      if (!page!.validation.ok) {
+        expect(page!.validation.issues).toHaveLength(1);
+        expect(page!.validation.issues[0].code).toBe(code);
+        expect(page!.validation.issues[0].message.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  test('a revalidation page is otherwise identical — pricing, methods, CTA untouched', () => {
+    const draft = draftFor('beginner-calisthenics', 'me');
+    const normal = pageFor(draft);
+    const revalidated = service.buildCheckoutPage({
+      draft,
+      participants: household,
+      areaId: 'khalifa-city',
+      qaRevalidate: 'priceChanged',
+    });
+    expect(revalidated).toBeDefined();
+    expect({ ...revalidated!, validation: undefined }).toEqual({
+      ...normal,
+      validation: undefined,
+    });
+  });
+
+  test('priceChanged shows old → new composed from structured amounts only', () => {
+    const page = service.buildCheckoutPage({
+      draft: draftFor('beginner-calisthenics', 'me'),
+      participants: household,
+      areaId: 'khalifa-city',
+      qaRevalidate: 'priceChanged',
+    });
+    expect(page!.validation.ok).toBe(false);
+    if (!page!.validation.ok) {
+      // QA demo previous = current − 10 (display fixture); current is the
+      // true catalogue price — the payable amount is never fabricated.
+      expect(page!.validation.issues[0].message).toBe(
+        'The booking price changed from AED 75 per session to AED 85 per session while you were checking out.',
+      );
+    }
+    expect(page!.price.bookingPriceLabel).toBe('Booking price · AED 85 per session');
+    expect(page!.price.amount).toBe(85);
+  });
+
+  test('priceChanged on a free booking carries no amounts (nothing invented)', () => {
+    const page = service.buildCheckoutPage({
+      draft: draftFor('community-park-football', 'me'),
+      participants: household,
+      areaId: 'khalifa-city',
+      qaRevalidate: 'priceChanged',
+    });
+    expect(page!.validation.ok).toBe(false);
+    if (!page!.validation.ok) {
+      expect(page!.validation.issues[0].message).toBe(
+        'The booking price changed while you were checking out.',
+      );
+      expect(page!.validation.issues[0].message).not.toMatch(/AED/);
+    }
+  });
+
+  test('sessionFull uses the spec copy verbatim (docs/22 §7.10)', () => {
+    const page = service.buildCheckoutPage({
+      draft: draftFor('beginner-calisthenics', 'me'),
+      participants: household,
+      areaId: 'khalifa-city',
+      qaRevalidate: 'sessionFull',
+    });
+    expect(page!.validation.ok).toBe(false);
+    if (!page!.validation.ok) {
+      expect(page!.validation.issues[0].message).toBe(
+        'This session filled up while you were checking out.',
+      );
+    }
+  });
+
+  test('every issue message stays honest — no success, reservation, or pricing claims', () => {
+    for (const code of allCodes) {
+      const page = service.buildCheckoutPage({
+        draft: draftFor('beginner-calisthenics', 'me'),
+        participants: household,
+        areaId: 'khalifa-city',
+        qaRevalidate: code,
+      });
+      expect(page!.validation.ok).toBe(false);
+      if (!page!.validation.ok) {
+        const message = page!.validation.issues[0].message;
+        expect(message).not.toMatch(/\bTotal\b/);
+        expect(message).not.toMatch(/VAT|\bfees?\b/i);
+        expect(message).not.toContain('AED 0');
+        expect(message).not.toMatch(/reserv|holding|charged|confirmed|success|receipt/i);
+        expect(message).not.toMatch(/i agree|i accept|by continuing/i);
+      }
+    }
+  });
+
+  test('access-policy rejection takes precedence over qaRevalidate', () => {
+    expect(
+      service.buildCheckoutPage({
+        draft: { programId: 'beginner-calisthenics', participantId: 'me' },
+        participants: household,
+        areaId: 'khalifa-city',
+        qaRevalidate: 'priceChanged',
+      }),
+    ).toBeUndefined();
+    expect(
+      service.buildCheckoutPage({
+        draft: draftFor('beginner-calisthenics', 'me'),
+        participants: [],
+        areaId: 'khalifa-city',
+        qaRevalidate: 'sessionFull',
+      }),
+    ).toBeUndefined();
+  });
+});
+
 describe('Payment-submit guard: no submission path can execute (docs/09 §22.11, docs/23 §19)', () => {
   /** Every app source file, so a submit call site can never hide. */
   function appSourceFiles(dir: string): string[] {

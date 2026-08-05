@@ -1,6 +1,14 @@
 import type { BookingDraft } from '@/services/contracts/booking';
+import type { CheckoutIssueCode } from '@/services/contracts/checkout';
 import type { ParticipantId } from '@/types/domain';
-import { createContext, useContext, useMemo, useReducer, type PropsWithChildren } from 'react';
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useReducer,
+  useState,
+  type PropsWithChildren,
+} from 'react';
 
 /**
  * Temporary booking-draft state — docs/21 §10, docs/09 §21.13. Mounted inside
@@ -37,9 +45,39 @@ export function draftReducer(draft: BookingDraft, action: BookingDraftAction): B
   }
 }
 
+/**
+ * QA review-state selection — docs/22 §7.10, docs/09 §22.10: the mid-checkout
+ * revalidation states are reachable only via `?qa-revalidate` on the flow's
+ * entry URL (established `?qa-*` pattern; pushed routes drop search params,
+ * so the value is captured once at flow entry, exactly like the
+ * account-context `?qa-scenario` capture). Review/QA only — deterministic
+ * demonstrations of the future backend contract; never customer-reachable,
+ * no implied live polling, no simulated contention.
+ */
+const QA_REVALIDATE_CODES = ['sessionFull', 'priceChanged', 'offerExpired'] as const;
+
+export function qaRevalidateFromSearch(search: string | undefined): CheckoutIssueCode | undefined {
+  if (search === undefined || search === '') return undefined;
+  const value = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get(
+    'qa-revalidate',
+  );
+  const match = QA_REVALIDATE_CODES.find((code) => code === value);
+  return match;
+}
+
+function initialQaRevalidate(): CheckoutIssueCode | undefined {
+  // Web-only initial-URL read, guarded so native stays safe (docs/12 §3).
+  if (typeof window !== 'undefined' && typeof window.location?.search === 'string') {
+    return qaRevalidateFromSearch(window.location.search);
+  }
+  return undefined;
+}
+
 interface BookingSessionContextValue {
   draft: BookingDraft;
   dispatch: (action: BookingDraftAction) => void;
+  /** QA-only review-state code captured at flow entry; undefined otherwise. */
+  qaRevalidate: CheckoutIssueCode | undefined;
 }
 
 const BookingSessionContext = createContext<BookingSessionContextValue | undefined>(undefined);
@@ -49,7 +87,9 @@ export function BookingSessionProvider({
   children,
 }: PropsWithChildren<{ programId: string }>) {
   const [draft, dispatch] = useReducer(draftReducer, { programId });
-  const value = useMemo(() => ({ draft, dispatch }), [draft]);
+  // Captured once per flow mount; discarded with the flow like the draft.
+  const [qaRevalidate] = useState(initialQaRevalidate);
+  const value = useMemo(() => ({ draft, dispatch, qaRevalidate }), [draft, qaRevalidate]);
   return (
     <BookingSessionContext.Provider value={value}>{children}</BookingSessionContext.Provider>
   );

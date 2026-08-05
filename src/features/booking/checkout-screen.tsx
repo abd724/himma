@@ -16,8 +16,13 @@ import {
   initialCheckoutUiState,
   type CheckoutReadiness,
 } from '@/features/booking/checkout-state';
+import {
+  checkoutIssueRecovery,
+  REVALIDATION_REASSURANCE,
+} from '@/features/booking/checkout-revalidation';
 import { PaymentMethodRow } from '@/features/booking/payment-method-row';
 import { summaryParticipantBlock } from '@/features/booking/summary-presentation';
+import { programHref } from '@/features/details/detail-navigation';
 import { demoImage } from '@/data/mock/images';
 import type { BookingOptionsPage } from '@/services/contracts/booking';
 import type { CheckoutPage } from '@/services/contracts/checkout';
@@ -52,7 +57,7 @@ export function CheckoutScreen() {
 
   const { participants } = useParticipantContext();
   const { areaId, areaLabelById } = useAreaContext();
-  const { draft } = useBookingSession();
+  const { draft, qaRevalidate } = useBookingSession();
   // Redirect decisions read the draft at response time, not render time.
   const draftRef = useRef(draft);
   useEffect(() => {
@@ -67,8 +72,13 @@ export function CheckoutScreen() {
   // Leaving checkout unmounts the screen and discards it structurally.
   const [uiState, dispatchUi] = useReducer(checkoutReducer, initialCheckoutUiState);
   const lastCtaPressAt = useRef(0);
+  // A 'rederive' recovery action clears the QA review state and re-derives
+  // the page from the live draft (docs/22 §7.10 — no silent repair; the
+  // re-derived page is the current truth).
+  const [reviewed, setReviewed] = useState(false);
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
+  const simulateRevalidate = reviewed ? undefined : qaRevalidate;
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +96,7 @@ export function CheckoutScreen() {
         participants,
         areaId,
         simulateFailure,
+        qaRevalidate: simulateRevalidate,
       }),
     ]).then(
       ([optionsPage, checkoutPage]: [BookingOptionsPage | undefined, CheckoutPage | undefined]) => {
@@ -121,7 +132,7 @@ export function CheckoutScreen() {
     return () => {
       cancelled = true;
     };
-  }, [programId, participants, areaId, simulateFailure, router]);
+  }, [programId, participants, areaId, simulateFailure, simulateRevalidate, router]);
 
   // Back returns to the Booking Summary — checkout is only ever pushed from
   // it (docs/22 §3.3); the replace fallback covers stackless edge cases.
@@ -140,6 +151,27 @@ export function CheckoutScreen() {
   // ready; paid bookings need the contract method selected.
   const readiness: CheckoutReadiness =
     page === null ? { ready: false } : checkoutReadiness(page, uiState);
+  // One unresolved issue at a time owns the screen — docs/22 §7.10.2: every
+  // code maps to a recovery action; nothing renders that could advance.
+  const issue = page !== null && !page.validation.ok ? page.validation.issues[0] : undefined;
+  const recoverFromIssue = () => {
+    if (issue === undefined) return;
+    const recovery = checkoutIssueRecovery(issue.code);
+    switch (recovery.target) {
+      case 'rederive':
+        setReviewed(true);
+        return;
+      case 'flow-start':
+        router.replace(bookingHref(programId));
+        return;
+      case 'participant':
+        router.replace(bookingStepHref(programId, 'participant'));
+        return;
+      case 'program':
+        router.replace(programHref(programId));
+        return;
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -152,8 +184,12 @@ export function CheckoutScreen() {
 
       <ScrollView
         contentContainerStyle={{
+          // CTA-bar clearance applies only while the bar renders (it is
+          // absent during loading, recovery, and revalidation states).
           paddingBottom:
-            page !== null ? 132 + insets.bottom + spacing.xl : insets.bottom + spacing.xl,
+            page !== null && issue === undefined
+              ? 132 + insets.bottom + spacing.xl
+              : insets.bottom + spacing.xl,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -171,6 +207,20 @@ export function CheckoutScreen() {
         ) : failed ? (
           <View style={styles.stateWrap}>
             <ErrorStateCard onRetry={() => setRetried(true)} />
+          </View>
+        ) : issue !== undefined ? (
+          /* Revalidation review state — docs/22 §7.10, docs/09 §22.10:
+             typed, honest, recoverable. The reassurance line states plainly
+             that nothing was performed; the single action re-derives the
+             page or returns to the step that owns the fix. No CTA bar and
+             no payment controls render while an issue is unresolved. */
+          <View style={styles.stateWrap}>
+            <EmptyFeedCard
+              title={issue.message}
+              message={REVALIDATION_REASSURANCE}
+              actionLabel={checkoutIssueRecovery(issue.code).actionLabel}
+              onClearFilter={recoverFromIssue}
+            />
           </View>
         ) : page === null || participantBlock === undefined ? null : (
           <View style={styles.content}>
@@ -325,7 +375,7 @@ export function CheckoutScreen() {
         )}
       </ScrollView>
 
-      {page === null ? null : (
+      {page === null || issue !== undefined ? null : (
         <View style={[styles.ctaBar, { paddingBottom: insets.bottom + spacing.md }]}>
           {/* The polite live region announces readiness blockers and their
               resolution (docs/22 §9/§12) — never unready without a reason. */}

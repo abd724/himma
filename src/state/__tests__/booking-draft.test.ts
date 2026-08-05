@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
 import type { BookingDraft } from '@/services/contracts/booking';
-import { draftReducer } from '@/state/booking-session-context';
+import { draftReducer, qaRevalidateFromSearch } from '@/state/booking-session-context';
 
 /**
  * Booking draft reducer — docs/21 §10. The draft is in-memory flow state
@@ -96,5 +96,34 @@ describe('draftReducer', () => {
     expect(draftReducer(busy, { type: 'reset' })).toEqual({
       programId: 'beginner-calisthenics',
     });
+  });
+});
+
+describe('qaRevalidateFromSearch (Commit 18, docs/22 §7.10)', () => {
+  test('accepts exactly the three spec-reachable review codes', () => {
+    expect(qaRevalidateFromSearch('?qa-revalidate=sessionFull')).toBe('sessionFull');
+    expect(qaRevalidateFromSearch('?qa-revalidate=priceChanged')).toBe('priceChanged');
+    expect(qaRevalidateFromSearch('?qa-revalidate=offerExpired')).toBe('offerExpired');
+  });
+
+  test('other declared codes are not URL-reachable (QA contract is the spec three)', () => {
+    expect(qaRevalidateFromSearch('?qa-revalidate=invalidDraft')).toBeUndefined();
+    expect(qaRevalidateFromSearch('?qa-revalidate=participantIneligible')).toBeUndefined();
+    expect(qaRevalidateFromSearch('?qa-revalidate=registrationClosed')).toBeUndefined();
+    expect(qaRevalidateFromSearch('?qa-revalidate=branchUnavailable')).toBeUndefined();
+  });
+
+  test('garbage, empty, and absent values resolve undefined', () => {
+    expect(qaRevalidateFromSearch('?qa-revalidate=nonsense')).toBeUndefined();
+    expect(qaRevalidateFromSearch('?qa-revalidate=')).toBeUndefined();
+    expect(qaRevalidateFromSearch('?other=1')).toBeUndefined();
+    expect(qaRevalidateFromSearch('')).toBeUndefined();
+    expect(qaRevalidateFromSearch(undefined)).toBeUndefined();
+  });
+
+  test('composes with other qa params', () => {
+    expect(qaRevalidateFromSearch('?qa-scenario=household&qa-revalidate=sessionFull')).toBe(
+      'sessionFull',
+    );
   });
 });
