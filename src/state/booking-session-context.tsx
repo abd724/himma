@@ -50,11 +50,14 @@ export function draftReducer(draft: BookingDraft, action: BookingDraftAction): B
  * revalidation states are reachable only via `?qa-revalidate` on the flow's
  * entry URL (established `?qa-*` pattern; pushed routes drop search params,
  * so the value is captured once at flow entry, exactly like the
- * account-context `?qa-scenario` capture). Review/QA only — deterministic
- * demonstrations of the future backend contract; never customer-reachable,
- * no implied live polling, no simulated contention. All declared issue
- * codes are review-reachable so every CheckoutIssueCard design can be
- * inspected (owner-directed visual review, 2026-08-05).
+ * account-context `?qa-scenario` capture). The value arrives as an Expo
+ * Router param from the booking layout, so web URLs and native deep links
+ * (cold and warm) behave identically; the layout's `__DEV__` gate keeps it
+ * out of production behavior. Review/QA only — deterministic demonstrations
+ * of the future backend contract; never customer-reachable, no implied live
+ * polling, no simulated contention. All declared issue codes are
+ * review-reachable so every CheckoutIssueCard design can be inspected
+ * (owner-directed visual review, 2026-08-05).
  */
 const QA_REVALIDATE_CODES = [
   'sessionFull',
@@ -66,21 +69,10 @@ const QA_REVALIDATE_CODES = [
   'invalidDraft',
 ] as const;
 
-export function qaRevalidateFromSearch(search: string | undefined): CheckoutIssueCode | undefined {
-  if (search === undefined || search === '') return undefined;
-  const value = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get(
-    'qa-revalidate',
-  );
-  const match = QA_REVALIDATE_CODES.find((code) => code === value);
-  return match;
-}
-
-function initialQaRevalidate(): CheckoutIssueCode | undefined {
-  // Web-only initial-URL read, guarded so native stays safe (docs/12 §3).
-  if (typeof window !== 'undefined' && typeof window.location?.search === 'string') {
-    return qaRevalidateFromSearch(window.location.search);
-  }
-  return undefined;
+/** Router-param form: validates a `useLocalSearchParams` value. */
+export function qaRevalidateFromParam(value: unknown): CheckoutIssueCode | undefined {
+  const single = Array.isArray(value) ? value[0] : value;
+  return QA_REVALIDATE_CODES.find((code) => code === single);
 }
 
 interface BookingSessionContextValue {
@@ -94,11 +86,19 @@ const BookingSessionContext = createContext<BookingSessionContextValue | undefin
 
 export function BookingSessionProvider({
   programId,
+  qaRevalidate: qaRevalidateParam,
   children,
-}: PropsWithChildren<{ programId: string }>) {
+}: PropsWithChildren<{ programId: string; qaRevalidate?: CheckoutIssueCode }>) {
   const [draft, dispatch] = useReducer(draftReducer, { programId });
-  // Captured once per flow mount; discarded with the flow like the draft.
-  const [qaRevalidate] = useState(initialQaRevalidate);
+  // First-valid-wins latch, discarded with the flow like the draft (the
+  // layout remounts this provider per program via `key`). Native navigation
+  // state hydrates a render after mount, so a mount-time capture would miss
+  // cold deep links; once latched the value never changes for the flow's
+  // lifetime — the same boundary as the previous entry-URL capture.
+  const [qaRevalidate, setQaRevalidate] = useState(qaRevalidateParam);
+  if (qaRevalidate === undefined && qaRevalidateParam !== undefined) {
+    setQaRevalidate(qaRevalidateParam);
+  }
   const value = useMemo(() => ({ draft, dispatch, qaRevalidate }), [draft, qaRevalidate]);
   return (
     <BookingSessionContext.Provider value={value}>{children}</BookingSessionContext.Provider>

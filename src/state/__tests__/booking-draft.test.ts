@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
 import type { BookingDraft } from '@/services/contracts/booking';
-import { draftReducer, qaRevalidateFromSearch } from '@/state/booking-session-context';
+import { draftReducer, qaRevalidateFromParam } from '@/state/booking-session-context';
 
 /**
  * Booking draft reducer — docs/21 §10. The draft is in-memory flow state
@@ -99,33 +99,29 @@ describe('draftReducer', () => {
   });
 });
 
-describe('qaRevalidateFromSearch (Commit 18, docs/22 §7.10)', () => {
+describe('qaRevalidateFromParam (Commit 18, docs/22 §7.10 — router param)', () => {
   test('accepts the spec review codes', () => {
-    expect(qaRevalidateFromSearch('?qa-revalidate=sessionFull')).toBe('sessionFull');
-    expect(qaRevalidateFromSearch('?qa-revalidate=priceChanged')).toBe('priceChanged');
-    expect(qaRevalidateFromSearch('?qa-revalidate=offerExpired')).toBe('offerExpired');
+    expect(qaRevalidateFromParam('sessionFull')).toBe('sessionFull');
+    expect(qaRevalidateFromParam('priceChanged')).toBe('priceChanged');
+    expect(qaRevalidateFromParam('offerExpired')).toBe('offerExpired');
   });
 
   test('every declared code is review-reachable (owner-directed visual review)', () => {
-    expect(qaRevalidateFromSearch('?qa-revalidate=invalidDraft')).toBe('invalidDraft');
-    expect(qaRevalidateFromSearch('?qa-revalidate=participantIneligible')).toBe(
-      'participantIneligible',
-    );
-    expect(qaRevalidateFromSearch('?qa-revalidate=registrationClosed')).toBe('registrationClosed');
-    expect(qaRevalidateFromSearch('?qa-revalidate=branchUnavailable')).toBe('branchUnavailable');
+    expect(qaRevalidateFromParam('invalidDraft')).toBe('invalidDraft');
+    expect(qaRevalidateFromParam('participantIneligible')).toBe('participantIneligible');
+    expect(qaRevalidateFromParam('registrationClosed')).toBe('registrationClosed');
+    expect(qaRevalidateFromParam('branchUnavailable')).toBe('branchUnavailable');
+  });
+
+  test('router array params use the first value', () => {
+    expect(qaRevalidateFromParam(['sessionFull', 'priceChanged'])).toBe('sessionFull');
   });
 
   test('garbage, empty, and absent values resolve undefined', () => {
-    expect(qaRevalidateFromSearch('?qa-revalidate=nonsense')).toBeUndefined();
-    expect(qaRevalidateFromSearch('?qa-revalidate=')).toBeUndefined();
-    expect(qaRevalidateFromSearch('?other=1')).toBeUndefined();
-    expect(qaRevalidateFromSearch('')).toBeUndefined();
-    expect(qaRevalidateFromSearch(undefined)).toBeUndefined();
-  });
-
-  test('composes with other qa params', () => {
-    expect(qaRevalidateFromSearch('?qa-scenario=household&qa-revalidate=sessionFull')).toBe(
-      'sessionFull',
-    );
+    expect(qaRevalidateFromParam('nonsense')).toBeUndefined();
+    expect(qaRevalidateFromParam('')).toBeUndefined();
+    expect(qaRevalidateFromParam(1)).toBeUndefined();
+    expect(qaRevalidateFromParam([])).toBeUndefined();
+    expect(qaRevalidateFromParam(undefined)).toBeUndefined();
   });
 });

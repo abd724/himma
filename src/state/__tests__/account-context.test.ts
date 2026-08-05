@@ -1,18 +1,23 @@
-import { initialScenarioFromSearch } from '@/state/account-context';
+import { scenarioFromParam } from '@/state/account-context';
 import { describe, expect, test } from '@jest/globals';
 
-describe('initialScenarioFromSearch — QA fixture selection only (docs/19 §3)', () => {
+describe('scenarioFromParam — QA fixture selection only (docs/19 §3, router param)', () => {
   test('valid qa-scenario values select their fixture', () => {
-    expect(initialScenarioFromSearch('?qa-scenario=guest')).toBe('guest');
-    expect(initialScenarioFromSearch('?qa-scenario=me-only')).toBe('me-only');
-    expect(initialScenarioFromSearch('?qa-scenario=me-active')).toBe('me-active');
-    expect(initialScenarioFromSearch('?qa-scenario=household')).toBe('household');
+    expect(scenarioFromParam('guest')).toBe('guest');
+    expect(scenarioFromParam('me-only')).toBe('me-only');
+    expect(scenarioFromParam('me-active')).toBe('me-active');
+    expect(scenarioFromParam('household')).toBe('household');
   });
 
-  test('missing, empty, or unknown values fall back to the default demo household', () => {
-    expect(initialScenarioFromSearch(undefined)).toBe('household');
-    expect(initialScenarioFromSearch('')).toBe('household');
-    expect(initialScenarioFromSearch('?qa-scenario=sarah')).toBe('household');
-    expect(initialScenarioFromSearch('?other=1')).toBe('household');
+  test('router array params use the first value', () => {
+    expect(scenarioFromParam(['me-only', 'guest'])).toBe('me-only');
+  });
+
+  test('missing or unknown values resolve undefined (provider falls back to the demo household)', () => {
+    expect(scenarioFromParam(undefined)).toBeUndefined();
+    expect(scenarioFromParam('')).toBeUndefined();
+    expect(scenarioFromParam('sarah')).toBeUndefined();
+    expect(scenarioFromParam(1)).toBeUndefined();
+    expect(scenarioFromParam([])).toBeUndefined();
   });
 });
