@@ -36,6 +36,11 @@ const styles = StyleSheet.create({
     ...typography.sectionTitle,
     color: colors.text.primary,
     letterSpacing: -0.3,
+    // Android lays text out at its measured width, and fractional
+    // letter-spacing can floor that below the painted width, silently
+    // wrapping (and clipping) the last word. Growing into the row's free
+    // space keeps the layout width above the measured width.
+    flexGrow: 1,
   },
   action: {
     ...typography.chip,

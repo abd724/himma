@@ -180,6 +180,11 @@ const styles = StyleSheet.create({
   priceUnit: {
     ...typography.caption,
     color: colors.text.secondary,
+    // Android floors the unit's fractional measured width during layout,
+    // silently wrapping-and-clipping the trailing word ("/week" → "/").
+    // One point of slack keeps layout width above the painted width without
+    // disturbing the documented whole-unit wrap at 360 pt.
+    paddingRight: 1,
   },
   rating: {
     flexDirection: 'row',

@@ -89,8 +89,14 @@ export function ProgramCard({
           </View>
           <View style={styles.footer}>
             <View style={styles.priceRow}>
-              <Text style={styles.price}>{price.amount}</Text>
-              {price.unit ? <Text style={styles.priceUnit}>{price.unit}</Text> : null}
+              {/* One nested Text keeps amount + unit in a single paragraph:
+                  Android clips separately-measured unit views at fractional
+                  widths (the trailing word vanishes), and real text baselines
+                  replace Yoga baseline alignment. */}
+              <Text style={styles.price} numberOfLines={1}>
+                {price.amount}
+                {price.unit ? <Text style={styles.priceUnit}> {price.unit}</Text> : null}
+              </Text>
             </View>
             <View style={styles.rating}>
               <Ionicons name="star" size={12} color={colors.brand.reward} />
