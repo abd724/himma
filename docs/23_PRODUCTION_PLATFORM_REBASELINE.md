@@ -2,6 +2,8 @@
 
 Status: **draft for product-owner approval — binding on the whole platform once approved.** Prepared 2026-08-05 after full re-analysis of the repository, docs/01–22, HANDOFF.md, the git history, and the implemented customer application (through Commit 16, `31f11b9`).
 
+**Amendment A1 (2026-08-05, documentation-only corrective review).** The first draft contained production-critical gaps, corrected in place before approval: a server-side capacity-hold model (§5, §6.4) so customers can never be charged without guaranteed capacity; an auditable multi-entity payment model replacing the single Payment record (§5, §6.6); removal of the universal super-admin, strict separation of technical/business powers, enforced dual control, and full provider role granularity (§7); the first real device pass moved from P2 to P0/P1 (§14, §16); backend vertical slices starting after canonical-model + first-workflow approval instead of after all portal mocks (§4, §16); explicit owner decisions on customer web at launch and English-only versus bilingual launch (§18), with a full Arabic/RTL production work package (§3.1) connected to the launch gates (§15); bulk catalogue/scheduling tooling for the portals (§8.5); service-specific recovery objectives replacing the single platform RPO/RTO (§10.11); correctness- and latency-based scale gates beyond account counts (§11.1); and a provider design-partner discovery step gating final portal approval (§8.6, §16). The superseded first-draft positions are recorded in the contradiction register (C16).
+
 **What this document changes.** The owner has clarified that Himma is the **final production marketplace** — not a prototype, not a disposable MVP, not a customer-app-only build. This document rebaselines the roadmap accordingly. It does not restart anything: every approved milestone, decision, and screen stands. It re-anchors them inside a platform-wide plan in which the customer app is one of three frontends, and the backend is one of six workstreams.
 
 **What this document does not do.** It writes no application code, changes no approved screen, and does not claim the current frontend is production-ready because its tests pass (§2 separates verified from inferred). It does not lift any standing prohibition: **real payment submission remains prohibited until all required legal acknowledgments, server-side validations, payment integration, and operational controls exist** (§19, docs/09 §22.7/§22.11).
@@ -56,6 +58,21 @@ Six workstreams. Each gets its own planning documents on the docs/20–22 patter
 | W4 | **Backend platform** | The production API and domain services implementing §5–§7 on the §10 architecture; owns all authority the frontends currently mock | Not started; contracts anticipate it |
 | W5 | **Payments & integrations** | Payment gateway (cards + Apple Pay/Google Pay), refunds, provider payouts, webhooks; auth identity providers (Apple/Google sign-in); push notifications; maps; calendar export; email/SMS | Not started; UI readiness per docs/12 §9 |
 | W6 | **Infrastructure & operations** | Environments, CI/CD, IaC, observability, backups/DR, security operations, support runbooks, on-call, store release management | Not started beyond local CI-equivalent checks |
+| W7 | **Localization — Arabic/RTL** (cross-cutting work package, §3.1) | Localization architecture, Arabic content pipeline, RTL layouts, bilingual search, typography, QA — across all three frontends and provider content | Not started; English-only with localization-ready string discipline (docs/08 §13) |
+
+### 3.1 Arabic/RTL production work package (W7)
+
+Arabic is not a string-swap in a UAE consumer product; it is a work package with architecture consequences that get more expensive the longer they are deferred. Scope (activation timing set by owner decision §18 — launch-bilingual versus fast-follow — but the *architecture* items are required regardless, because retrofit is the expensive path):
+
+1. **Localization architecture (required now-ish, all frontends):** central string catalogue with ICU plural/format support replacing ad-hoc English literals; locale-aware number/currency/date formatting through the existing single seam (`src/utils/price.ts` precedent); no concatenated sentence fragments; pseudo-locale build for hardcoded-string detection in CI.
+2. **RTL layouts:** logical (start/end) layout properties across all three frontends; RN `I18nManager` RTL pass for the customer app; mirrored navigation, carousels, progress and back affordances; icon mirroring policy; per-screen RTL QA snapshots added to the existing screenshot matrices.
+3. **Typography:** Arabic typeface selection paired with the brand work (§18 decision 6 — the brand engagement must deliver a bilingual type system); line-height/metric tolerance rules per docs/12 §4 extended to Arabic script.
+4. **Provider content:** bilingual field strategy on Program/Organization (title/description ar+en), portal editing UX, §8.5 import template columns, translation workflow ownership (provider-supplied vs Himma-managed vs machine-assisted+review — owner decision), and moderation of Arabic content (AD-14 capability).
+5. **Search:** Arabic analyzers (normalization, diacritics), the existing synonym architecture's `ar` arrays populated (docs/14 §3.4 anticipated exactly this), bilingual query handling, transliteration heuristics for activity names.
+6. **Notifications/legal:** bilingual templates; counsel decides Arabic legal-text requirements (§13).
+7. **QA:** RTL/Arabic rows in every QA suite; native RTL device pass items added to §14; Arabic-speaking review before any bilingual launch.
+
+**Gate connection (§15):** if the owner chooses bilingual launch, G9 applies in full. If English-first launch is chosen, items 1–2 (architecture + logical layouts) still gate G1 for new surfaces — building more RTL-hostile screens is the one option this plan forecloses — and G9 converts to the fast-follow release gate.
 
 ---
 
@@ -76,27 +93,40 @@ DECIDE FIRST (owner, §18):            scale tiers · VAT/fee model · payment g
   in parallel      mock build         mock build        (from §5–§7; no code
   now — §16)       (parallel to W1)   (after W2 spec —  until model approved)
         │                │            shares patterns)        │
-        │                └──────┬─────────┘                   │
-        │                       ▼                             ▼
-        │             Approved three-frontend surface   W6 environments/CI/CD
-        │                       │                       (parallel, early)
-        │                       ▼                             │
-        │             W4 backend vertical slices  ◄───────────┘
-        │             (identity → catalogue → booking/capacity
-        │              → payments W5 → payouts/refunds)
+        │                │                 │                   │
+        │                │                 │                   ▼
+        │                │                 │        W4 vertical slices start on
+        │                │                 │        model approval + FIRST approved
+        │                │                 │        workflows (identity → catalogue →
+        │                │                 │        booking/capacity → payments W5
+        │                │                 │        → payouts/refunds) — slices land
+        │                │                 │        per approved workflow; they do
+        │                │                 │        NOT wait for all portal mocks
+        │                │                 │                   ▲
+        │                │                 │            W6 environments/CI/CD
+        │                │                 │            (parallel, early)
+        │                └──────┬──────────┘
+        │                       ▼
+        │         Portal mock approvals continue per surface
+        │         (design-partner walkthroughs §8.6 gate the
+        │          FINAL provider-portal approval + provider-API
+        │          contract freeze — later slices track them)
         │                       │
         └───────────┬───────────┘
                     ▼
-        Frontend API integration (all three apps, slice by slice)
+        Frontend API integration (all three apps, slice by slice,
+        starting as soon as each slice + its approved workflow exist)
                     ▼
-        Native validation (§14) + load/security/reliability gates (§15)
+        Remaining native validation (§14 — FIRST device pass already
+        ran in P0/P1 over existing screens) + load/security/reliability
+        gates (§15, incl. §11.1 correctness gates)
                     ▼
         LAUNCH (gated, §15)
 ```
 
-**Can run in parallel now:** W1 checkout completion (§16) · W2 provider-portal specification · §5–§7 modeling · W6 environment/CI groundwork · legal engagement · brand engagement.
-**Must be decided first (blocking):** the §18 owner decisions — every one of them blocks a workstream noted there.
-**Hard sequencing:** no backend code before the §5–§7 model is owner-approved; no payment integration before legal text and gateway selection; no launch before every §15 gate.
+**Can run in parallel now:** W1 checkout completion (§16) · W2 provider-portal specification + design-partner recruitment (§8.6) · §5–§7 modeling · W6 environment/CI groundwork · **native-validation environment procurement + first device pass (§14)** · legal engagement · brand engagement.
+**Must be decided first (blocking):** the §18 owner decisions — every one of them blocks a workstream noted there; the customer-web and language decisions (§18 items 8–9) shape W1/W7 scope directly.
+**Hard sequencing:** no backend code before the §5–§7 model is owner-approved — but backend slices then start against the **first** approved workflows (customer flows are already approved today) rather than waiting for the full portal mock set; provider-API contracts freeze only after §8.6 design-partner validation; no payment integration before legal text and gateway selection; no launch before every §15 gate.
 
 ---
 
@@ -118,12 +148,17 @@ The single vocabulary for all workstreams. Entities, key fields, and ownership. 
 | **Participant** | account id, kind (self/child), name, date of birth, interests, accessibility prefs; child-specific legal fields **pending counsel** (docs/02 §5) | Age computed server-side against session date, not "today". |
 | **Eligibility** | minimumAge, maximumAge?, allAges, genderEligibility (men/ladies/mixed), skillLevel, notes | Owner-final model (docs/05 §7); attaches to program, overridable per session. |
 | **PriceModel / PriceQuote** | catalogue price per kind; **PriceQuote** = server-computed breakdown (base, discount, fee, tax, credit lines) with quote id + expiry | The quote is what checkout displays and what payment references — the frontend never computes money (docs/09 §22.4–5 become quote rules). |
-| **Booking** | id, account id, participant id, program id, option kind, session/campweek/enrolment ref, quote ref, state (§6.4), reference code, timestamps, audit trail | One participant per booking now; schema allows a booking group later (docs/09 §21.2). |
+| **CapacityHold** (InventoryReservation) | id, session/campweek ref, booking-draft ref, account id, quantity (1 now), state (§6.4), created at, expires at (TTL), consumed-by booking id? | The server-side reservation that makes paying safe: payment may only be captured against an `active` hold, and confirmation consumes the hold and the capacity **in one transaction** (§6.4, §10.2). |
+| **Booking** | id, account id, participant id, program id, option kind, session/campweek/enrolment ref, quote ref, hold ref, state (§6.5), reference code, timestamps, audit trail | One participant per booking now; schema allows a booking group later (docs/09 §21.2). |
 | **Enrolment** | booking subtype for monthly/term: billing anchor, cadence, renewal policy (owner-open, docs/09 §6) | |
-| **Payment** | booking id, gateway intent id, amount, currency (AED), method, state (§6.5), idempotency key | |
-| **Refund** | payment id, amount, destination (original method / marketplace credit), reason, state (§6.6), actor | |
+| **PaymentIntent** | booking id, quote ref, hold ref, amount, currency (AED), state (§6.6), idempotency key, expiry | One per checkout confirmation attempt-series; the customer-facing "payment" object. |
+| **PaymentAttempt** | intent id, sequence no, method, gateway ref, state (§6.6), failure code?, 3-DS data ref | Append-only — every retry is a new attempt; attempts are never mutated after terminal state. |
+| **PaymentTransaction** | attempt id, kind (authorization/capture/refund/reversal/adjustment), amount, gateway transaction id, posted at | **Append-only financial ledger** — the auditable money history; corrections are compensating entries, never edits. |
+| **GatewayEvent** | raw webhook payload digest, signature-verified flag, gateway event id (unique — replay-safe), received at, processing state, linked attempt/transaction | Append-only inbox; processing is idempotent by gateway event id. |
+| **Refund** | originating payment transaction ref, booking id, amount, destination (original method / marketplace credit), reason, state (§6.7), **initiated-by actor, approved-by actor (must differ — §7)**, resulting refund transaction ref | |
+| **ReconciliationEvent** | run id, scope (day/gateway), expected vs observed diffs, resolution state, actor | Daily reconciliation output; unresolved diffs alert finance (§13). |
 | **CreditLedgerEntry** | account id, class (refund/promo/referral/gift), amount, direction, expiry policy ref, booking ref? | Append-only ledger; balance is a projection (docs/09 §8). |
-| **Payout** | org id, period, gross, commission, adjustments, net, state (§6.7), statement ref | Provider settlement. |
+| **Payout** | org id, period, gross, commission, adjustments, net, state (§6.8), statement ref | Provider settlement. |
 | **VerificationCase** | org id, submitted documents, checklist, state, reviewing admin, decision notes | Admin-owned (§9). |
 | **SupportCase** | reporter (customer/provider), subject refs, state, assignee, thread | |
 | **Notification** | recipient, channel (push/email/SMS/in-app), template, payload, delivery state | |
@@ -146,17 +181,23 @@ Authoritative states and the only valid transitions. Anything not listed is inva
 **6.3 Session**
 `scheduled → open → full (auto, capacity) → open (on cancellation)` · `open|full → closed (registration cutoff)` · `scheduled|open|full → cancelled_by_provider` · `closed → completed (after end time)`. Capacity changes must transition state atomically with the booked count (§10.2).
 
-**6.4 Booking**
-`draft (client-only, never persisted) → pending_payment → confirmed` · `pending_payment → expired (quote/hold TTL) | payment_failed (→ pending_payment on retry)` · `confirmed → cancelled_by_customer | cancelled_by_provider | completed | no_show` · free bookings: `draft → confirmed` directly (server-confirmed, still never client-claimed). `confirmed` is the only state the customer app may ever call "booked".
+**6.4 Capacity hold (InventoryReservation)**
+`created (atomically decrements available capacity, TTL started) → active` · `active → consumed (atomic with booking confirmation — same DB transaction writes hold=consumed, booking=confirmed, booked_count final)` · `active → expired (TTL lapse, capacity released) | released (customer abandons / payment terminally fails, capacity released)`. Rules: a hold is created when the customer commits to pay (checkout confirmation begins), **before** any charge; **payment capture is only permitted against an `active` hold** (a lapsed hold aborts the attempt pre-charge, or triggers an automatic same-amount reversal in the §12.4 race window — the customer is never left charged without capacity); hold creation fails fast with `sessionFull` when no capacity remains (§12.3); expiry/release restore capacity atomically; holds are short-TTL (minutes, tuned per gateway flow) and never presented to customers as "reserved" beyond the truthful in-checkout window. This is the mechanism that closes the pay-without-capacity gap: capacity is guaranteed for exactly the interval money can move, and both are settled in one transaction.
 
-**6.5 Payment**
-`created → processing → succeeded` · `processing → failed (→ created on retry) | requires_action (3-D Secure) → processing` · `succeeded → partially_refunded ↔ refunded`. Gateway webhooks are the source of truth; the API reconciles, never assumes.
+**6.5 Booking**
+`draft (client-only, never persisted) → pending_payment (hold active, intent open) → confirmed (hold consumed)` · `pending_payment → expired (hold/quote TTL) | payment_failed (→ pending_payment on retry with a fresh or still-active hold)` · `confirmed → cancelled_by_customer | cancelled_by_provider | completed | no_show` · free bookings: `draft → confirmed` via the same hold-consumption transaction, no payment (server-confirmed, still never client-claimed). `confirmed` is the only state the customer app may ever call "booked".
 
-**6.6 Cancellation & refund**
-Cancellation request evaluates the booking's policy snapshot (frozen at confirmation): `requested → policy_evaluated → {refund_due(amount) | no_refund}` · refund: `initiated → processing → completed | failed (→ initiated, alerting)`; destination original-method or marketplace credit per policy/owner rules (docs/09 §7 remains owner-open on templates).
+**6.6 Payment (intent → attempt → transaction)**
+- **PaymentIntent:** `created → in_progress → succeeded | failed | expired | cancelled`. One intent per checkout confirmation; idempotency-keyed so a retried request rejoins the same intent.
+- **PaymentAttempt:** `started → requires_action (3-DS) → started` · `started → authorized → captured` · `started|authorized → declined | errored` (terminal per attempt; a retry is a **new** attempt under the same intent; authorized-not-captured attempts are voided by a reversal transaction).
+- **PaymentTransaction:** append-only postings (authorization, capture, refund, reversal, adjustment) — no state machine, no edits; the sum of postings is the financial truth.
+- **GatewayEvent:** `received → verified → processed | quarantined (signature/replay failure, alerting)`; processing is idempotent by gateway event id; webhooks are authoritative — intent/attempt states converge to them via reconciliation, never the reverse.
 
-**6.7 Payout**
-`accrued (per completed booking) → statement_drafted (period close) → approved (finance role) → processing → paid` · `processing → failed (→ approved, alerting)` · adjustments (refund clawbacks) post to the next statement. Dual-control: drafting and approving must be different actors (§7).
+**6.7 Cancellation & refund**
+Cancellation request evaluates the booking's policy snapshot (frozen at confirmation): `requested → policy_evaluated → {refund_due(amount) | no_refund}` · refund: `initiated (support/ops actor) → approved (finance actor — must be a different principal, enforced server-side, §7) → processing → completed | failed (→ approved, alerting)`; completion posts a refund PaymentTransaction; destination original-method or marketplace credit per policy/owner rules (docs/09 §7 remains owner-open on templates).
+
+**6.8 Payout**
+`accrued (per completed booking) → statement_drafted (period close) → approved (finance role, different actor than drafter — enforced server-side) → processing → paid` · `processing → failed (→ approved, alerting)` · adjustments (refund clawbacks) post to the next statement as append-only entries.
 
 ---
 
@@ -168,17 +209,23 @@ All authorization is enforced server-side per request; client UI state is conven
 |---|---|---|---|
 | **Customer** | own account | manage own profile/participants, browse public catalogue, book/pay for own participants, view/cancel own bookings, own credits/gifts, own support cases | see other customers, any provider internals, any admin surface |
 | **Guest** | none | browse public catalogue only (docs/02 §2) | any account-scoped action |
-| **Provider: Owner** | their org (all branches) | everything Manager can, plus staff management, commercial/payout settings, offboarding request | other orgs; admin functions; editing platform taxonomy |
-| **Provider: Manager** | org or assigned branches | listings, schedules, sessions, capacity, offers, bookings view, attendance, provider-initiated cancellations, reports | staff role grants, payout bank details |
+| **Provider: Owner** | their org (all branches) | everything Org manager can, plus staff role management, commercial/payout bank settings, offboarding request | other orgs; admin functions; editing platform taxonomy |
+| **Provider: Org manager** | their org (all branches) | listings, schedules, sessions, capacity, offers, bookings view, attendance oversight, provider-initiated cancellations, org-wide reports, bulk import (§8.5) | staff role grants, payout bank details |
+| **Provider: Branch manager** | assigned branch(es) | the Org-manager set scoped to their branch(es) | org-wide settings, other branches, bank details |
+| **Provider: Listings editor / Scheduler** | org or assigned branches | create/edit listings and schedules, submit for review, media, bulk import previews | publishing overrides, bookings PII, reports, finance |
+| **Provider: Coach / Instructor** | own assigned sessions | roster view (minimal PII: first name + age band), attendance marking for own sessions | any other session, pricing, listings, reports, exports |
 | **Provider: Front-desk** | assigned branch(es) | today's sessions, attendance marking, booking lookup (minimal PII: name + age band + booking ref) | pricing, listings, reports, exports, payout data |
 | **Provider: Finance** | their org | statements, payout history, refund impact reports | listing/schedule mutation |
-| **Admin: Operations** | platform | verification cases, listing review, content moderation, taxonomy, provider suspension | payment capture/refund execution, role grants |
-| **Admin: Support** | platform, read-heavy | customer/booking lookup, support cases, goodwill credit within a capped budget, initiating (not approving) refunds | verification decisions, payouts, role grants |
-| **Admin: Finance** | platform | refund approval/execution, payout approval, reconciliation, fee configuration | content/verification actions (separation of duties) |
-| **Admin: Super-admin** | platform | role grants, configuration, everything above — every action audit-logged, MFA-required | bypassing audit |
+| **Admin: Operations** | platform, business ops | verification cases, listing review, content moderation, taxonomy, provider suspension | payment/refund execution, payouts, role grants, platform configuration |
+| **Admin: Support** | platform, read-heavy | customer/booking lookup, support cases, goodwill credit within a capped budget, **initiating** refunds | **approving/executing** refunds, verification decisions, payouts, role grants |
+| **Admin: Finance** | platform, financial | **approving/executing** refunds (never ones they initiated), payout approval (never statements they drafted), reconciliation resolution, fee configuration | content/verification actions, role grants, initiating what they approve |
+| **Admin: Access administrator** | platform, identity only | role grants/revocations for admin and support staff — each grant requiring a second access-admin approval for finance-capable roles | any business data mutation, customer PII beyond identity records, payments, content |
+| **Platform engineer (technical administration)** | infrastructure | deployments, infrastructure/configuration, feature flags, break-glass incident access (time-boxed, ticket-referenced, fully audited, post-reviewed) | routine business-data access; no standing customer-PII, payment, refund, payout, verification, or role-grant powers |
 | **Auditor** | platform, read-only | all records + full audit trail, exports | any mutation |
 
-Cross-cutting rules: child-participant PII is visible to providers only for confirmed bookings and only the minimum delivery fields (docs/02 §11); support/admin access to PII is logged per-view; payout and refund execution require dual control; all admin surfaces require MFA; provider staff sessions are org-bound tokens.
+**There is no universal super-admin.** No single principal combines business-data mutation, financial execution, role granting, and infrastructure power. Technical administration (platform engineers) is separated from business administration entirely; emergency access is break-glass only — time-boxed, dual-acknowledged, and reviewed after the fact.
+
+Cross-cutting rules: **dual control is enforced server-side as an invariant — the initiating and approving principal of any refund, payout statement, finance-role grant, or goodwill-credit-above-cap must differ** (checked on the records themselves: `initiated_by ≠ approved_by`); child-participant PII is visible to providers only for confirmed bookings and only the minimum delivery fields (docs/02 §11), with coach/front-desk roles further minimized; support/admin access to PII is logged per-view; all admin and provider-portal access requires MFA; provider staff sessions are org-bound tokens scoped to role + branch.
 
 ---
 
@@ -204,6 +251,7 @@ Cross-cutting rules: child-participant PII is visible to providers only for conf
 | PP-14 | Statements & payouts (read; bank details maintenance — Owner only) |
 | PP-15 | Support (cases with Himma) |
 | PP-16 | Settings & notifications |
+| PP-17 | Bulk import & batch operations (§8.5) |
 
 ### 8.2 End-to-end workflows (each must be specced, mocked, approved)
 
@@ -217,6 +265,28 @@ Same discipline as the customer app: spec doc → owner approval → determinist
 
 ### 8.4 Web-quality contract
 Responsive (desktop-first, tablet-usable), keyboard-navigable, WCAG 2.1 AA targets, same zero-console-error/QA gates as the customer app.
+
+### 8.5 Bulk catalogue and scheduling tooling (required, PP-17)
+
+Real providers migrate existing catalogues (spreadsheets, other systems); hand-entering 40 programs row by row is a non-starter. Required capabilities, all mock-specced and owner-approved like every other surface:
+
+1. **CSV/XLSX catalogue import** — downloadable template, column mapping, listings created as `draft` (never auto-published; the §6.2 review loop is not bypassable by import).
+2. **Bulk scheduling** — pattern-based generation of recurring schedules, session batches, and camp weeks across a date range, with per-batch capacity and cutoff defaults.
+3. **Validation preview** — every import/batch shows a full dry-run preview (per-row parse results, computed sessions, price/eligibility interpretation) before anything is written; nothing partial commits — a batch applies atomically or not at all.
+4. **Error reports** — per-row errors with line numbers and reasons, downloadable; a batch with errors can apply valid rows only after an explicit reviewed choice, never silently.
+5. **Duplicate detection** — same-title/same-schedule/same-branch heuristics flag likely duplicates at preview (warn, never auto-merge) against both the batch and the live catalogue.
+6. **Batch media operations** — multi-file upload with per-listing assignment, format/size validation, processing status, and re-usable media library per organization.
+
+Admin side: AD-05's review queue must group batch-submitted listings and support batch-level approve/request-changes with per-item overrides.
+
+### 8.6 Provider design-partner discovery (gates final portal approval)
+
+Before the provider portal's final owner approval, its workflows must be validated with real prospective providers — the portal is the one surface we cannot design purely from our own product judgment, because its users run businesses we don't operate.
+
+- Recruit **5–8 design partners** covering the marketplace's representative shapes: a multi-branch sports academy, a ladies-only fitness studio, a swim school, a camps operator, an after-school learning/STEM provider, and a family-activity/wellness provider.
+- Method: structured discovery interviews on current tooling and catalogue shape → walkthroughs of the mock portal (PP-02→PP-11 journeys, §8.5 import with **their real spreadsheet data**, anonymized) → recorded findings → spec revisions.
+- Output: a findings report per partner cohort; portal spec amendments recorded as owner decisions.
+- **Gate:** final provider-portal approval (and therefore backend contract freeze for provider APIs) requires at least one completed design-partner walkthrough round with findings dispositioned. Recruitment terms/incentives are an owner decision (§18).
 
 ---
 
@@ -246,7 +316,7 @@ Responsive (desktop-first, tablet-usable), keyboard-navigable, WCAG 2.1 AA targe
 | AD-18 | Audit log explorer |
 
 ### 9.2 Core workflows
-Provider verification end-to-end (AD-03→04) · listing review loop (AD-05) · refund with dual control (AD-10, §6.6) · payout period close (AD-12, §6.7) · support resolution with entity links (AD-13) · incident-driven suspension (AD-04) with customer-impact handling (§12).
+Provider verification end-to-end (AD-03→04) · listing review loop (AD-05) · refund with dual control (AD-10, §6.7) · payout period close (AD-12, §6.8) · support resolution with entity links (AD-13) · incident-driven suspension (AD-04) with customer-impact handling (§12).
 
 ---
 
@@ -254,7 +324,7 @@ Provider verification end-to-end (AD-03→04) · listing review loop (AD-05) · 
 
 Binding requirements, not implementation choices; stack details are proposed for owner sign-off in the W4 plan.
 
-1. **Database:** PostgreSQL as the system of record. All multi-entity mutations in ACID transactions. Integrity in the schema: FKs, check constraints, unique constraints on natural keys and idempotency keys, and **capacity enforced at the database layer** (e.g. `booked_count <= capacity` guarded by row-level locking or equivalent) so overselling is impossible regardless of application bugs.
+1. **Database:** PostgreSQL as the system of record. All multi-entity mutations in ACID transactions. Integrity in the schema: FKs, check constraints, unique constraints on natural keys and idempotency keys, and **capacity enforced at the database layer** (`booked_count + active_holds <= capacity` guarded by row-level locking or equivalent, with hold creation/expiry/consumption (§6.4) inside the same transactional discipline) so overselling is impossible regardless of application bugs — proven under contention by the §11.1 final-seat gate.
 2. **Idempotency:** every mutating API accepts an idempotency key; payment/webhook handlers are idempotent and safely re-runnable; retries never double-book or double-charge.
 3. **Application tier:** stateless, horizontally scalable API services; no session affinity; config via environment; secrets from a managed secret store, never in code or images.
 4. **Async processing:** durable queue for notifications, webhook processing, statement generation, media processing; dead-letter queues with alerting; scheduled jobs (session completion, quote expiry, payout accrual) as idempotent workers.
@@ -264,7 +334,17 @@ Binding requirements, not implementation choices; stack details are proposed for
 8. **Environments:** local → staging → production, config-identical topology; production data never in lower environments; seeded deterministic staging data (the mock catalogue graduates to a seed).
 9. **CI/CD:** every merge runs typecheck, lint, unit, contract, and E2E suites for all three frontends and the API; migrations applied automatically with backward-compatible, two-phase patterns; deploys are one-command with **tested rollback** (deploy + rollback rehearsed in staging); database migration rollback plans documented per release.
 10. **Observability:** structured logs with request ids end-to-end, metrics (RED per endpoint + business metrics: bookings, payment success rate, webhook lag), distributed traces, error tracking in all three frontends and API, uptime checks, alerting with an on-call rotation before launch.
-11. **Backups & DR:** automated PITR-capable database backups; restore rehearsed quarterly; **RPO ≤ 15 minutes, RTO ≤ 4 hours proposed** (owner approval, §18); object storage versioning; documented region-failure runbook.
+11. **Backups & DR — service-specific recovery objectives** (proposed, owner approval §18; a single platform-wide number is not acceptable because losing a paid booking and losing a search index are not the same class of event):
+
+    | Service class | RPO | RTO | Basis |
+    |---|---|---|---|
+    | **Bookings, payments, holds, ledger, audit** | **0 for committed transactions** (synchronous/quorum replication; PITR as backstop) | **≤ 1 hour** | Financial truth: no committed charge, refund, or confirmed booking may ever be lost; checkout downtime is revenue-and-trust critical |
+    | **Catalogue, accounts, provider/admin data** | ≤ 5 minutes | ≤ 2 hours | Recreatable only at high human cost |
+    | **Search indexes, caches, feeds** | n/a — rebuildable projections | ≤ 4 hours to full rebuild; degraded browse (§12.9) immediately | Derived data; the system of record survives |
+    | **Async queues, notifications, media processing** | ≤ 15 minutes (durable queue replication) | ≤ 8 hours with replay; no user-facing action blocked | Deliveries may delay, never silently drop — DLQ replay covers gaps |
+    | **Object storage (media)** | ≤ 15 minutes (versioning + cross-region copy) | ≤ 8 hours | Fallback imagery renders meanwhile (§12.9) |
+
+    Restores rehearsed quarterly **per class** (financial-class restore rehearsed first and most often); documented region-failure runbook; failover behavior itself is load-gate-tested (§11.1).
 12. **Payments infrastructure (W5):** gateway webhooks with signature verification, replay protection, and reconciliation jobs; the platform never stores PAN data (SAQ-A scope via gateway-hosted fields/native SDKs).
 
 ---
@@ -291,6 +371,24 @@ Deliberately conservative launch numbers with headroom; each tier is a load-test
 
 Owner approves Tier 1 as the launch gate target (§15) and the tier ladder as the capacity-planning basis. Architecture (§10) must reach Tier 2 without redesign; Tier 3 without re-platforming.
 
+### 11.1 Correctness and quality gates (load-tested at the active tier — volume alone proves nothing)
+
+The volume table above is meaningless without behavioral targets under that volume. G5 (§15) requires **all** of the following, demonstrated in staging at Tier-1 load on production topology:
+
+| Gate | Target |
+|---|---|
+| API latency | p95 < 300 ms **and p99 < 800 ms** on search, catalogue, and checkout paths at peak load |
+| Error rate | < 0.1 % 5xx on customer-facing endpoints sustained through peak; zero 5xx on payment capture paths during the test window |
+| Queue lag | async queue p95 lag < 30 s at peak; DLQ empty at test end (all replays succeed) |
+| Webhook convergence | 99 % of gateway webhooks processed < 60 s; 100 % converged (incl. simulated outage backlog) < 15 min after recovery |
+| Search-index delay | publish → searchable p95 < 60 s; browse-by-catalogue unaffected during index rebuild |
+| **Final-seat concurrency** | N concurrent checkouts (N ≥ 50) against a session with 1 seat: exactly 1 `confirmed`, N−1 receive typed `sessionFull` pre-charge, **zero charges without capacity** (§6.4 proven under contention) |
+| **Zero overselling** | property-based load run across many sessions: `booked_count ≤ capacity` invariant never violated (DB-verified after the run, §10.1) |
+| **Zero duplicate charges/refunds** | retry-storm test (client retries, duplicate webhooks, replayed events): PaymentTransaction ledger shows no duplicate capture or refund postings; idempotency proven, not assumed |
+| Failover behavior | database primary failover during active checkout load: in-flight requests fail cleanly (no partial writes, no lost committed transactions — §10.11 class-1 RPO 0 demonstrated), recovery within RTO, reconciliation clean afterward |
+
+These are pass/fail gates, re-run on any architecture change and before each tier promotion.
+
 ---
 
 ## 12. Failure and recovery scenarios (binding on all frontend service contracts)
@@ -299,11 +397,11 @@ Every frontend contract — customer, provider, admin — must support these out
 
 1. **Network loss / timeout mid-request:** idempotent retry with the same key; UI distinguishes "not sent" from "unknown outcome" and offers safe retry.
 2. **Stale read (price/availability changed since render):** server rejects with a typed issue (`priceChanged`, `sessionFull`, `offerExpired` — the docs/09 §22.10 codes are the platform vocabulary); UI re-derives and explains; never books at a stale price.
-3. **Capacity lost at confirmation:** booking fails atomically (`sessionFull`), nothing charged or half-written; UI offers alternatives (other sessions).
-4. **Payment succeeded but response lost:** webhook + reconciliation converge the booking to `confirmed`; UI shows "payment received, confirming…" pending state — never a fake success, never a duplicate charge on retry (idempotency).
+3. **Capacity lost at hold creation:** the hold request fails fast (`sessionFull`) before any charge (§6.4); nothing half-written; UI offers alternatives (other sessions).
+4. **Payment succeeded but response lost:** webhook + reconciliation converge the intent and consume the still-active hold into `confirmed` (§6.4/§6.6); if the hold lapsed in the race window, an automatic same-amount reversal posts and the UI explains honestly — the customer is never left charged without capacity, never double-charged on retry (idempotency), and the UI shows "payment received, confirming…" pending state, never a fake success.
 5. **Payment failed / requires action:** typed failure with retry path; 3-D Secure round-trips modeled in the contract.
 6. **Quote expiry:** checkout quotes carry TTLs; expiry forces visible re-quote, not silent refresh.
-7. **Provider cancels a session/enrolment:** affected bookings transition with notification + refund path (§6.6); customer app surfaces it in Bookings, not just email.
+7. **Provider cancels a session/enrolment:** affected bookings transition with notification + refund path (§6.7); customer app surfaces it in Bookings, not just email.
 8. **Provider suspension with future bookings:** admin workflow triggers mass-handling (cancel + refund/credit per policy); customer copy honest (`This provider is no longer on Himma` precedent).
 9. **Partial infrastructure degradation:** search down ⇒ browse-by-catalogue still works; media CDN down ⇒ fallback images (existing `AppImage` pattern); queue backlog ⇒ user-facing actions unaffected, notifications delayed.
 10. **Webhook outage:** reconciliation job converges states; stuck `processing` payments alert operations within minutes.
@@ -332,7 +430,7 @@ Every frontend contract — customer, provider, admin — must support these out
 
 Unchanged in substance from docs/12, now scheduled instead of indefinitely pending:
 
-1. Acquire a validation environment (Mac with Xcode + simulators, plus at least one physical iPhone and one Android device — HANDOFF backlog items 1–11 stand).
+1. Acquire a validation environment (Mac with Xcode + simulators, plus at least one physical iPhone and one Android device — HANDOFF backlog items 1–11 stand). **Procurement is a P0 action and the first full device pass over all existing surfaces runs in P0/early P1 (§16)** — ~14 screens of native-inferred work already exist, and every further milestone compounds the risk of building on unverified native assumptions. Findings from the first pass feed the checkout and Bookings milestones directly.
 2. Full per-screen device pass: safe areas/notch/Dynamic Island, dock positioning, keyboard behavior, swipe-back and hardware back, carousel gesture arbitration, Dynamic Type ≈135%, reduced motion, press feel, image decode performance.
 3. Full VoiceOver and TalkBack pass per flow (structural aria verification does not count — §2).
 4. Real-device performance profiling with a production-scale catalogue seed (search, long lists, image-heavy feeds) — expected outcome: FlatList virtualization work.
@@ -349,10 +447,11 @@ Launch requires **every** gate green. No gate may be waived silently; owner may 
 - **G2 Data & migration:** real catalogue loaded via provider onboarding (not seeds); taxonomy finalized; imagery rights clean (ASSET_ATTRIBUTION items replaced — including the Expo-logo iOS icon).
 - **G3 Security & privacy:** pen test passed with criticals/highs closed; ASVS review; PDPL compliance sign-off; child-data counsel sign-off; secrets/access audit.
 - **G4 Payments:** gateway live-mode certification; reconciliation running; refund and payout dual-control tested with real money in a controlled pilot; §19 prohibition formally lifted by owner decision with counsel confirmation.
-- **G5 Load & reliability:** Tier 1 load targets (§11) met in staging with production topology; §12 failure drills executed (including webhook outage and DB failover); backup restore rehearsed; RPO/RTO demonstrated.
+- **G5 Load & reliability:** Tier 1 volume targets (§11) **and every §11.1 correctness/quality gate** met in staging with production topology — including final-seat concurrency, zero overselling, zero duplicate charges/refunds, webhook convergence, and clean DB failover; §12 failure drills executed; per-class backup restores rehearsed; §10.11 service-specific RPO/RTO demonstrated.
 - **G6 Native quality:** §14 pass complete on every shipped screen; crash-free sessions ≥ 99.5 % in pre-launch tracks; store review passed on both stores.
 - **G7 Legal & policy:** all §13 legal documents executed and rendered in-product; acceptance UX implemented per counsel; provider agreements signed for launch providers.
 - **G8 Operations:** on-call staffed; runbooks tested; support tooling live; status page live; analytics/crash reporting verified end-to-end.
+- **G9 Localization (per §3.1 and the §18 language decision):** bilingual launch ⇒ full Arabic/RTL pass (content, layouts, search, legal, native RTL device pass) before launch. English-first launch ⇒ localization architecture and logical-layout compliance still gate G1 for all shipped surfaces, and G9 becomes the binding gate for the Arabic fast-follow release.
 
 ---
 
@@ -371,14 +470,14 @@ Launch requires **every** gate green. No gate may be waived silently; owner may 
 
 | Phase | Work (parallel tracks) |
 |---|---|
-| **P0 — now** | Owner decisions §18 batch 1 (scale tier, hosting region, gateway shortlist, counsel engagement, brand engagement) · W1 Commits 17–19 (finish checkout) · start §5–§7 canonical-model specification document |
-| **P1** | Owner approves §5–§7 · W2 provider-portal spec (docs/14-pattern document set) · W1 Bookings/Saved/Profile mock milestone · W6 environment + CI/CD groundwork · legal drafting begins |
-| **P2** | W2 provider-portal mock build (staged commits) · W3 admin-portal spec, then mock build · W4 schema + API contract design from the approved model · W1 onboarding/auth screens (mock) · native validation environment acquired, first §14 pass on existing surfaces |
-| **P3** | W4 backend vertical slices: identity/auth → catalogue/search → booking/capacity · three frontends integrate slice-by-slice behind their existing contracts · W5 gateway integration in sandbox |
-| **P4** | W1 Payment & Confirmation milestone (now honestly plannable) · payments end-to-end in staging · W3 finance/refund/payout workflows live against real ledger · §15 gate work (load, security, DR drills) |
-| **P5** | Launch-provider onboarding via W2 (real catalogue) · store submission tracks · gate reviews G1–G8 · **launch** |
+| **P0 — now** | Owner decisions §18 batch 1 (incl. **native-environment procurement**, **customer-web-at-launch**, **language launch**) · W1 Commits 17–19 (finish checkout) · **acquire Mac/Xcode + devices and run the first full §14 device pass over all existing screens** (findings feed checkout closeout and every later milestone) · start §5–§7 canonical-model specification · §8.6 design-partner recruitment begins |
+| **P1** | Owner approves §5–§7 · **W4 backend slices begin against the approved model + already-approved customer workflows: identity/auth, then catalogue/search** · W2 provider-portal spec informed by design-partner discovery interviews · W1 Bookings/Saved/Profile mock milestone (RTL-safe per §3.1.1–2) · W6 environment + CI/CD groundwork · legal drafting begins · complete the first device pass if not finished in P0 |
+| **P2** | W4 booking/capacity slice (holds, §6.4, proven against §11.1-style concurrency tests early) · W2 provider-portal mock build + design-partner walkthroughs (§8.6) · W3 admin-portal spec, then mock build · W1 onboarding/auth screens (mock) · customer app integrates identity + catalogue slices behind existing contracts · W5 gateway sandbox integration starts |
+| **P3** | Provider-API contract freeze after §8.6 validation · portal frontends integrate their slices · W4 payments slice with W5 (sandbox end-to-end) · W1 Payment & Confirmation milestone (now honestly plannable) · localization work package items per the §18 language decision |
+| **P4** | Payments end-to-end in staging · W3 finance/refund/payout workflows live against the real ledger (§6.6–6.8, dual control exercised) · §15 gate work: §11.1 correctness/load gates, security review + pen test, per-class DR drills · full §14 native pass over the integrated app |
+| **P5** | Launch-provider onboarding via W2 with §8.5 bulk import (real catalogue) · store submission tracks · gate reviews G1–G9 · **launch** |
 
-Every phase ends with a stop-and-report; no phase starts implementation without its planning document approved (the docs/20–22 pattern, now platform-wide).
+Every phase ends with a stop-and-report; no phase starts implementation without its planning document approved (the docs/20–22 pattern, now platform-wide). The change from the first draft: backend work is pulled forward two phases (slices track approved workflows, not the completion of every mock), and native validation is pulled forward two phases (first device pass before more native-inferred work accumulates).
 
 ---
 
@@ -403,6 +502,7 @@ Existing statements that still frame the product as a prototype-stage, customer-
 | C13 | `FIRST_PROMPT.md` | Bootstrap instructions for the original Home-only milestone. | Historical artifact; no amendment. |
 | C14 | `docs/17–22` per-milestone exclusion lists | "Not in this milestone: backend, payments…" phrasing throughout. | Correct as milestone scoping; the established superseded-by-progression pattern covers them. |
 | C15 | `docs/05` §9 / `docs/09` §18 | Rule-based recommendations "current scope"; behavioral engine future. | Stands — this is a real product decision, not stage framing. Revisit as a product choice post-launch, not as part of this rebaseline. |
+| C16 | **docs/23 first draft (this document, pre-A1)** | Contained: no capacity-hold entity (bookings could theoretically charge without guaranteed capacity) · a single Payment record · an "Admin: Super-admin" universal role · first device pass deferred to P2 · backend slices gated on the full three-frontend mock set · Arabic/RTL and customer web silently absent from decisions · one platform-wide RPO/RTO · scale gates measured in volumes only · no provider design-partner step. | **Superseded in place by Amendment A1** (§5, §6.4–6.8, §7, §8.5–8.6, §10.11, §11.1, §14, §16, §18). Recorded so the correction trail is auditable; no first-draft position survives unamended. |
 
 `CLAUDE.md` and `README.md` amendments (C1, C2) are owner-approval items — this rebaseline does not edit permanent instructions on its own authority.
 
@@ -411,25 +511,29 @@ Existing statements that still frame the product as a prototype-stage, customer-
 ## 18. Owner decisions required before implementation can proceed safely
 
 **Batch 1 — blocks P0/P1 (decide first):**
-1. **Approve this rebaseline** (§1 redefined frontend-first, §3 workstreams, §16 sequence) as binding.
-2. **Scale tier ladder** (§11) and Tier 1 as the launch target.
+1. **Approve this rebaseline as amended** (§1 redefined frontend-first, §3 workstreams, §16 sequence, A1 corrections) as binding.
+2. **Scale tier ladder** (§11) with the §11.1 correctness/quality gates, and Tier 1 as the launch target.
 3. **Hosting region / data residency** (UAE-region requirement or not) — blocks W6 and privacy counsel.
 4. **Payment gateway selection** (UAE cards + Apple Pay/Google Pay + payout capability) — blocks W5 and the Payment & Confirmation milestone.
-5. **Legal counsel engagement** — blocks T&C, provider agreement, child-data model, consent UX, refund templates (docs/09 §7), and ultimately G4/G7.
-6. **Brand engagement timing** — provisional brand cannot reach launch (C7); rebrand lands best before store assets and portal theming.
-7. **Provider commercial model** — commission/fee structure and payout cadence (blocks §6.7, §9 finance surfaces, docs/09 §22.3's "no fees" placeholder).
+5. **Legal counsel engagement** — blocks T&C, provider agreement, child-data model, consent UX, refund templates (docs/09 §7), Arabic legal-text requirements (§3.1.6), and ultimately G4/G7.
+6. **Brand engagement timing** — provisional brand cannot reach launch (C7); the engagement must deliver a **bilingual (Latin + Arabic) type system** (§3.1.3); rebrand lands best before store assets and portal theming.
+7. **Provider commercial model** — commission/fee structure and payout cadence (blocks §6.8, §9 finance surfaces, docs/09 §22.3's "no fees" placeholder).
+8. **Customer web at launch** — is a responsive customer web surface (discovery/SEO/shareable pages, possibly browser checkout — docs/03 §5) part of the launch scope or not? **Not silently deferred**: yes ⇒ it becomes a W1 sibling deliverable with its own plan; no ⇒ recorded as a launch-scope decision with share-link behavior defined (today's `https://himma.app/...` placeholders must resolve to *something* at launch).
+9. **Language launch: English-only versus bilingual English/Arabic** — **not silently deferred**: bilingual ⇒ §3.1 in full and G9 gates launch; English-first ⇒ §3.1 items 1–2 still bind all new surfaces and G9 gates the committed Arabic fast-follow. Either way the owner sets the Arabic date.
+10. **Native validation environment procurement** (Mac/Xcode + simulators + physical iPhone/Android) — a P0 purchase; blocks the §16 P0/P1 first device pass, §14, and G6.
 
 **Batch 2 — blocks specific workstreams (decide during P1/P2):**
-8. **VAT treatment** (docs/09 §22.2 stands until this) — with counsel/accounting; blocks real PriceQuote design.
-9. **Recurring billing semantics** (docs/09 §6): auto-renew vs manual, first-collection rules — blocks Enrolment model and store-policy review.
-10. **Marketplace Credit classes and expiry** (docs/09 §8) — blocks ledger design and AD-11.
-11. **Cancellation/refund policy templates** (docs/09 §7) — blocks §6.6 and provider agreement.
-12. **Provider portal stack** (§8.3) and admin portal stack.
-13. **Multi-participant booking** timing (docs/09 §21.2) — schema supports it; decide whether launch includes it.
-14. **Waitlists** (docs/09 §21.4) — remain deferred or enter the backlog with the capacity model.
-15. **Search engine tier** (§10.5) and notification channels (push/email/SMS providers).
-16. **Native validation environment** procurement (Mac/Xcode + devices) — blocks §14 and G6.
-17. **Amendments to CLAUDE.md / README.md** per C1/C2.
+11. **VAT treatment** (docs/09 §22.2 stands until this) — with counsel/accounting; blocks real PriceQuote design.
+12. **Recurring billing semantics** (docs/09 §6): auto-renew vs manual, first-collection rules — blocks Enrolment model and store-policy review.
+13. **Marketplace Credit classes and expiry** (docs/09 §8) — blocks ledger design and AD-11.
+14. **Cancellation/refund policy templates** (docs/09 §7) — blocks §6.7 and provider agreement.
+15. **Provider portal stack** (§8.3) and admin portal stack.
+16. **Design-partner program terms** (§8.6) — recruitment targets, incentives, confidentiality; blocks the P0/P1 recruitment start.
+17. **Arabic provider-content workflow** (§3.1.4) — provider-supplied vs Himma-managed vs machine-assisted translation with review; blocks bilingual catalogue fields and the §8.5 import template.
+18. **Multi-participant booking** timing (docs/09 §21.2) — schema supports it; decide whether launch includes it.
+19. **Waitlists** (docs/09 §21.4) — remain deferred or enter the backlog with the capacity model.
+20. **Search engine tier** (§10.5) and notification channels (push/email/SMS providers).
+21. **Amendments to CLAUDE.md / README.md** per C1/C2.
 
 ---
 
