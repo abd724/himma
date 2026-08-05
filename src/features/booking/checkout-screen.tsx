@@ -9,6 +9,13 @@ import {
   bookingStepHref,
   checkoutStepAccess,
 } from '@/features/booking/booking-navigation';
+import {
+  checkoutReadiness,
+  checkoutReducer,
+  initialCheckoutUiState,
+  type CheckoutReadiness,
+} from '@/features/booking/checkout-state';
+import { PaymentMethodRow } from '@/features/booking/payment-method-row';
 import { summaryParticipantBlock } from '@/features/booking/summary-presentation';
 import { demoImage } from '@/data/mock/images';
 import type { BookingOptionsPage } from '@/services/contracts/booking';
@@ -21,7 +28,7 @@ import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -29,9 +36,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * Checkout — docs/22 §4, owner decisions docs/09 §22. One screen over the
  * re-derived BookingSummary: order recap, `Booking price` breakdown (no
  * `Total`, no VAT, no fees, no discount arithmetic), the cancellation-policy
- * summary displayed with no acceptance claim, and an inert production-styled
- * CTA (`Continue to payment` / `Confirm booking`). Nothing here reserves,
- * pays, or confirms anything (docs/08 §14, docs/09 §22.11).
+ * summary displayed with no acceptance claim, the generic `Card payment`
+ * contract method for paid bookings (Commit 17 — no card details of any
+ * kind), and a readiness-gated, production-styled, inert CTA (`Continue to
+ * payment` / `Confirm booking`) that is never unready without a named
+ * reason. Nothing here reserves, pays, or confirms anything (docs/08 §14,
+ * docs/09 §22.11).
  */
 export function CheckoutScreen() {
   const router = useRouter();
@@ -52,6 +62,10 @@ export function CheckoutScreen() {
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retried, setRetried] = useState(false);
+  // Checkout-local UI state (docs/22 §5/§11): the method selection only.
+  // Leaving checkout unmounts the screen and discards it structurally.
+  const [uiState, dispatchUi] = useReducer(checkoutReducer, initialCheckoutUiState);
+  const lastCtaPressAt = useRef(0);
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
@@ -92,6 +106,9 @@ export function CheckoutScreen() {
           router.replace(bookingStepHref(programId, 'participant'));
           return;
         }
+        // A re-derived page starts with clean checkout-local state
+        // (docs/22 §5): every derived value reflects the current order.
+        dispatchUi({ type: 'reset' });
         setPage(checkoutPage);
         setMissing(false);
         setFailed(false);
@@ -118,6 +135,10 @@ export function CheckoutScreen() {
 
   const participantBlock =
     page === null ? undefined : summaryParticipantBlock(page.summary.participant, participants);
+  // The single readiness rule for the CTA (docs/22 §9): free bookings are
+  // ready; paid bookings need the contract method selected.
+  const readiness: CheckoutReadiness =
+    page === null ? { ready: false } : checkoutReadiness(page, uiState);
 
   return (
     <View style={styles.root}>
@@ -267,6 +288,29 @@ export function CheckoutScreen() {
               </PressableFeedback>
             </View>
 
+            {/* Payment method — paid bookings only (docs/22 §4.5, §7.5):
+                one generic selectable contract method with radio semantics;
+                no card details exist or are implied. Absent for free. */}
+            {page.paymentRequired && page.paymentMethods.length > 0 ? (
+              <View style={styles.block}>
+                <Text style={styles.blockLabel} accessibilityRole="header">
+                  Payment method
+                </Text>
+                <View accessibilityRole="radiogroup" style={styles.methodList}>
+                  {page.paymentMethods.map((method) => (
+                    <PaymentMethodRow
+                      key={method.id}
+                      method={method}
+                      selected={method.id === uiState.paymentMethodId}
+                      onSelect={() =>
+                        dispatchUi({ type: 'selectMethod', paymentMethodId: method.id })
+                      }
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
             {/* Support contract row — HMA-032 pattern; inert. */}
             <PressableFeedback
               accessibilityRole="button"
@@ -282,20 +326,38 @@ export function CheckoutScreen() {
 
       {page === null ? null : (
         <View style={[styles.ctaBar, { paddingBottom: insets.bottom + spacing.md }]}>
+          {/* The polite live region announces readiness blockers and their
+              resolution (docs/22 §9/§12) — never unready without a reason. */}
           <View style={styles.ctaStatus} accessibilityLiveRegion="polite">
-            <Text style={styles.ctaStatusText} numberOfLines={2}>
-              {page.price.bookingPriceLabel}
+            {/* The named blocker wraps in full — the reason the CTA is not
+                ready is never truncated (docs/22 §9). The ready-state price
+                line keeps the established 2-line cap (full label in the
+                price block and the accessible CTA label). */}
+            <Text style={styles.ctaStatusText} numberOfLines={readiness.ready ? 2 : undefined}>
+              {readiness.ready ? page.price.bookingPriceLabel : readiness.blocker}
             </Text>
           </View>
-          {/* Production-styled, duplicate-press-safe (inert: no press does
-              anything), and truthful — no navigation, dialog, success,
-              failure, reservation, or payment exists (docs/09 §22.11). */}
+          {/* Production-styled, duplicate-press-protected (700 ms guard —
+              the mechanics ship real, docs/22 §13), and truthful: even when
+              ready, the press is the inert contract — no navigation, dialog,
+              success, failure, reservation, or payment (docs/09 §22.11). */}
           <PressableFeedback
             accessibilityRole="button"
             accessibilityLabel={page.spokenCtaLabel}
-            style={styles.ctaButton}
+            accessibilityState={{ disabled: !readiness.ready }}
+            onPress={() => {
+              if (!readiness.ready) return;
+              const now = Date.now();
+              if (now - lastCtaPressAt.current < 700) return;
+              lastCtaPressAt.current = now;
+              // Inert contract boundary: nothing happens past this line.
+            }}
+            style={[styles.ctaButton, !readiness.ready && styles.ctaButtonDisabled]}
           >
-            <Text style={styles.ctaButtonLabel} maxFontSizeMultiplier={1.4}>
+            <Text
+              style={[styles.ctaButtonLabel, !readiness.ready && styles.ctaButtonLabelDisabled]}
+              maxFontSizeMultiplier={1.4}
+            >
               {page.ctaLabel}
             </Text>
           </PressableFeedback>
@@ -461,6 +523,10 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     color: colors.brand.primary,
   },
+  methodList: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
   supportRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -502,11 +568,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  ctaButtonDisabled: {
+    backgroundColor: colors.border.default,
+  },
   ctaButtonLabel: {
     ...typography.chip,
     fontSize: 16,
     fontFamily: fontFamily.bold,
     color: colors.text.inverse,
+  },
+  ctaButtonLabelDisabled: {
+    color: colors.text.secondary,
   },
   skeletonCard: { height: 200, borderRadius: radii.card },
   skeletonRow: { height: 120, borderRadius: radii.card },

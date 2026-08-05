@@ -1,13 +1,19 @@
 /**
- * Commit 16 QA — Checkout foundation and price review (docs/22 §14, §16;
- * owner decisions docs/09 §22): Continue-to-checkout activation with the
- * double-tap guard, per-type checkout price review with Booking price
- * continuity (never Total, no VAT/fees/discount arithmetic, Free never
- * AED 0), policy display with no acceptance claim, guardian context on
- * child bookings, inert CTA contract (Continue to payment / Confirm
- * booking), summary preservation beneath checkout, exact-origin back,
- * edit-booking round trip, cold-link/missing-draft/unknown recovery, and
- * provisional screenshot rows 01–09 and 14–16 at 390 × 844 and 360 × 780.
+ * Commits 16–17 QA — Checkout foundation, price review, and the
+ * payment-method contract (docs/22 §14, §16; owner decisions docs/09 §22):
+ * Continue-to-checkout activation with the double-tap guard, per-type
+ * checkout price review with Booking price continuity (never Total, no
+ * VAT/fees/discount arithmetic, Free never AED 0), policy display with no
+ * acceptance claim, guardian context on child bookings, the generic
+ * `Card payment` contract method (radiogroup/radio semantics with explicit
+ * aria-checked, no card details of any kind), CTA readiness with the named
+ * blocker (`Choose a payment method to continue`) resolving on selection,
+ * free bookings with no payment section and an immediately-ready CTA,
+ * the inert duplicate-press-protected CTA contract in both ready and
+ * unready states, clean checkout-local state on re-entry, summary
+ * preservation beneath checkout, exact-origin back, edit-booking round
+ * trip, cold-link/missing-draft/unknown recovery, and screenshot rows
+ * 01–11 and 14–16 at 390 × 844 and 360 × 780.
  * Run: node scripts/qa/checkout-review.mjs (Expo web on 8081).
  */
 import { chromium } from 'playwright-core';
@@ -73,6 +79,9 @@ const assertHonestCopy = async (context) => {
   check(`${context}: no reservation/payment/confirmation implication`,
     !/reserv|holding|charged|payment (processed|complete)|booking confirmed|you.re booked|receipt/i.test(body));
   check(`${context}: no acceptance claim`, !/i agree|i accept|i confirm|by continuing/i.test(body));
+  // docs/09 §22.6: the generic method never implies card details.
+  check(`${context}: no card details of any kind`,
+    !/ending in|last four|expir|cvv|cardholder|•{2,}|\*{2,}/i.test(body));
 };
 
 /** Drive a booking flow into checkout; steps mirror the booking QA journeys. */
@@ -116,24 +125,54 @@ check('checkout: Full policy contract present', await visible(visibleLabel('Full
 check('checkout: no checkbox exists', (await page.locator('[role="checkbox"]:visible').count()) === 0);
 check('checkout: support row', await visibleText('Something wrong with your booking?'));
 check('checkout: paid CTA label', await visible(visibleLabel(/^Continue to payment/)));
+
+// ——— Commit 17: payment-method contract + CTA readiness ———
+check('method: Payment method section header', await visibleText('Payment method'));
+check('method: radiogroup present',
+  (await page.locator('[role="radiogroup"]:visible').count()) > 0);
+check('method: exactly one radio — the generic contract method',
+  (await page.locator('[role="radio"]:visible').count()) === 1);
+check('method: Card payment row unchecked initially',
+  (await page.locator('[role="radio"][aria-checked="false"]:visible').count()) === 1);
+// The CTA is never unready without a visible reason (docs/22 §9). The
+// disabled state ships in accessibilityState for native; RN-web Pressable
+// buttons drop aria-disabled, so web asserts the named blocker text.
+check('readiness: blocker named before selection',
+  await visibleText('Choose a payment method to continue'));
 await assertHonestCopy('checkout single');
 {
-  // Reading order: recap → price → policy → CTA (docs/22 §12).
+  // Reading order: recap → price → policy → payment → CTA (docs/22 §12).
   const lower = (await bodyText()).toLowerCase();
-  const order = ['beginner calisthenics', 'price', 'cancellation policy', 'continue to payment']
+  const order = ['beginner calisthenics', 'price', 'cancellation policy', 'payment method', 'continue to payment']
     .map((marker) => lower.indexOf(marker));
-  check('checkout: reading order recap → price → policy → CTA',
+  check('checkout: reading order recap → price → policy → payment → CTA',
     order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])));
 }
 await shot('01-checkout-single-390');
+await shot('11-checkout-readiness-blocker-390');
 
-// Inert CTA: no route change, no dialog.
+// Unready CTA press: inert, no route change, no dialog.
+await visibleLabel(/^Continue to payment/).click();
+await idle(500);
+check('readiness: unready press produces no route change',
+  page.url().endsWith('/booking/beginner-calisthenics/checkout'));
+
+// Selecting the contract method resolves the blocker.
+await visibleLabel('Card payment').click();
+await idle(300);
+check('method: Card payment checked after selection',
+  (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 1);
+check('readiness: blocker resolves to the booking price after selection',
+  !(await visibleText('Choose a payment method to continue')));
+await shot('10-checkout-method-selected-390');
+
+// Ready CTA press remains the inert contract: no route change, no dialog.
 await visibleLabel(/^Continue to payment/).click();
 await idle(500);
 check('checkout: Continue to payment produces no route change',
   page.url().endsWith('/booking/beginner-calisthenics/checkout'));
 
-// Sticky CTA over scrolled content.
+// Sticky CTA over scrolled content (status shows the booking price when ready).
 await scrollToY(4000);
 check('checkout: CTA sticky at the bottom scroll position', await visibleText('Booking price · AED 85 per session'));
 await shot('16-checkout-sticky-390');
@@ -149,6 +188,11 @@ check('back: summary draft intact', await visibleText('Booking price · AED 85 p
 await visibleLabel(/^Continue to checkout/).dblclick();
 await idle();
 check('double-tap: checkout opened once', page.url().endsWith('/checkout'));
+// Re-entry starts clean (docs/22 §5): the earlier selection is discarded.
+check('re-entry: method selection cleared',
+  (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 0);
+check('re-entry: readiness blocker returns',
+  await visibleText('Choose a payment method to continue'));
 await visibleLabel('Back').click();
 await idle();
 check('double-tap: one back lands on the summary', await visibleText('Review your booking'));
@@ -165,6 +209,7 @@ check('back: chain ends on the exact Program Details origin',
 await openCheckout('booking/mens-strength-basics', [/^You$/, /^Continue: /]);
 check('monthly: cadence Booking price', await visibleText('Booking price · AED 400 per month'));
 check('monthly: paid CTA', await visible(visibleLabel(/^Continue to payment/)));
+check('monthly: Card payment contract method present', await visible(visibleLabel('Card payment')));
 await assertHonestCopy('checkout monthly');
 await shot('02-checkout-monthly-390');
 
@@ -174,6 +219,11 @@ check('child: participant line', await visibleText('Adam · Age 8'));
 check('child: guardian context displayed', await visibleText('Booked by you'));
 check('child: recurring Booking price', await visibleText('Booking price · AED 380 per month'));
 check('child: no consent checkbox', (await page.locator('[role="checkbox"]:visible').count()) === 0);
+// Paid child booking follows the same method contract.
+await visibleLabel('Card payment').click();
+await idle(300);
+check('child: method selectable, blocker resolved',
+  !(await visibleText('Choose a payment method to continue')));
 await shot('08-checkout-child-390');
 // Edit booking → summary owns the edits → checkout re-derives.
 await visibleLabel('Edit booking').click();
@@ -190,6 +240,9 @@ await idle();
 check('edit: checkout re-derives the new participant', await visibleText('Lina · Age 12'));
 check('edit: guardian context persists for the new child', await visibleText('Booked by you'));
 check('edit: plan unchanged', await visibleText('Booking price · AED 380 per month'));
+// The round trip re-derives with clean checkout-local state (docs/22 §5).
+check('edit: method selection starts clean after the round trip',
+  (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 0);
 
 // ——— Camp ———
 await openCheckout('booking/holiday-swim-camp', [
@@ -219,6 +272,12 @@ await openCheckout('booking/community-park-football', [
 check('free: Booking price · Free', await visibleText('Booking price · Free'));
 check('free: Confirm booking CTA', await visible(visibleLabel(/^Confirm booking/)));
 check('free: no Continue to payment', !(await visibleText('Continue to payment')));
+// Free bookings have no payment-method section (docs/22 §4/§7.6) and no
+// readiness blocker — the CTA is ready immediately.
+check('free: no payment-method section', !(await visibleText('Payment method')));
+check('free: no payment radios', (await page.locator('[role="radio"]:visible').count()) === 0);
+check('free: CTA ready immediately — no blocker',
+  !(await visibleText('Choose a payment method to continue')));
 await assertHonestCopy('checkout free');
 await visibleLabel(/^Confirm booking/).click();
 await idle(500);
@@ -236,6 +295,7 @@ await openCheckout('booking/ladies-strength', [
 check('free trial: Free price', await visibleText('Booking price · Free'));
 check('free trial: Confirm booking CTA', await visible(visibleLabel(/^Confirm booking/)));
 check('free trial: full-plan price never the booking price', !(await bodyText()).includes('Booking price · AED 450'));
+check('free trial: no payment-method section', !(await visibleText('Payment method')));
 await shot('06-checkout-free-trial-390');
 
 // ——— Paid trial ———
@@ -248,6 +308,7 @@ await openCheckout('booking/junior-football-u10', [
 ]);
 check('paid trial: structured Booking price', await visibleText('Booking price · AED 35'));
 check('paid trial: paid CTA', await visible(visibleLabel(/^Continue to payment/)));
+check('paid trial: Card payment method present', await visible(visibleLabel('Card payment')));
 await shot('07-checkout-paid-trial-390');
 
 // ——— Offer: informational only ———
@@ -291,8 +352,19 @@ await idle();
 await visibleLabel(/^Continue to checkout/).click();
 await idle();
 check('360 single: Booking price', await visibleText('Booking price · AED 85 per session'));
+check('360 method: Card payment row unchecked initially',
+  (await page.locator('[role="radio"][aria-checked="false"]:visible').count()) === 1);
+check('360 readiness: blocker named', await visibleText('Choose a payment method to continue'));
 await assertHonestCopy('360 checkout single');
 await shot('01-checkout-single-360');
+await shot('11-checkout-readiness-blocker-360');
+await visibleLabel('Card payment').click();
+await idle(300);
+check('360 method: checked after selection',
+  (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 1);
+check('360 readiness: blocker resolved',
+  !(await visibleText('Choose a payment method to continue')));
+await shot('10-checkout-method-selected-360');
 await scrollToY(4000);
 check('360: CTA sticky over scrolled content', await visibleText('Booking price · AED 85 per session'));
 await shot('16-checkout-sticky-360');

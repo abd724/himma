@@ -6,6 +6,7 @@ import type {
   CheckoutPriceLine,
   CheckoutPriceSummary,
   CheckoutService,
+  PaymentMethod,
 } from '@/services/contracts/checkout';
 import { MockBookingService } from '@/services/mock/mock-booking-service';
 import { spokenLabel } from '@/utils/price';
@@ -88,6 +89,22 @@ function buildPriceSummary(summary: BookingSummary): CheckoutPriceSummary {
   };
 }
 
+/**
+ * The single selectable contract method for paid bookings — docs/09 §22.6.
+ * Composed statically here (docs/22 §10: no payment-methods data module
+ * exists — there is nothing to store): a generic labelled row with no card
+ * details of any kind. Apple Pay / Google Pay kinds stay declared-only and
+ * are never composed until real platform and gateway support exist.
+ * Selecting it changes nothing but checkout-local UI state; submitting
+ * remains the docs/09 §22.11 inert contract.
+ */
+const cardPaymentContractMethod: PaymentMethod = {
+  id: 'card',
+  kind: 'card',
+  label: 'Card payment',
+  availability: { status: 'contractOnly' },
+};
+
 export class MockCheckoutService implements CheckoutService {
   private readonly booking = new MockBookingService(0);
 
@@ -129,8 +146,9 @@ export class MockCheckoutService implements CheckoutService {
       price,
       // Guardian context display only (docs/09 §22.8) — no consent mechanics.
       guardianContextLine: participantEntry?.kind === 'child' ? 'Booked by you' : undefined,
-      // The generic Card payment contract method is composed in Commit 17.
-      paymentMethods: [],
+      // Paid bookings get the one generic contract method; free bookings
+      // have no payment-method section at all (docs/22 §4, §7.5–7.6).
+      paymentMethods: paymentRequired ? [cardPaymentContractMethod] : [],
       paymentRequired,
       validation: { ok: true },
       ctaLabel,

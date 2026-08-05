@@ -1,4 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { programs } from '@/data/mock/catalogue';
 import type { BookingDraft, BookingOption, BookingOptionsPage } from '@/services/contracts/booking';
 import type { CheckoutPage } from '@/services/contracts/checkout';
@@ -233,6 +235,69 @@ describe('Checkout pricing integrity across the catalogue (docs/22 §6)', () => 
   });
 });
 
+describe('Payment-method contract composition (Commit 17, docs/09 §22.6)', () => {
+  test('paid booking composes exactly the one generic Card payment contract method', () => {
+    const page = pageFor(draftFor('beginner-calisthenics', 'me'));
+    expect(page.paymentMethods).toEqual([
+      { id: 'card', kind: 'card', label: 'Card payment', availability: { status: 'contractOnly' } },
+    ]);
+  });
+
+  test('free bookings compose no payment methods at all (docs/22 §4/§7.6)', () => {
+    expect(pageFor(draftFor('community-park-football', 'me')).paymentMethods).toEqual([]);
+    expect(pageFor(draftFor('ladies-strength', 'me', trialOption)).paymentMethods).toEqual([]);
+  });
+
+  test('across the catalogue: method presence mirrors paymentRequired; never Apple/Google Pay', () => {
+    for (const program of programs) {
+      const options = bookingService.buildBookingOptions({
+        programId: program.id,
+        participantId: 'everyone',
+        participants: household,
+        areaId: 'khalifa-city',
+      });
+      if (options === undefined || options.availability.status !== 'bookable') continue;
+      const suitable = options.householdEligibility.find((entry) => entry.suitable);
+      if (suitable === undefined) continue;
+      for (const option of options.options) {
+        const session = option.requiresSession
+          ? option.sessions.find((entry) => entry.availability !== 'full')
+          : undefined;
+        if (option.requiresSession && session === undefined) continue;
+        const page = service.buildCheckoutPage({
+          draft: {
+            programId: program.id,
+            optionId: option.id,
+            sessionId: session?.id,
+            participantId: suitable.participantId,
+          },
+          participants: household,
+          areaId: 'khalifa-city',
+        });
+        expect(page).toBeDefined();
+        if (page!.paymentRequired) {
+          expect(page!.paymentMethods).toHaveLength(1);
+          expect(page!.paymentMethods[0].kind).toBe('card');
+          expect(page!.paymentMethods[0].availability).toEqual({ status: 'contractOnly' });
+        } else {
+          expect(page!.paymentMethods).toHaveLength(0);
+        }
+        // applePay/googlePay stay declared-only — never composed (docs/09 §22.6).
+        expect(page!.paymentMethods.every((method) => method.kind === 'card')).toBe(true);
+      }
+    }
+  });
+
+  test('the method carries no card details of any kind', () => {
+    const page = pageFor(draftFor('beginner-calisthenics', 'me'));
+    const method = page.paymentMethods[0];
+    expect(method.label).toBe('Card payment');
+    // No last-four digits, expiry, cardholder, token, or masking artifacts.
+    expect(JSON.stringify(method)).not.toMatch(/\d{4}|expir|cvv|cardholder|token|•|\*{2,}/i);
+    expect(Object.keys(method).sort()).toEqual(['availability', 'id', 'kind', 'label']);
+  });
+});
+
 describe('Checkout guardian context (docs/09 §22.8)', () => {
   test('child bookings carry the guardian context line', () => {
     const page = pageFor(draftFor('junior-swim-squad', 'adam'));
@@ -300,5 +365,59 @@ describe('Checkout invalid-draft rejection (docs/22 §2, §3.3)', () => {
     expect(
       service.buildCheckoutPage({ draft: valid, participants: [], areaId: 'khalifa-city' }),
     ).toBeUndefined();
+  });
+});
+
+describe('Payment-submit guard: no submission path can execute (docs/09 §22.11, docs/23 §19)', () => {
+  /** Every app source file, so a submit call site can never hide. */
+  function appSourceFiles(dir: string): string[] {
+    const files: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__') continue;
+        files.push(...appSourceFiles(full));
+      } else if (/\.(ts|tsx)$/.test(entry.name)) {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  const srcRoot = join(__dirname, '..', '..');
+  const files = appSourceFiles(srcRoot);
+
+  test('the source tree is actually scanned', () => {
+    expect(files.length).toBeGreaterThan(50);
+  });
+
+  test('PaymentSubmitRequest/PaymentSubmitResult exist only as contract declarations', () => {
+    for (const file of files) {
+      const rel = relative(srcRoot, file).split(sep).join('/');
+      if (rel === 'services/contracts/checkout.ts') continue;
+      const source = readFileSync(file, 'utf8');
+      expect({ rel, mentionsSubmitTypes: /PaymentSubmit(Request|Result)/.test(source) }).toEqual({
+        rel,
+        mentionsSubmitTypes: false,
+      });
+    }
+  });
+
+  test('no service or screen exposes or calls a payment-submit function', () => {
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      const rel = relative(srcRoot, file).split(sep).join('/');
+      expect({ rel, hasSubmitCall: /submitPayment|payNow|processPayment|capturePayment/i.test(source) }).toEqual({
+        rel,
+        hasSubmitCall: false,
+      });
+    }
+  });
+
+  test('the checkout service surface is getCheckoutPage only', () => {
+    const ownMethods = Object.getOwnPropertyNames(MockCheckoutService.prototype).filter(
+      (name) => name !== 'constructor',
+    );
+    expect(ownMethods.sort()).toEqual(['buildCheckoutPage', 'delay', 'getCheckoutPage']);
   });
 });
