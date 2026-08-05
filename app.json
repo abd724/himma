@@ -8,9 +8,11 @@
     "scheme": "himma",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "com.himma.dev",
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.himma.dev",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
