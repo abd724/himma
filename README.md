@@ -21,11 +21,11 @@ It is not a directory that redirects users to provider websites, phone calls, In
 
 ## Current stage
 
-We are building the real customer mobile frontend first.
+Himma is the **final production marketplace**, governed by `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` (owner-approved and binding): **seven workstreams** and **three connected frontends** — the customer iOS/Android app, the provider management portal, and the admin/operations portal — with the backend implemented against all three approved frontends.
 
-The frontend will use realistic mock data and mock service boundaries. The backend, database, real authentication, real payment processing, provider portal, and administration portal will be implemented later, after the customer experience is approved.
+Execution is phased (docs/23 §16; currently P0). Frontends are built first against deterministic mock services behind typed contracts, approved per surface, and later replace mocks with real APIs without redesign. Backend, authentication, payments, portals, and infrastructure work are phase-gated by docs/23 — never started without an approved workstream specification.
 
-The current app is English-only. Arabic and RTL are planned later.
+The current app is English-only; the English/Arabic launch decision is docs/23 §18.9. Real payment submission remains prohibited until docs/23 §19's conditions exist.
 
 ## Technology direction
 
@@ -53,8 +53,15 @@ Claude must read these files in order before changing code:
 14. `docs/15_DISCOVER_INFORMATION_ARCHITECTURE.md`
 15. `docs/16_DISCOVER_STATE_AND_INTERACTION_MATRIX.md`
 16. `docs/17_DISCOVER_AND_SEARCH_IMPLEMENTATION_PLAN.md`
-17. `CLAUDE.md`
-18. `FIRST_PROMPT.md`
+17. `docs/18_HOME_DISCOVER_DIFFERENTIATION.md`
+18. `docs/19_HOME_IMPLEMENTATION_BRIEF.md`
+19. `docs/20_PROGRAM_AND_PROVIDER_DETAILS_PLAN.md`
+20. `docs/21_BOOKING_FLOW_PLAN.md`
+21. `docs/22_CHECKOUT_PLAN.md`
+22. `docs/23_PRODUCTION_PLATFORM_REBASELINE.md`
+23. `CLAUDE.md`
+24. `FIRST_PROMPT.md` (historical bootstrap)
+25. `HANDOFF.md` (live project status)
 
 ## Starting the project
 
@@ -78,7 +85,8 @@ When documents appear to conflict, use this priority:
 8. `docs/08_FRONTEND_ENGINEERING_CONTRACT.md`
 9. `docs/09_OPEN_DECISIONS.md`
 10. `docs/12_NATIVE_MOBILE_COMPATIBILITY.md`
-11. Approved screen specifications (`docs/11_HOME_SCREEN_SPEC.md` and successors)
-12. Task-specific prompts
+11. `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` (platform strategy, workstreams, phases, and launch gates)
+12. Approved screen specifications (`docs/11_HOME_SCREEN_SPEC.md` and successors)
+13. Task-specific prompts
 
 Claude must not silently resolve a real contradiction. It must report the conflict and propose the smallest safe resolution.

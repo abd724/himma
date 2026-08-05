@@ -1,5 +1,7 @@
 # 09 — Open Decisions and Temporary Frontend Assumptions
 
+> **Rebaseline note (2026-08-05):** under `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` (owner-approved, binding), each "temporary assumption" below stays in force until its owning workstream activates per docs/23 §16. The decisions that must now be made for real — including several long-open items here (recurring billing §6, refund templates §7, credit classes §8) — are consolidated in docs/23 §18. Recorded owner-decision sections (§§17–22) are permanent records and remain authoritative as written.
+
 ## 1. Purpose
 
 These items are not fully decided.

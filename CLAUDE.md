@@ -16,13 +16,17 @@ Himma is an actual consumer phone app for iOS and Android.
 
 Ease of use and visual quality are primary competitive requirements. The customer should prefer Himma because discovering and booking an activity feels clearer, faster, and more enjoyable than using fragmented provider websites, Instagram pages, WhatsApp conversations, or weaker marketplace interfaces.
 
-## Current delivery strategy
+## Delivery governance (rebaselined 2026-08-05)
 
-Build the real customer frontend first with realistic mock data and mock service interfaces.
+Himma is the final production marketplace. `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` is the owner-approved, binding master plan: seven workstreams, three connected frontends (customer app, provider portal, admin/operations portal), phased execution (docs/23 §16), and production launch gates (docs/23 §15).
 
-Do not implement the production backend, database, authentication, payment gateway, provider portal, administration portal, or school/business product during the current frontend stage.
+Frontend-first is preserved and redefined: the customer application, provider portal, and admin portal are all specified, mock-driven, and owner-approved before backend implementation is considered complete.
 
-The frontend must remain technically realistic and replace mock services with real APIs later without redesigning screens.
+The backend, database, authentication, payments, provider portal, admin portal, and infrastructure are no longer permanently prohibited — they are **phase-gated**. Work in any workstream may begin only when its phase is active per docs/23 §16 **and** an owner-approved workstream specification exists (the docs/20–22 planning pattern). Do not start such work on momentum, inference, or partial approval.
+
+Frontends run against deterministic mock services behind typed contracts until their real APIs exist, and must replace mocks without redesigning screens.
+
+Real payment submission remains prohibited until every condition of docs/23 §19 exists. The school/business product remains out of scope (future product).
 
 ## Scope protection
 

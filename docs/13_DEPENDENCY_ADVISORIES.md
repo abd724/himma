@@ -1,5 +1,7 @@
 # 13 — Dependency Advisories and Hygiene
 
+> **Rebaseline note (2026-08-05):** the risk acceptance below is scoped to the mock-frontend stage and **expires when backend (W4) implementation starts** — from that point the production security policy of `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` §13 governs (CI dependency/container scanning, blocker treatment re-evaluated for a system holding customer, child, and payment data). The advisory history below is preserved as written.
+
 Status as of 2026-08-02 (Expo SDK 57, `npm audit`).
 
 ## Current advisories: 11 moderate, one root cause

@@ -1,5 +1,7 @@
 # 08 — Frontend Engineering Contract
 
+> **Rebaseline note (2026-08-05):** this contract remains authoritative for the customer application (workstream W1). Under `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` (owner-approved, binding), the provider and admin portals (W2/W3) follow the web-quality contract of docs/23 §8.4, and the backend and infrastructure workstreams (W4/W6) receive their own engineering contracts in their planning documents. Nothing below is weakened for W1.
+
 ## 1. Platform decision
 
 The Himma customer product is an actual iOS and Android mobile app.

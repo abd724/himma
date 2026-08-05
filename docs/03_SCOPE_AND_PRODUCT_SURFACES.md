@@ -1,5 +1,7 @@
 # 03 — Current Scope and Product Surfaces
 
+> **Rebaseline note (2026-08-05):** `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` (owner-approved, binding) supersedes this document's stage framing. §1's strategy is redefined — the backend follows *three* approved frontends (customer app, provider portal, admin portal), not the customer frontend alone. §4's "not being built now" exclusions remain true per-phase but are **phase-gated and scheduled** by docs/23 §16, not indefinite. §7 (provider portal) and §8 (admin portal) are now planned workstreams W2 and W3; §5 (customer web) is **pending the docs/23 §18.8 owner decision**; §9 (Himma for Business) remains genuinely future. The product content below is otherwise unchanged and historical sections are preserved as written.
+
 ## 1. Current product being built
 
 The current repository is for the **Himma customer mobile app**.

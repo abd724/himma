@@ -1,6 +1,6 @@
 # Himma — Session Handoff
 
-Read this after README.md, CLAUDE.md, and docs/01–21. It captures live project state as of 2026-08-04 so a fresh session can continue without re-deriving anything.
+Read this after README.md, CLAUDE.md, and docs/01–23. It captures live project state as of 2026-08-05 so a fresh session can continue without re-deriving anything.
 
 ## Where we are: the Booking flow milestone (docs/21) is CLOSED
 
@@ -24,7 +24,13 @@ Three customer milestones are complete and owner-approved:
 
 **Not implemented (deferred, do not start without owner approval):** checkout · payment · CheckoutIntent or any checkout handoff · booking confirmation · reservation/capacity holds of any kind · multi-participant booking (docs/09 §21.2) · waitlists (§21.4) · promo codes, notes, special requests (§21.16) · draft persistence (§21.13) · cart · written review content · favourites persistence · real provider policies · universal links · real maps · provider support actions · gifts · authentication · profile/participant management UI · Bookings calendar · Saved screen · Credits · Rewards · backend · Arabic/RTL · provider portal · admin portal. The Continue-to-checkout CTA, guest Sign-in action, and Bookings/Saved/Profile dock items stay **inert with press feedback** (docs/09 §17.2, §21.8, §21.9).
 
-**Current work: Checkout milestone (docs/22, owner-approved with corrections in docs/09 §22) + Production Platform Rebaseline.** Commit 16 (`31f11b9` checkout foundation and price review) is committed and awaiting owner review; Commits 17–19 are approved in scope but **not started**. `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` (2026-08-05, **drafted, awaiting owner approval**) rebaselines the whole roadmap on the owner's clarification that Himma is the final production marketplace: frontend-first now spans the customer app, provider portal, and admin portal (three frontends before backend completion), with six workstreams, a canonical domain model, lifecycle state machines, an authorization model, production architecture and launch gates, and a phased execution sequence (docs/23 §16). The deferral list below still holds item-by-item, but its items are now scheduled workstreams, not indefinite futures — docs/23 §3/§16 is the map. Real payment submission remains prohibited platform-wide until legal, server-side validation, gateway, and operational controls exist (docs/23 §19).
+**Current work: Phase P0 of the production platform plan.** `docs/23_PRODUCTION_PLATFORM_REBASELINE.md` is **owner-approved and binding (2026-08-05)**, including Amendment A1 (`a315c36`) and Amendment A2 (`a8a4480`): Himma is the final production marketplace — seven workstreams, three connected frontends (customer app, provider portal, admin portal) before backend completion, canonical domain model, lifecycle state machines, authorization model, production architecture, correctness-gated scale tiers, and launch gates. Governance was synchronized across CLAUDE.md, README.md, and the stale strategic docs in the same commit as this note.
+
+Live status:
+- **Checkout milestone (docs/22):** Commit 16 (`31f11b9` checkout foundation and price review) **complete**; **Commit 17 not started** — it begins only on explicit owner go-ahead.
+- **Phase: P0** (docs/23 §16). Open P0 items: **Batch-1 owner decisions open** (docs/23 §18.1–10 — rebaseline ratified; scale tiers, hosting region, gateway, counsel, brand, commercial model, customer web, language launch, device procurement still open) · **native-validation environment procurement open** (first full device pass pending it) · **provider design-partner recruitment open** (docs/23 §8.6) · **canonical-model specification (docs/23 §5–§7 spec document) not started**.
+- The deferral list below still holds item-by-item, but its items are scheduled workstreams under docs/23 §3/§16, not indefinite futures.
+- **Real payment submission remains prohibited** platform-wide until every docs/23 §19 condition exists (legal acknowledgments, server-side validation, certified gateway, operational controls).
 
 ## Approval status per surface (docs/12 three levels)
 

@@ -1,6 +1,6 @@
 # 23 — Production Platform Rebaseline (Master Plan)
 
-Status: **draft for product-owner approval — binding on the whole platform once approved.** Prepared 2026-08-05 after full re-analysis of the repository, docs/01–22, HANDOFF.md, the git history, and the implemented customer application (through Commit 16, `31f11b9`).
+Status: **owner-approved and binding, 2026-08-05 — the production-platform master plan.** Approved by the product owner including Amendment A1 (commit `a315c36`) and Amendment A2 (commit `a8a4480`). Prepared 2026-08-05 after full re-analysis of the repository, docs/01–22, HANDOFF.md, the git history, and the implemented customer application (through Commit 16, `31f11b9`). The §19 payment prohibition remains fully active until every one of its conditions exists.
 
 **Amendment A1 (2026-08-05, documentation-only corrective review).** The first draft contained production-critical gaps, corrected in place before approval: a server-side capacity-hold model (§5, §6.4) so customers can never be charged without guaranteed capacity; an auditable multi-entity payment model replacing the single Payment record (§5, §6.6); removal of the universal super-admin, strict separation of technical/business powers, enforced dual control, and full provider role granularity (§7); the first real device pass moved from P2 to P0/P1 (§14, §16); backend vertical slices starting after canonical-model + first-workflow approval instead of after all portal mocks (§4, §16); explicit owner decisions on customer web at launch and English-only versus bilingual launch (§18), with a full Arabic/RTL production work package (§3.1) connected to the launch gates (§15); bulk catalogue/scheduling tooling for the portals (§8.5); service-specific recovery objectives replacing the single platform RPO/RTO (§10.11); correctness- and latency-based scale gates beyond account counts (§11.1); and a provider design-partner discovery step gating final portal approval (§8.6, §16). The superseded first-draft positions are recorded in the contradiction register (C16).
 
@@ -550,4 +550,4 @@ Existing statements that still frame the product as a prototype-stage, customer-
 
 ---
 
-*Approval of this document rebaselines the roadmap per §16. It does not start Commit 17, does not modify CLAUDE.md or README.md (C1/C2 await explicit owner approval), and does not lift §19.*
+*This document was approved 2026-08-05 and rebaselines the roadmap per §16. The C1/C2 amendments to CLAUDE.md and README.md were owner-approved and applied in the governance synchronization commit. Approval does not start Commit 17 and does not lift §19.*
