@@ -2,6 +2,8 @@ import { describe, expect, test } from '@jest/globals';
 import {
   checkoutReadiness,
   checkoutReducer,
+  CTA_DOUBLE_PRESS_WINDOW_MS,
+  ctaPressAllowed,
   initialCheckoutUiState,
   PAYMENT_METHOD_BLOCKER,
   type CheckoutUiState,
@@ -105,5 +107,33 @@ describe('checkoutReadiness matrix (docs/22 §9)', () => {
 
   test('the blocker is the single approved status line', () => {
     expect(PAYMENT_METHOD_BLOCKER).toBe('Choose a payment method to continue');
+  });
+});
+
+describe('ctaPressAllowed press gate (docs/22 §13, docs/09 §22.11)', () => {
+  const unready = { ready: false, blocker: PAYMENT_METHOD_BLOCKER };
+  const ready = { ready: true };
+
+  test('an unready press never proceeds, regardless of timing', () => {
+    expect(ctaPressAllowed(unready, 0, 10_000)).toBe(false);
+    expect(ctaPressAllowed(unready, 0, Number.MAX_SAFE_INTEGER)).toBe(false);
+  });
+
+  test('a ready first press passes the gate', () => {
+    expect(ctaPressAllowed(ready, 0, CTA_DOUBLE_PRESS_WINDOW_MS)).toBe(true);
+  });
+
+  test('a duplicate press inside the window is swallowed', () => {
+    const first = 10_000;
+    expect(ctaPressAllowed(ready, first, first + CTA_DOUBLE_PRESS_WINDOW_MS - 1)).toBe(false);
+  });
+
+  test('a press after the window passes again (still the inert contract)', () => {
+    const first = 10_000;
+    expect(ctaPressAllowed(ready, first, first + CTA_DOUBLE_PRESS_WINDOW_MS)).toBe(true);
+  });
+
+  test('readiness gating and the press window compose: unready wins', () => {
+    expect(ctaPressAllowed(unready, 0, CTA_DOUBLE_PRESS_WINDOW_MS * 10)).toBe(false);
   });
 });

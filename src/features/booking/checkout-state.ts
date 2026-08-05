@@ -54,3 +54,22 @@ export function checkoutReadiness(
   }
   return { ready: true };
 }
+
+/** Duplicate-press window for the checkout CTA (docs/22 §13). */
+export const CTA_DOUBLE_PRESS_WINDOW_MS = 700;
+
+/**
+ * The single press gate for the checkout CTA — pure so activation rules are
+ * directly testable. An unready press never proceeds (regardless of input
+ * source: click, Enter, Space, or native press); a ready press passes at
+ * most once per duplicate-press window. Even an allowed press remains the
+ * docs/09 §22.11 inert contract — nothing exists past the gate.
+ */
+export function ctaPressAllowed(
+  readiness: CheckoutReadiness,
+  lastPressAt: number,
+  now: number,
+): boolean {
+  if (!readiness.ready) return false;
+  return now - lastPressAt >= CTA_DOUBLE_PRESS_WINDOW_MS;
+}

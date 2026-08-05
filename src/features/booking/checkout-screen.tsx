@@ -12,6 +12,7 @@ import {
 import {
   checkoutReadiness,
   checkoutReducer,
+  ctaPressAllowed,
   initialCheckoutUiState,
   type CheckoutReadiness,
 } from '@/features/booking/checkout-state';
@@ -340,16 +341,22 @@ export function CheckoutScreen() {
           {/* Production-styled, duplicate-press-protected (700 ms guard —
               the mechanics ship real, docs/22 §13), and truthful: even when
               ready, the press is the inert contract — no navigation, dialog,
-              success, failure, reservation, or payment (docs/09 §22.11). */}
+              success, failure, reservation, or payment (docs/09 §22.11).
+              Unready: `disabled` exposes aria-disabled="true" (plus the
+              browser's native disabled semantics on web-button hosts) and
+              blocks click/Enter/Space/native press at the Pressable layer;
+              accessibilityState carries the native state contract, and the
+              adjacent polite live region names the blocker. */}
           <PressableFeedback
             accessibilityRole="button"
             accessibilityLabel={page.spokenCtaLabel}
             accessibilityState={{ disabled: !readiness.ready }}
+            disabled={!readiness.ready}
             onPress={() => {
-              if (!readiness.ready) return;
-              const now = Date.now();
-              if (now - lastCtaPressAt.current < 700) return;
-              lastCtaPressAt.current = now;
+              // Defense in depth behind the Pressable-layer block: the pure
+              // gate re-checks readiness and the duplicate-press window.
+              if (!ctaPressAllowed(readiness, lastCtaPressAt.current, Date.now())) return;
+              lastCtaPressAt.current = Date.now();
               // Inert contract boundary: nothing happens past this line.
             }}
             style={[styles.ctaButton, !readiness.ready && styles.ctaButtonDisabled]}

@@ -10,7 +10,11 @@
  * blocker (`Choose a payment method to continue`) resolving on selection,
  * free bookings with no payment section and an immediately-ready CTA,
  * the inert duplicate-press-protected CTA contract in both ready and
- * unready states, clean checkout-local state on re-entry, summary
+ * unready states (Commit 17 accessibility correction: unready exposes
+ * aria-disabled="true" plus native disabled semantics so click, Enter,
+ * Space, and native press can never advance; ready exposes enabled
+ * semantics and accepts focus; ordinary interactions never reset the
+ * method selection), clean checkout-local state on re-entry, summary
  * preservation beneath checkout, exact-origin back, edit-booking round
  * trip, cold-link/missing-draft/unknown recovery, and screenshot rows
  * 01–11 and 14–16 at 390 × 844 and 360 × 780.
@@ -134,11 +138,17 @@ check('method: exactly one radio — the generic contract method',
   (await page.locator('[role="radio"]:visible').count()) === 1);
 check('method: Card payment row unchecked initially',
   (await page.locator('[role="radio"][aria-checked="false"]:visible').count()) === 1);
-// The CTA is never unready without a visible reason (docs/22 §9). The
-// disabled state ships in accessibilityState for native; RN-web Pressable
-// buttons drop aria-disabled, so web asserts the named blocker text.
+// The CTA is never unready without a visible reason (docs/22 §9), and the
+// unready state is exposed semantically on web: aria-disabled="true" plus
+// the browser's native disabled semantics (RN-web couples them for button
+// hosts) — activation is impossible and assistive tech reads the control
+// as dimmed, with the named blocker in the adjacent polite live region.
 check('readiness: blocker named before selection',
   await visibleText('Choose a payment method to continue'));
+const blockedCta = page.locator('[role="button"][aria-disabled="true"]:visible');
+check('readiness: unready CTA exposes aria-disabled="true"', (await blockedCta.count()) === 1);
+check('readiness: unready CTA carries native disabled semantics',
+  (await blockedCta.first().getAttribute('disabled')) !== null);
 await assertHonestCopy('checkout single');
 {
   // Reading order: recap → price → policy → payment → CTA (docs/22 §12).
@@ -151,10 +161,23 @@ await assertHonestCopy('checkout single');
 await shot('01-checkout-single-390');
 await shot('11-checkout-readiness-blocker-390');
 
-// Unready CTA press: inert, no route change, no dialog.
-await visibleLabel(/^Continue to payment/).click();
-await idle(500);
-check('readiness: unready press produces no route change',
+// Unready CTA activation: focus attempt + Enter + Space + forced click —
+// none may advance or invoke anything. The browser refuses focus on the
+// natively-disabled button, making keyboard activation impossible by
+// construction; the presses are dispatched anyway as proof.
+await blockedCta.first().focus().catch(() => {});
+check('readiness: keyboard activation impossible while unready (focus refused)',
+  await page.evaluate(() => document.activeElement?.getAttribute('aria-disabled') !== 'true'));
+await page.keyboard.press('Enter');
+await page.keyboard.press('Space');
+await idle(400);
+check('readiness: Enter/Space while unready produce no route change',
+  page.url().endsWith('/booking/beginner-calisthenics/checkout'));
+// Forced click bypasses pointer-events suppression to prove the handler
+// layer is also inert while unready.
+await blockedCta.first().click({ force: true }).catch(() => {});
+await idle(400);
+check('readiness: click while unready produces no route change',
   page.url().endsWith('/booking/beginner-calisthenics/checkout'));
 
 // Selecting the contract method resolves the blocker.
@@ -164,13 +187,44 @@ check('method: Card payment checked after selection',
   (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 1);
 check('readiness: blocker resolves to the booking price after selection',
   !(await visibleText('Choose a payment method to continue')));
+// Ready state exposes correct enabled semantics: no aria-disabled and no
+// native disabled attribute (attribute absence is the ARIA enabled default),
+// and the CTA is focusable again.
+const readyCta = visibleLabel(/^Continue to payment/);
+check('readiness: ready CTA has no aria-disabled', (await readyCta.getAttribute('aria-disabled')) === null);
+check('readiness: ready CTA has no native disabled attribute',
+  (await readyCta.getAttribute('disabled')) === null);
+check('readiness: ready CTA is focusable (tabindex 0)',
+  (await readyCta.getAttribute('tabindex')) === '0');
+check('readiness: no aria-disabled="true" control remains',
+  (await page.locator('[role="button"][aria-disabled="true"]:visible').count()) === 0);
 await shot('10-checkout-method-selected-390');
 
-// Ready CTA press remains the inert contract: no route change, no dialog.
+// Ready CTA press remains the inert contract: no route change, no dialog —
+// for click and keyboard alike.
 await visibleLabel(/^Continue to payment/).click();
 await idle(500);
 check('checkout: Continue to payment produces no route change',
   page.url().endsWith('/booking/beginner-calisthenics/checkout'));
+await readyCta.focus();
+check('checkout: ready CTA accepts focus',
+  await page.evaluate(() => document.activeElement?.getAttribute('aria-label')?.startsWith('Continue to payment') === true));
+await page.keyboard.press('Enter');
+await idle(400);
+check('checkout: Enter on the ready CTA stays the inert contract',
+  page.url().endsWith('/booking/beginner-calisthenics/checkout'));
+
+// Ordinary interactions re-render the screen without resetting the
+// checkout-local selection (docs/22 §5: reset only on genuine re-entry,
+// draft replacement, or service re-derivation).
+await visibleLabel('Full policy').click();
+await idle(300);
+await scrollToY(4000);
+await scrollToY(0);
+check('rerender: method selection preserved through ordinary interactions',
+  (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 1);
+check('rerender: status still shows the booking price',
+  !(await visibleText('Choose a payment method to continue')));
 
 // Sticky CTA over scrolled content (status shows the booking price when ready).
 await scrollToY(4000);
@@ -278,6 +332,9 @@ check('free: no payment-method section', !(await visibleText('Payment method')))
 check('free: no payment radios', (await page.locator('[role="radio"]:visible').count()) === 0);
 check('free: CTA ready immediately — no blocker',
   !(await visibleText('Choose a payment method to continue')));
+check('free: CTA exposes enabled semantics (no disabled attributes)',
+  (await visibleLabel(/^Confirm booking/).getAttribute('aria-disabled')) === null &&
+  (await visibleLabel(/^Confirm booking/).getAttribute('disabled')) === null);
 await assertHonestCopy('checkout free');
 await visibleLabel(/^Confirm booking/).click();
 await idle(500);
@@ -355,6 +412,8 @@ check('360 single: Booking price', await visibleText('Booking price · AED 85 pe
 check('360 method: Card payment row unchecked initially',
   (await page.locator('[role="radio"][aria-checked="false"]:visible').count()) === 1);
 check('360 readiness: blocker named', await visibleText('Choose a payment method to continue'));
+check('360 readiness: unready CTA aria-disabled',
+  (await page.locator('[role="button"][aria-disabled="true"]:visible').count()) === 1);
 await assertHonestCopy('360 checkout single');
 await shot('01-checkout-single-360');
 await shot('11-checkout-readiness-blocker-360');
@@ -364,6 +423,8 @@ check('360 method: checked after selection',
   (await page.locator('[role="radio"][aria-checked="true"]:visible').count()) === 1);
 check('360 readiness: blocker resolved',
   !(await visibleText('Choose a payment method to continue')));
+check('360 readiness: ready CTA enabled semantics',
+  (await visibleLabel(/^Continue to payment/).getAttribute('aria-disabled')) === null);
 await shot('10-checkout-method-selected-360');
 await scrollToY(4000);
 check('360: CTA sticky over scrolled content', await visibleText('Booking price · AED 85 per session'));
