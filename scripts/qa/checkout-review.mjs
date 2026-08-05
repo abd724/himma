@@ -2,12 +2,14 @@
  * Commits 16–18 QA — Checkout foundation, price review, the payment-method
  * contract, and revalidation states with flow hardening (docs/22 §14, §16;
  * owner decisions docs/09 §22). Commit 18 adds: the `?qa-revalidate`
- * review states (sessionFull / priceChanged / offerExpired — QA-only
+ * review states (all declared issue codes are review-reachable — QA-only
  * demonstrations of the future backend contract, captured at flow entry)
- * rendering typed, honest, recoverable states with no CTA and no payment
- * controls; the priceChanged old → new display; re-derive recovery;
- * repeated-activation hardening; and abandoned-checkout re-entry proof.
- * Earlier scope:
+ * rendered on the dedicated CheckoutIssueCard (owner-directed design:
+ * state-appropriate icon, state label, headline, supporting copy, the
+ * structured old → new price comparison from service data, reassurance
+ * row, full-width recovery CTA) with no checkout CTA and no payment
+ * controls; re-derive recovery; repeated-activation hardening; and
+ * abandoned-checkout re-entry proof. Earlier scope:
  * Continue-to-checkout activation with the double-tap guard, per-type
  * checkout price review with Booking price continuity (never Total, no
  * VAT/fees/discount arithmetic, Free never AED 0), policy display with no
@@ -407,11 +409,13 @@ await shot('09-checkout-offer-390');
 // simulated contention, no silent repair.
 const singleSessionSteps = ['Today, 7:30 PM', /^Continue: /, /^You$/, /^Continue: /];
 
-// sessionFull — spec copy + return-to-selection recovery.
+// sessionFull — CheckoutIssueCard design + return-to-selection recovery.
 await openCheckout('booking/beginner-calisthenics?qa-revalidate=sessionFull', singleSessionSteps);
-check('revalidate sessionFull: spec message',
-  await visibleText('This session filled up while you were checking out.'));
-check('revalidate sessionFull: reassurance shown', await visibleText('No payment has been made.'));
+check('revalidate sessionFull: state label', await visibleText('Session unavailable'));
+check('revalidate sessionFull: headline', await visibleText('This session just filled up'));
+check('revalidate sessionFull: supporting copy',
+  await visibleText('Choose another available time to continue your booking.'));
+check('revalidate sessionFull: reassurance row', await visibleText('No payment has been made.'));
 check('revalidate sessionFull: no CTA renders', !(await visibleText('Continue to payment')));
 check('revalidate sessionFull: no payment controls render',
   (await page.locator('[role="radio"]:visible').count()) === 0);
@@ -424,10 +428,19 @@ await idle();
 check('revalidate sessionFull: recovery returns to session selection',
   await visibleText('Choose a session'));
 
-// priceChanged — old → new display + explicit review action that re-derives.
+// priceChanged — structured old → new comparison + review action that re-derives.
 await openCheckout('booking/beginner-calisthenics?qa-revalidate=priceChanged', singleSessionSteps);
-check('revalidate priceChanged: old → new message',
-  await visibleText('The booking price changed from AED 75 per session to AED 85 per session while you were checking out.'));
+check('revalidate priceChanged: state label', await visibleText('Price updated'));
+check('revalidate priceChanged: booking-generic headline',
+  await visibleText('Your booking price has changed'));
+check('revalidate priceChanged: structured previous price row',
+  (await visibleText('Previous price')) && (await visibleText('AED 75 per session')));
+check('revalidate priceChanged: structured updated price row',
+  (await visibleText('Updated price')) && (await visibleText('AED 85 per session')));
+check('revalidate priceChanged: amounts never buried in a paragraph',
+  !(await visibleText('while you were checking out')));
+check('revalidate priceChanged: supporting copy',
+  await visibleText('Review the updated price before continuing.'));
 check('revalidate priceChanged: no CTA renders', !(await visibleText('Continue to payment')));
 await assertHonestCopy('revalidate priceChanged');
 await shot('13-checkout-revalidate-pricechanged-390');
@@ -436,14 +449,14 @@ await idle();
 check('revalidate priceChanged: review re-derives the current checkout',
   await visibleText('Booking price · AED 85 per session'));
 check('revalidate priceChanged: issue cleared after review',
-  !(await visibleText('while you were checking out')));
+  !(await visibleText('Price updated')));
 check('revalidate priceChanged: method contract present after review',
   await visible(visibleLabel('Card payment')));
 
 // offerExpired — review state; re-derivation shows the current data.
 await openCheckout('booking/reformer-pilates?qa-revalidate=offerExpired', [/^You$/, /^Continue: /]);
-check('revalidate offerExpired: message',
-  await visibleText('This offer ended while you were checking out.'));
+check('revalidate offerExpired: state label', await visibleText('Offer ended'));
+check('revalidate offerExpired: headline', await visibleText('This offer has ended'));
 check('revalidate offerExpired: no CTA renders', !(await visibleText('Continue to payment')));
 await assertHonestCopy('revalidate offerExpired');
 await visibleLabel('Review booking').click();
@@ -452,6 +465,44 @@ check('revalidate offerExpired: re-derived page shows current data',
   await visibleText('20% off first month'));
 check('revalidate offerExpired: checkout intact after review',
   await visibleText('Booking price · AED 650 per month'));
+
+// participantIneligible — eligibility-changed state; recovery owns the fix.
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=participantIneligible', singleSessionSteps);
+check('revalidate ineligible: state label', await visibleText('Eligibility changed'));
+check('revalidate ineligible: headline',
+  await visibleText('This participant can no longer join'));
+check('revalidate ineligible: no CTA renders', !(await visibleText('Continue to payment')));
+await assertHonestCopy('revalidate ineligible');
+await shot('17-checkout-revalidate-ineligible-390');
+await visibleLabel('Choose who is attending').click();
+await idle();
+check('revalidate ineligible: recovery lands on the participant step',
+  await visibleText('Who is attending?'));
+
+// registrationClosed — closed state; recovery returns to the program.
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=registrationClosed', singleSessionSteps);
+check('revalidate closed: state label', await visibleText('Registration closed'));
+check('revalidate closed: headline',
+  await visibleText('Registration for this program has closed'));
+check('revalidate closed: no CTA renders', !(await visibleText('Continue to payment')));
+await assertHonestCopy('revalidate closed');
+await shot('18-checkout-revalidate-closed-390');
+await visibleLabel('Back to program').click();
+await idle();
+check('revalidate closed: recovery lands on Program Details',
+  await visible(visibleLabel(/^Book: Beginner Calisthenics/)));
+
+// invalidDraft — out-of-date booking; recovery restarts the flow.
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=invalidDraft', singleSessionSteps);
+check('revalidate invalid: state label', await visibleText('Booking out of date'));
+check('revalidate invalid: headline',
+  await visibleText('This booking needs to be started again'));
+check('revalidate invalid: no CTA renders', !(await visibleText('Continue to payment')));
+await assertHonestCopy('revalidate invalid');
+await shot('19-checkout-revalidate-invalid-390');
+await visibleLabel('Start booking again').click();
+await idle();
+check('revalidate invalid: recovery restarts the flow', await visibleText('Choose a session'));
 
 // ——— Recovery: cold link, unknown program, error ———
 await page.goto(`${BASE}/booking/beginner-calisthenics/checkout`, { waitUntil: 'networkidle' });
@@ -562,18 +613,33 @@ await openCheckout('booking/reformer-pilates', [/^You$/, /^Continue: /]);
 check('360 offer: renders', await visibleText('20% off first month'));
 await shot('09-checkout-offer-360');
 
-await openCheckout('booking/beginner-calisthenics?qa-revalidate=sessionFull',
-  ['Today, 7:30 PM', /^Continue: /, /^You$/, /^Continue: /]);
+const steps360 = ['Today, 7:30 PM', /^Continue: /, /^You$/, /^Continue: /];
+
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=sessionFull', steps360);
 check('360 revalidate sessionFull: renders',
-  await visibleText('This session filled up while you were checking out.'));
+  await visibleText('This session just filled up'));
 check('360 revalidate sessionFull: no CTA renders', !(await visibleText('Continue to payment')));
 await shot('12-checkout-revalidate-sessionfull-360');
 
-await openCheckout('booking/beginner-calisthenics?qa-revalidate=priceChanged',
-  ['Today, 7:30 PM', /^Continue: /, /^You$/, /^Continue: /]);
-check('360 revalidate priceChanged: old → new renders',
-  await visibleText('The booking price changed from AED 75 per session to AED 85 per session while you were checking out.'));
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=priceChanged', steps360);
+check('360 revalidate priceChanged: structured comparison renders',
+  (await visibleText('AED 75 per session')) && (await visibleText('AED 85 per session')));
 await shot('13-checkout-revalidate-pricechanged-360');
+
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=participantIneligible', steps360);
+check('360 revalidate ineligible: renders',
+  await visibleText('This participant can no longer join'));
+await shot('17-checkout-revalidate-ineligible-360');
+
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=registrationClosed', steps360);
+check('360 revalidate closed: renders',
+  await visibleText('Registration for this program has closed'));
+await shot('18-checkout-revalidate-closed-360');
+
+await openCheckout('booking/beginner-calisthenics?qa-revalidate=invalidDraft', steps360);
+check('360 revalidate invalid: renders',
+  await visibleText('This booking needs to be started again'));
+await shot('19-checkout-revalidate-invalid-360');
 
 await page.goto(`${BASE}/booking/beginner-calisthenics/checkout`, { waitUntil: 'networkidle' });
 await idle();

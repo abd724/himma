@@ -4,6 +4,7 @@ import type {
   CheckoutIssueCode,
   CheckoutPage,
   CheckoutPageInput,
+  CheckoutPriceComparison,
   CheckoutPriceLine,
   CheckoutPriceSummary,
   CheckoutService,
@@ -144,18 +145,26 @@ function qaDemoPreviousPrice(price: PriceModel): PriceModel | undefined {
 function revalidationIssue(
   code: CheckoutIssueCode,
   price: PriceModel,
-): { code: CheckoutIssueCode; message: string } {
+): { code: CheckoutIssueCode; message: string; priceComparison?: CheckoutPriceComparison } {
   switch (code) {
     case 'sessionFull':
       return { code, message: 'This session filled up while you were checking out.' };
     case 'priceChanged': {
       const previous = qaDemoPreviousPrice(price);
+      // The structured old → new pair the CheckoutIssueCard renders — from
+      // structured amounts only; the updated label is always the current
+      // authoritative catalogue price. The message stays the contract's
+      // transport string (future backend-supplied).
       return {
         code,
         message:
           previous === undefined
             ? 'The booking price changed while you were checking out.'
             : `The booking price changed from ${priceLabel(previous)} to ${priceLabel(price)} while you were checking out.`,
+        priceComparison:
+          previous === undefined
+            ? undefined
+            : { previousLabel: priceLabel(previous), updatedLabel: priceLabel(price) },
       };
     }
     case 'offerExpired':

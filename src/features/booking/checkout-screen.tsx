@@ -16,10 +16,8 @@ import {
   initialCheckoutUiState,
   type CheckoutReadiness,
 } from '@/features/booking/checkout-state';
-import {
-  checkoutIssueRecovery,
-  REVALIDATION_REASSURANCE,
-} from '@/features/booking/checkout-revalidation';
+import { CheckoutIssueCard } from '@/features/booking/checkout-issue-card';
+import { checkoutIssueRecovery } from '@/features/booking/checkout-revalidation';
 import { PaymentMethodRow } from '@/features/booking/payment-method-row';
 import { summaryParticipantBlock } from '@/features/booking/summary-presentation';
 import { programHref } from '@/features/details/detail-navigation';
@@ -210,16 +208,16 @@ export function CheckoutScreen() {
           </View>
         ) : issue !== undefined ? (
           /* Revalidation review state — docs/22 §7.10, docs/09 §22.10:
-             typed, honest, recoverable. The reassurance line states plainly
+             typed, honest, recoverable, on the dedicated CheckoutIssueCard
+             (owner-directed redesign). The reassurance row states plainly
              that nothing was performed; the single action re-derives the
              page or returns to the step that owns the fix. No CTA bar and
              no payment controls render while an issue is unresolved. */
-          <View style={styles.stateWrap}>
-            <EmptyFeedCard
-              title={issue.message}
-              message={REVALIDATION_REASSURANCE}
-              actionLabel={checkoutIssueRecovery(issue.code).actionLabel}
-              onClearFilter={recoverFromIssue}
+          <View style={styles.issueWrap}>
+            <CheckoutIssueCard
+              code={issue.code}
+              priceComparison={issue.priceComparison}
+              onRecover={recoverFromIssue}
             />
           </View>
         ) : page === null || participantBlock === undefined ? null : (
@@ -455,6 +453,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   stateWrap: { paddingTop: spacing.xl },
+  issueWrap: { paddingTop: spacing.xl, paddingHorizontal: pagePadding },
   recapCard: {
     gap: spacing.md,
     padding: spacing.lg,

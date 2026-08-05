@@ -100,17 +100,19 @@ describe('draftReducer', () => {
 });
 
 describe('qaRevalidateFromSearch (Commit 18, docs/22 §7.10)', () => {
-  test('accepts exactly the three spec-reachable review codes', () => {
+  test('accepts the spec review codes', () => {
     expect(qaRevalidateFromSearch('?qa-revalidate=sessionFull')).toBe('sessionFull');
     expect(qaRevalidateFromSearch('?qa-revalidate=priceChanged')).toBe('priceChanged');
     expect(qaRevalidateFromSearch('?qa-revalidate=offerExpired')).toBe('offerExpired');
   });
 
-  test('other declared codes are not URL-reachable (QA contract is the spec three)', () => {
-    expect(qaRevalidateFromSearch('?qa-revalidate=invalidDraft')).toBeUndefined();
-    expect(qaRevalidateFromSearch('?qa-revalidate=participantIneligible')).toBeUndefined();
-    expect(qaRevalidateFromSearch('?qa-revalidate=registrationClosed')).toBeUndefined();
-    expect(qaRevalidateFromSearch('?qa-revalidate=branchUnavailable')).toBeUndefined();
+  test('every declared code is review-reachable (owner-directed visual review)', () => {
+    expect(qaRevalidateFromSearch('?qa-revalidate=invalidDraft')).toBe('invalidDraft');
+    expect(qaRevalidateFromSearch('?qa-revalidate=participantIneligible')).toBe(
+      'participantIneligible',
+    );
+    expect(qaRevalidateFromSearch('?qa-revalidate=registrationClosed')).toBe('registrationClosed');
+    expect(qaRevalidateFromSearch('?qa-revalidate=branchUnavailable')).toBe('branchUnavailable');
   });
 
   test('garbage, empty, and absent values resolve undefined', () => {

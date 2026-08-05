@@ -51,3 +51,77 @@ export function checkoutIssueRecovery(code: CheckoutIssueCode): CheckoutIssueRec
  * payment, reservation, or confirmation ever existed.
  */
 export const REVALIDATION_REASSURANCE = 'No payment has been made.';
+
+/**
+ * Per-code visual presentation for the CheckoutIssueCard — owner-directed
+ * redesign of the revalidation states (recorded checkout-interruption
+ * design, 2026-08-05): each state carries a state-appropriate icon, a small
+ * state label, a headline, and supporting copy. States are deliberately not
+ * visually identical because their meanings differ. Copy is presentation
+ * only — codes, routes, recovery targets, and the payment prohibition are
+ * unchanged; amounts never appear here (the priceChanged old → new pair is
+ * structured `CheckoutPriceComparison` data from the issuing service).
+ */
+export interface CheckoutIssuePresentation {
+  /** Ionicons name — state-appropriate, never the generic search glyph. */
+  icon: string;
+  stateLabel: string;
+  headline: string;
+  support: string;
+}
+
+export function checkoutIssuePresentation(code: CheckoutIssueCode): CheckoutIssuePresentation {
+  switch (code) {
+    case 'sessionFull':
+      return {
+        icon: 'calendar-outline',
+        stateLabel: 'Session unavailable',
+        headline: 'This session just filled up',
+        support: 'Choose another available time to continue your booking.',
+      };
+    case 'registrationClosed':
+      return {
+        icon: 'lock-closed-outline',
+        stateLabel: 'Registration closed',
+        headline: 'Registration for this program has closed',
+        support: 'You can review the program or browse other activities.',
+      };
+    case 'priceChanged':
+      return {
+        icon: 'pricetag-outline',
+        stateLabel: 'Price updated',
+        // Booking-generic (owner decision, 2026-08-05): correct for every
+        // program type — sessions, enrolments, camps, and packages alike.
+        headline: 'Your booking price has changed',
+        support: 'Review the updated price before continuing.',
+      };
+    case 'offerExpired':
+      return {
+        icon: 'time-outline',
+        stateLabel: 'Offer ended',
+        headline: 'This offer has ended',
+        support: 'Review your booking with the current price before continuing.',
+      };
+    case 'participantIneligible':
+      return {
+        icon: 'person-outline',
+        stateLabel: 'Eligibility changed',
+        headline: 'This participant can no longer join',
+        support: 'Choose who is attending to continue your booking.',
+      };
+    case 'branchUnavailable':
+      return {
+        icon: 'location-outline',
+        stateLabel: 'Location unavailable',
+        headline: 'This location is no longer available',
+        support: 'Choose another session to continue your booking.',
+      };
+    case 'invalidDraft':
+      return {
+        icon: 'refresh-outline',
+        stateLabel: 'Booking out of date',
+        headline: 'This booking needs to be started again',
+        support: 'Start the booking again to continue.',
+      };
+  }
+}

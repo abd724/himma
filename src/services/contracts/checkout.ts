@@ -92,9 +92,28 @@ export type CheckoutIssueCode =
   | 'branchUnavailable'
   | 'invalidDraft';
 
+/**
+ * Structured old → new price display for a 'priceChanged' issue — labels
+ * composed from structured amounts by the issuing service (the future
+ * backend price authority; docs/09 §22.4–5), never parsed from copy. The
+ * updated label is always the current authoritative price.
+ */
+export interface CheckoutPriceComparison {
+  previousLabel: string; // 'AED 75 per session'
+  updatedLabel: string; // 'AED 85 per session'
+}
+
 export type CheckoutValidation =
   | { ok: true }
-  | { ok: false; issues: { code: CheckoutIssueCode; message: string }[] };
+  | {
+      ok: false;
+      issues: {
+        code: CheckoutIssueCode;
+        message: string;
+        /** Present only for 'priceChanged' (docs/22 §7.10 old → new). */
+        priceComparison?: CheckoutPriceComparison;
+      }[];
+    };
 
 export interface CheckoutPage {
   /** Re-derived at entry — the single order source (docs/22 §2); the

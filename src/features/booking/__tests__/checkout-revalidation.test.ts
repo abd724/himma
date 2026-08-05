@@ -1,5 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
 import {
+  checkoutIssuePresentation,
   checkoutIssueRecovery,
   REVALIDATION_REASSURANCE,
 } from '@/features/booking/checkout-revalidation';
@@ -68,5 +69,59 @@ describe('checkoutIssueRecovery (docs/22 §7.10.2)', () => {
     expect(REVALIDATION_REASSURANCE).not.toMatch(
       /reserv|holding|charged|confirmed|success|receipt|Total/i,
     );
+  });
+});
+
+describe('checkoutIssuePresentation (owner-directed CheckoutIssueCard design)', () => {
+  test('every code carries a complete presentation', () => {
+    for (const code of ALL_CODES) {
+      const presentation = checkoutIssuePresentation(code);
+      expect(presentation.icon.length).toBeGreaterThan(0);
+      expect(presentation.stateLabel.length).toBeGreaterThan(0);
+      expect(presentation.headline.length).toBeGreaterThan(0);
+      expect(presentation.support.length).toBeGreaterThan(0);
+      // Never the generic feed empty-state glyph.
+      expect(presentation.icon).not.toBe('search-outline');
+    }
+  });
+
+  test('states are not visually identical — icons and headlines differ per meaning', () => {
+    const icons = ALL_CODES.map((code) => checkoutIssuePresentation(code).icon);
+    const headlines = ALL_CODES.map((code) => checkoutIssuePresentation(code).headline);
+    expect(new Set(headlines).size).toBe(ALL_CODES.length);
+    // Distinct icon families across distinct meanings (some sharing is fine
+    // only where meanings overlap; today every state has its own glyph).
+    expect(new Set(icons).size).toBe(ALL_CODES.length);
+  });
+
+  test('session-full state matches the directed design', () => {
+    expect(checkoutIssuePresentation('sessionFull')).toEqual({
+      icon: 'calendar-outline',
+      stateLabel: 'Session unavailable',
+      headline: 'This session just filled up',
+      support: 'Choose another available time to continue your booking.',
+    });
+  });
+
+  test('price-changed state matches the directed design (booking-generic headline)', () => {
+    expect(checkoutIssuePresentation('priceChanged')).toEqual({
+      icon: 'pricetag-outline',
+      stateLabel: 'Price updated',
+      headline: 'Your booking price has changed',
+      support: 'Review the updated price before continuing.',
+    });
+  });
+
+  test('presentation copy stays honest — no claims, no amounts, no card wording', () => {
+    for (const code of ALL_CODES) {
+      const presentation = checkoutIssuePresentation(code);
+      const copy = [presentation.stateLabel, presentation.headline, presentation.support].join(' | ');
+      expect(copy).not.toMatch(/\bTotal\b/);
+      expect(copy).not.toMatch(/VAT|\bfees?\b/i);
+      expect(copy).not.toMatch(/AED|\d/);
+      expect(copy).not.toMatch(/reserv|holding|charged|confirmed|success|receipt/i);
+      expect(copy).not.toMatch(/ending in|last four|expir|cvv|cardholder/i);
+      expect(copy).not.toMatch(/i agree|i accept|by continuing/i);
+    }
   });
 });

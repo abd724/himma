@@ -52,9 +52,19 @@ export function draftReducer(draft: BookingDraft, action: BookingDraftAction): B
  * so the value is captured once at flow entry, exactly like the
  * account-context `?qa-scenario` capture). Review/QA only — deterministic
  * demonstrations of the future backend contract; never customer-reachable,
- * no implied live polling, no simulated contention.
+ * no implied live polling, no simulated contention. All declared issue
+ * codes are review-reachable so every CheckoutIssueCard design can be
+ * inspected (owner-directed visual review, 2026-08-05).
  */
-const QA_REVALIDATE_CODES = ['sessionFull', 'priceChanged', 'offerExpired'] as const;
+const QA_REVALIDATE_CODES = [
+  'sessionFull',
+  'registrationClosed',
+  'priceChanged',
+  'offerExpired',
+  'participantIneligible',
+  'branchUnavailable',
+  'invalidDraft',
+] as const;
 
 export function qaRevalidateFromSearch(search: string | undefined): CheckoutIssueCode | undefined {
   if (search === undefined || search === '') return undefined;

@@ -448,6 +448,47 @@ describe('QA revalidation states (Commit 18, docs/22 §7.10, docs/09 §22.10)', 
     }
   });
 
+  test('priceChanged carries the structured old → new comparison (never parsed from copy)', () => {
+    const page = service.buildCheckoutPage({
+      draft: draftFor('beginner-calisthenics', 'me'),
+      participants: household,
+      areaId: 'khalifa-city',
+      qaRevalidate: 'priceChanged',
+    });
+    expect(page!.validation.ok).toBe(false);
+    if (!page!.validation.ok) {
+      expect(page!.validation.issues[0].priceComparison).toEqual({
+        previousLabel: 'AED 75 per session',
+        updatedLabel: 'AED 85 per session',
+      });
+    }
+  });
+
+  test('the comparison is absent for free bookings and non-price codes', () => {
+    const freePage = service.buildCheckoutPage({
+      draft: draftFor('community-park-football', 'me'),
+      participants: household,
+      areaId: 'khalifa-city',
+      qaRevalidate: 'priceChanged',
+    });
+    expect(freePage!.validation.ok).toBe(false);
+    if (!freePage!.validation.ok) {
+      expect(freePage!.validation.issues[0].priceComparison).toBeUndefined();
+    }
+    for (const code of allCodes.filter((entry) => entry !== 'priceChanged')) {
+      const page = service.buildCheckoutPage({
+        draft: draftFor('beginner-calisthenics', 'me'),
+        participants: household,
+        areaId: 'khalifa-city',
+        qaRevalidate: code,
+      });
+      expect(page!.validation.ok).toBe(false);
+      if (!page!.validation.ok) {
+        expect(page!.validation.issues[0].priceComparison).toBeUndefined();
+      }
+    }
+  });
+
   test('sessionFull uses the spec copy verbatim (docs/22 §7.10)', () => {
     const page = service.buildCheckoutPage({
       draft: draftFor('beginner-calisthenics', 'me'),
