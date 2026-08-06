@@ -206,7 +206,10 @@ export async function runMigrationsDown(
 }
 
 /** Schema objects whose presence `verify` asserts per applied migration. */
-type SchemaCheck = { kind: 'domain' | 'table' | 'function'; name: string };
+type SchemaCheck = {
+  kind: 'domain' | 'table' | 'function' | 'constraint' | 'extension';
+  name: string;
+};
 const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
   '0001_foundation': [
     { kind: 'domain', name: 'money_fils' },
@@ -230,6 +233,13 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'table', name: 'bootstrap_seal' },
     { kind: 'function', name: 'enforce_admin_role_exclusivity' },
     { kind: 'function', name: 'enforce_admin_role_transition' },
+  ],
+  '0003_email_ownership_and_finance_approver_controls': [
+    { kind: 'extension', name: 'btree_gist' },
+    { kind: 'constraint', name: 'excl_auth_identity_verified_email_owner' },
+    { kind: 'function', name: 'serialize_access_admin_release' },
+    { kind: 'function', name: 'enforce_admin_role_immutability' },
+    { kind: 'function', name: 'enforce_finance_activation_controls' },
   ],
 };
 
@@ -293,8 +303,13 @@ export async function verifyMigrations(
             : check.kind === 'function'
               ? `SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                  WHERE p.proname = $1 AND n.nspname = 'public'`
-              : `SELECT 1 FROM information_schema.tables
-                 WHERE table_schema = 'public' AND table_name = $1`;
+              : check.kind === 'constraint'
+                ? `SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+                   WHERE c.conname = $1 AND n.nspname = 'public'`
+                : check.kind === 'extension'
+                  ? `SELECT 1 FROM pg_extension WHERE extname = $1`
+                  : `SELECT 1 FROM information_schema.tables
+                     WHERE table_schema = 'public' AND table_name = $1`;
         const result = await client.query(query, [check.name]);
         if (result.rowCount === 0) {
           problems.push(`Missing foundation ${check.kind}: ${check.name}`);

@@ -81,7 +81,7 @@ describe('duplicate emails never merge users', () => {
     expect(Number(users.n)).toBe(2); // both users still exist — nothing merged
   });
 
-  it('rejects a second ACTIVE VERIFIED identity with the same email (case-insensitive), instead of merging', async () => {
+  it('rejects an ACTIVE VERIFIED identity claiming an email another user verified (case-insensitive), instead of merging', async () => {
     const userA = await createUser(testDb.db);
     const userB = await createUser(testDb.db);
     await createIdentity(testDb.db, userA, {
@@ -94,6 +94,67 @@ describe('duplicate emails never merge users', () => {
         emailVerified: true,
       }),
     );
+  });
+
+  it('allows one user to link multiple active identities that verify the same email', async () => {
+    const user = await createUser(testDb.db);
+    await createIdentity(testDb.db, user, {
+      provider: 'google',
+      email: 'Linked@Example.test',
+      emailVerified: true,
+    });
+    await createIdentity(testDb.db, user, {
+      provider: 'apple',
+      email: 'linked@example.test',
+      emailVerified: true,
+    });
+    const identities = await testDb.db
+      .selectFrom('auth_identity')
+      .select(['provider'])
+      .where('user_id', '=', user)
+      .execute();
+    expect(identities).toHaveLength(2);
+  });
+
+  it('admits exactly one owner under concurrent cross-user claims of one verified email, merging nothing', async () => {
+    const userA = await createUser(testDb.db);
+    const userB = await createUser(testDb.db);
+    const outcomes = await Promise.allSettled(
+      [userA, userB].map((userId) =>
+        withTransaction(testDb.db, async (trx) => {
+          await trx
+            .insertInto('auth_identity')
+            .values({
+              id: newId(),
+              user_id: userId,
+              provider: 'email',
+              issuer: TEST_ISSUER,
+              subject: `race-sub-${userId}`,
+              email: 'contested@example.test',
+              email_verified: true,
+            })
+            .execute();
+          return userId;
+        }),
+      ),
+    );
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+
+    const owners = await testDb.db
+      .selectFrom('auth_identity')
+      .select(['user_id'])
+      .where(sql`lower(email)`, '=', 'contested@example.test')
+      .where('email_verified', '=', true)
+      .where('status', '=', 'active')
+      .execute();
+    expect(owners).toHaveLength(1);
+    // Nothing merged: both users still exist as distinct principals.
+    const users = await testDb.db
+      .selectFrom('app_user')
+      .select(sql<string>`count(*)`.as('n'))
+      .where('id', 'in', [userA, userB])
+      .executeTakeFirstOrThrow();
+    expect(Number(users.n)).toBe(2);
   });
 
   it('represents Apple private-relay addresses without special-case merging', async () => {

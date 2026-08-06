@@ -8,14 +8,19 @@ import { sql } from 'kysely';
 import { isDbError } from '../src/db/errors';
 import { newId } from '../src/db/ids';
 import { withTransaction } from '../src/db/transaction';
-import { createUser } from './helpers/identity-fixtures';
+import { bootstrapAccessAdmins, createUser } from './helpers/identity-fixtures';
 import type { TestDb } from './helpers/test-db';
 import { createMigratedTestDb } from './helpers/test-db';
 
 let testDb: TestDb;
+// Bootstrapped Access Administrators — the qualified requester/approver pair
+// required for every finance-capable activation (0003 correction).
+let qualifiedA: string;
+let qualifiedB: string;
 
 beforeAll(async () => {
   testDb = await createMigratedTestDb();
+  ({ adminA: qualifiedA, adminB: qualifiedB } = await bootstrapAccessAdmins(testDb.db));
 });
 
 afterAll(async () => {
@@ -102,17 +107,15 @@ describe('dual control', () => {
 
   it('concurrent approvals cannot produce a self-approved or double-active grant', async () => {
     const target = await createUser(testDb.db);
-    const adminA = await createUser(testDb.db);
-    const adminB = await createUser(testDb.db);
     const requestId = await insertAssignment({
       userId: target,
       role: 'finance',
       state: 'requested',
-      requestedBy: adminA,
+      requestedBy: qualifiedA,
     });
     // Two approvers race on the same request; version CAS admits exactly one.
     const attempts = await Promise.allSettled(
-      [adminB, adminB].map((approver) =>
+      [qualifiedB, qualifiedB].map((approver) =>
         withTransaction(testDb.db, async (trx) => {
           const result = await trx
             .updateTable('admin_role_assignment')
@@ -134,7 +137,7 @@ describe('dual control', () => {
       .where('id', '=', requestId)
       .executeTakeFirstOrThrow();
     expect(row.state).toBe('active');
-    expect(row.approved_by).toBe(adminB);
+    expect(row.approved_by).toBe(qualifiedB);
     expect(row.version).toBe(2);
   });
 });
@@ -218,45 +221,40 @@ describe('state-machine guard', () => {
 describe('D4 role exclusivity', () => {
   it('access_admin and finance are mutually exclusive', async () => {
     const target = await createUser(testDb.db);
-    const adminA = await createUser(testDb.db);
-    const adminB = await createUser(testDb.db);
     await insertAssignment({
       userId: target,
       role: 'access_admin',
       state: 'active',
-      requestedBy: adminA,
-      approvedBy: adminB,
+      requestedBy: qualifiedA,
+      approvedBy: qualifiedB,
     });
     const caught = await expectDbFailure(
       insertAssignment({
         userId: target,
         role: 'finance',
         state: 'active',
-        requestedBy: adminA,
-        approvedBy: adminB,
+        requestedBy: qualifiedA,
+        approvedBy: qualifiedB,
       }),
     );
     expect(isDbError(caught, 'raisedException') || (caught as { code?: string }).code === 'P0001').toBe(true);
   });
 
   it('auditor excludes every mutating platform role, both directions', async () => {
-    const adminA = await createUser(testDb.db);
-    const adminB = await createUser(testDb.db);
-
     // auditor first, then a mutating role.
     const target1 = await createUser(testDb.db);
     await insertAssignment({
       userId: target1,
       role: 'auditor',
       state: 'active',
-      requestedBy: adminA,
+      requestedBy: qualifiedA,
     });
     await expectDbFailure(
       insertAssignment({
         userId: target1,
         role: 'operations',
         state: 'active',
-        requestedBy: adminA,
+        requestedBy: qualifiedA,
       }),
     );
 
@@ -266,22 +264,20 @@ describe('D4 role exclusivity', () => {
       userId: target2,
       role: 'finance',
       state: 'active',
-      requestedBy: adminA,
-      approvedBy: adminB,
+      requestedBy: qualifiedA,
+      approvedBy: qualifiedB,
     });
     await expectDbFailure(
       insertAssignment({
         userId: target2,
         role: 'auditor',
         state: 'active',
-        requestedBy: adminA,
+        requestedBy: qualifiedA,
       }),
     );
   });
 
   it('holds under concurrent activation of conflicting roles', async () => {
-    const adminA = await createUser(testDb.db);
-    const adminB = await createUser(testDb.db);
     const target = await createUser(testDb.db);
     const outcomes = await Promise.allSettled([
       withTransaction(testDb.db, (trx) =>
@@ -292,8 +288,8 @@ describe('D4 role exclusivity', () => {
             user_id: target,
             role: 'access_admin',
             state: 'active',
-            requested_by: adminA,
-            approved_by: adminB,
+            requested_by: qualifiedA,
+            approved_by: qualifiedB,
           })
           .execute(),
       ),
@@ -305,8 +301,8 @@ describe('D4 role exclusivity', () => {
             user_id: target,
             role: 'finance',
             state: 'active',
-            requested_by: adminA,
-            approved_by: adminB,
+            requested_by: qualifiedA,
+            approved_by: qualifiedB,
           })
           .execute(),
       ),
@@ -340,9 +336,10 @@ describe('D4 role exclusivity', () => {
 });
 
 describe('bootstrap seal', () => {
-  it('admits exactly one row, forever', async () => {
-    await sql`INSERT INTO bootstrap_seal (manifest_digest, executed_by)
-              VALUES ('digest-1', 'ops-ticket-1')`.execute(testDb.db);
+  it('admits exactly one row, forever (the beforeAll bootstrap wrote it)', async () => {
+    const existing = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM bootstrap_seal`.execute(testDb.db);
+    expect(Number(existing.rows[0]?.n)).toBe(1);
     const dup = await expectDbFailure(
       sql`INSERT INTO bootstrap_seal (manifest_digest, executed_by)
           VALUES ('digest-2', 'ops-ticket-2')`.execute(testDb.db),
@@ -357,6 +354,6 @@ describe('bootstrap seal', () => {
     await expectDbFailure(sql`DELETE FROM bootstrap_seal`.execute(testDb.db));
     const row = await sql<{ manifest_digest: string }>`
       SELECT manifest_digest FROM bootstrap_seal`.execute(testDb.db);
-    expect(row.rows[0]?.manifest_digest).toBe('digest-1');
+    expect(row.rows[0]?.manifest_digest).toBe('test-manifest-digest');
   });
 });
