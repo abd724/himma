@@ -21,9 +21,12 @@ import type { MailSender } from '../modules/identity/mail/mail-sender';
 import type { AuthProviderAdapter } from '../modules/identity/providers/adapter';
 import type { AccessTokenVerifier } from '../modules/identity/providers/access-token';
 import type { ProviderSessionRevoker } from '../modules/identity/providers/revocation';
+import type { MfaProviderPort } from '../modules/identity/providers/mfa';
+import type { MfaConfig } from '../modules/identity/services/mfa-config';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
+import { registerMfaRoutes } from '../modules/identity/http/mfa-routes';
 import { installRoutePolicyGuard } from '../modules/identity/http/policies';
 import {
   createRateLimiterStore,
@@ -36,12 +39,36 @@ import {
 const DEFAULT_STEP_UP_MAX_AGE_SECONDS = 300;
 const DEFAULT_ENUMERATION_FLOOR_MS = 30;
 
+/**
+ * Production admin-activation capability report (B2-6C, docs/23 §7).
+ * Every flag must be EXPLICITLY true for the production admin surface to
+ * register; there is no default-true, no environment shortcut, and no test
+ * bypass — dev/test exercise the full behavior through deterministic
+ * adapters instead. As of B2-6C the real-pool SOFTWARE_TOKEN_MFA smoke
+ * (docs/26 §14.E′) has NOT run, so no truthful production configuration
+ * can report ready yet: Slice 2 implementation is complete; production
+ * Cognito/admin-MFA activation is pending operational validation.
+ */
+export interface AdminProductionReadiness {
+  /** Real Cognito pool configured for authentication (docs/26 §14.E′). */
+  cognitoConfigured: boolean;
+  /** MFA provider capability validated against that pool. */
+  mfaProviderValidated: boolean;
+  /** Successful real-pool smoke of the SOFTWARE_TOKEN_MFA challenge flow. */
+  realPoolSmokeVerified: boolean;
+  /** Owner-approved production configuration in place. */
+  productionConfigApproved: boolean;
+}
+
 export interface IdentityHttpOptions {
   db: Db;
   accessTokenVerifier: AccessTokenVerifier;
   idTokenAdapter: AuthProviderAdapter;
   mailSender: MailSender;
   providerRevoker?: ProviderSessionRevoker;
+  /** MFA routes register when both provider port and config are supplied. */
+  mfaProvider?: MfaProviderPort;
+  mfaConfig?: MfaConfig;
   /** Defaults via createRateLimiterStore — which FAILS CLOSED in production. */
   rateLimiterStore?: RateLimiterStore;
   nodeEnv?: NodeEnv;
@@ -50,11 +77,26 @@ export interface IdentityHttpOptions {
   rateLimits?: Partial<RateLimitRules>;
   now?: () => number;
   /**
-   * B2-5 fail-closed boundary: admin routes register only outside
-   * production; forcing them on in production THROWS until B2-6 lands
-   * admin MFA enforcement. Do not flip this before B2-6.
+   * Final B2-6C capability gate: in production the admin surface registers
+   * ONLY when adminReadiness reports every capability ready — otherwise it
+   * is absent (fail-closed 404). Missing readiness never throws unless the
+   * caller explicitly forces enableAdminRoutes in an unready production
+   * build, which refuses startup loudly instead of lying.
    */
+  adminReadiness?: AdminProductionReadiness;
+  /** Set false to omit admin routes in dev/test; forcing true in an
+   *  UNREADY production build refuses startup. */
   enableAdminRoutes?: boolean;
+}
+
+function adminProductionReady(readiness: AdminProductionReadiness | undefined): boolean {
+  return (
+    readiness !== undefined &&
+    readiness.cognitoConfigured &&
+    readiness.mfaProviderValidated &&
+    readiness.realPoolSmokeVerified &&
+    readiness.productionConfigApproved
+  );
 }
 
 export interface BuildAppOptions {
@@ -136,16 +178,37 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       enumerationFloorMs: identity.enumerationFloorMs ?? DEFAULT_ENUMERATION_FLOOR_MS,
     });
 
-    // Admin surface (B2-5): fail closed in production until B2-6 admin MFA
-    // enforcement exists — absent by default, and explicit enablement in a
-    // production build refuses startup rather than allowing it silently.
-    const nodeEnv = identity.nodeEnv ?? 'development';
-    if (identity.enableAdminRoutes === true && nodeEnv === 'production') {
-      throw new Error(
-        'Admin routes are disabled in production until B2-6 admin MFA enforcement lands (docs/23 §7).',
-      );
+    // MFA/step-up surface (B2-6C): registers when the provider port and
+    // config are wired; dev/test use the deterministic fake provider.
+    if (identity.mfaProvider !== undefined && identity.mfaConfig !== undefined) {
+      registerMfaRoutes(app, {
+        db: identity.db,
+        mfaProvider: identity.mfaProvider,
+        mfaConfig: identity.mfaConfig,
+        rateLimiter,
+        rules,
+      });
     }
-    if (nodeEnv !== 'production' && identity.enableAdminRoutes !== false) {
+
+    // Admin surface — final B2-6C capability gate (replaces the temporary
+    // B2-5 placeholder): production registers admin routes ONLY when every
+    // AdminProductionReadiness capability reports ready; otherwise the
+    // surface is absent (fail-closed 404). Explicitly forcing it on in an
+    // unready production build refuses startup loudly. Dev/test register
+    // the full surface behind the same admin MFA enforcement, exercised
+    // through deterministic adapters.
+    const nodeEnv = identity.nodeEnv ?? 'development';
+    if (nodeEnv === 'production') {
+      const ready = adminProductionReady(identity.adminReadiness);
+      if (identity.enableAdminRoutes === true && !ready) {
+        throw new Error(
+          'Production admin activation is fail-closed: required capabilities (Cognito integration, MFA provider validation, real-pool SOFTWARE_TOKEN_MFA smoke, approved production configuration) have not all reported ready (docs/23 §7; docs/26 §14.E′).',
+        );
+      }
+      if (ready && identity.enableAdminRoutes !== false) {
+        registerAdminRoutes(app, { db: identity.db });
+      }
+    } else if (identity.enableAdminRoutes !== false) {
       registerAdminRoutes(app, { db: identity.db });
     }
   }

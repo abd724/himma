@@ -93,6 +93,11 @@ export const HTTP_OUTCOMES = {
     code: 'lastLoginMethod',
     message: 'This is your only sign-in method and cannot be removed.',
   },
+  challengeInvalid: {
+    statusCode: 400,
+    code: 'challengeInvalid',
+    message: 'The verification could not be completed. Request a new challenge and try again.',
+  },
   staleVersion: {
     statusCode: 409,
     code: 'staleVersion',

@@ -7,6 +7,8 @@
  * groups/custom claims never affect the principal.
  */
 import { buildApp } from '../src/app/build-app';
+import { FakeMfaProvider } from '../src/modules/identity/providers/fake/fake-mfa-provider';
+import { parseMfaConfig } from '../src/modules/identity/services/mfa-config';
 import type { FastifyInstance } from 'fastify';
 
 import { FakeAccessTokenVerifier } from '../src/modules/identity/providers/fake/fake-access-token-verifier';
@@ -38,6 +40,9 @@ beforeAll(async () => {
       idTokenAdapter: idAdapter,
       mailSender: new CaptureMailSender(),
       rateLimiterStore: new InMemoryRateLimiterStore(),
+      // B2-6C: the canonical inventory snapshot covers the MFA surface too.
+      mfaProvider: new FakeMfaProvider(),
+      mfaConfig: parseMfaConfig('test', {}),
     },
   });
   await app.ready();

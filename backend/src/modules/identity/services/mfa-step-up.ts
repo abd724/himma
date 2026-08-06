@@ -31,6 +31,7 @@ import {
   findLiveGrant,
   insertStepUpChallenge,
   insertStepUpGrant,
+  isMfaEnrolled,
   passChallenge,
 } from '../persistence/mfa-repository';
 import { findSessionById, type SessionRow } from '../persistence/session-repository';
@@ -250,5 +251,39 @@ export async function resolveStepUpAssurance(
     const grant = await findLiveGrant(trx, { userId: input.userId, sessionId: input.sessionId });
     if (grant === undefined) return { assured: false };
     return { assured: true, grantId: grant.id };
+  });
+}
+
+/** Safe derived assurance for the request principal (B2-6C): enrollment
+ *  mirror + the most recent live grant on THIS session. Never secrets;
+ *  never assurance for a dead session (callers gate liveness first, and
+ *  the grant query itself is session-bound). */
+export interface SessionMfaAssurance {
+  mfaEnrolled: boolean;
+  grant?: { id: string; method: string; grantedAt: Date; expiresAt: Date };
+}
+
+/** Uses only the db from deps — safe for the HTTP pipeline to call with
+ *  the provider port absent from scope. */
+export async function resolveSessionMfaAssurance(
+  deps: { db: MfaServiceDeps['db'] },
+  input: { userId: string; sessionId: string },
+): Promise<SessionMfaAssurance> {
+  return withTransaction(deps.db, async (trx) => {
+    const enrolled = await isMfaEnrolled(trx, input.userId);
+    const grant = await findLiveGrant(trx, { userId: input.userId, sessionId: input.sessionId });
+    return {
+      mfaEnrolled: enrolled,
+      ...(grant !== undefined
+        ? {
+            grant: {
+              id: grant.id,
+              method: grant.method,
+              grantedAt: grant.granted_at,
+              expiresAt: grant.expires_at,
+            },
+          }
+        : {}),
+    };
   });
 }

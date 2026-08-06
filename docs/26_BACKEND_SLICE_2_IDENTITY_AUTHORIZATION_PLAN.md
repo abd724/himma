@@ -243,3 +243,17 @@ Proportional verification: per-commit = backend typecheck/lint + the commit's fo
 ---
 
 *This plan implements docs/24 §13 row 2 within the docs/25 engineering contract, as amended by the owner's D1–D4 rulings (Amendment A1). It writes no code and provisions nothing — no production user pool exists or is configured by this document: B2-1 begins only after the owner's final approval of this amended plan.*
+
+## 15. Implementation status (Slice 2 closeout — B2-6C, 2026-08-07)
+
+**Slice 2 implementation is COMPLETE; production Cognito/admin-MFA activation is PENDING operational validation.** Every commit of the §13 sequence is implemented and owner-approved through B2-6B (`25dd742` + corrections `dd17030`, `49da921`); B2-6C (this closeout) delivers the MFA/step-up HTTP routes (§10: `/auth/mfa/totp/enroll` · `/confirm` · `/auth/mfa/recovery-codes/regenerate`, all step-up-gated, plus the begin/complete equivalents of `POST /auth/step-up` for TOTP and recovery codes), Himma-grant-backed principal step-up assurance, administrative MFA enforcement (live session → active Himma role → MFA enrollment → recent MFA-verified assurance), and the final production admin capability gate.
+
+**Production activation dependencies still open (fail-closed until ALL report ready):**
+1. configured production Cognito authentication integration (§14 open decisions: region/DR under docs/23 §18.3);
+2. validated MFA provider capability against that pool;
+3. **successful real-pool smoke of the selected Cognito `SOFTWARE_TOKEN_MFA` reauthentication/challenge flow (§14.E′)** — including confirmation of the challenge-producing auth-flow choice and the `NotAuthorizedException → challengeExpired` respond-context mapping;
+4. owner-approved production configuration (secret-store pepper, rate limits, TTLs per §14.C).
+
+Until then the production admin surface does not register (absent → 404), and explicitly forcing it refuses startup. Dev/test exercise the complete behavior through the deterministic fake providers. **Real-Cognito MFA validation is explicitly NOT claimed.**
+
+**Final Slice-2 certification (2026-08-07):** backend tsc clean · ESLint `--max-warnings=0` clean · backend Jest **390/390 across 34 suites** · migrate-from-zero (4 migrations) · `db:verify` green · codegen zero drift · route-policy inventory snapshot (every route policy-declared; deny-by-default structural) · root customer app untouched: tsc clean · expo lint clean · root Jest **421/421 across 24 suites**.

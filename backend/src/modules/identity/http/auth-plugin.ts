@@ -20,6 +20,10 @@ import {
   type AuthenticatedSessionPrincipal,
 } from '../services/session-liveness';
 import { resolveAdminRoles, type AdminRole } from '../services/admin-roles';
+import {
+  resolveSessionMfaAssurance,
+  type SessionMfaAssurance,
+} from '../services/mfa-step-up';
 import type { AccessTokenVerifier } from '../providers/access-token';
 import { livenessOutcomeName, sendOutcome } from './http-outcomes';
 import { policyOf } from './policies';
@@ -31,13 +35,19 @@ import {
 
 /** Minimum approved request principal: B2-3 session principal + provider
  *  reference + Himma-database-resolved admin roles (empty for customers and
- *  on non-admin routes) + typed empty future org scope. Roles come ONLY
- *  from `admin_role_assignment` — never from provider claims. */
+ *  on non-admin routes) + typed empty future org scope + safe derived MFA
+ *  assurance (B2-6C). Roles come ONLY from `admin_role_assignment` — never
+ *  from provider claims — and assurance comes from the live session plus
+ *  Himma `step_up_grant` rows, never from enrollment state alone. */
 export interface RequestPrincipal extends AuthenticatedSessionPrincipal {
   issuer: string;
   subject: string;
   adminRoles: AdminRole[];
   orgScope: null;
+  /** app_user.mfa_enrolled mirror — resolved on assurance-gated policies. */
+  mfaEnrolled?: boolean;
+  /** Most recent valid step-up proof honored for this request. */
+  stepUp?: { at: Date; method: string };
 }
 
 declare module 'fastify' {
@@ -111,24 +121,65 @@ export function installAuthPipeline(app: FastifyInstance, deps: AuthPipelineDeps
       return sendOutcome(reply, livenessOutcomeName(liveness.kind));
     }
 
+    // Step-up recency (docs/26 §3.10): a fresh provider authentication OR a
+    // live session-bound Himma step_up_grant (B2-6B). Enrollment state alone
+    // is never assurance, and grants die with their session (queried only on
+    // the live session established above).
+    const authTime = liveness.principal.stepUpAt;
+    const authTimeFresh =
+      authTime !== undefined &&
+      deps.now() - authTime.getTime() <= deps.stepUpMaxAgeSeconds * 1000;
+    let assuranceState: SessionMfaAssurance | undefined;
+    const resolveAssurance = async (): Promise<SessionMfaAssurance> => {
+      assuranceState ??= await resolveSessionMfaAssurance(
+        { db: deps.db },
+        { userId: liveness.principal.userId, sessionId: liveness.principal.sessionId },
+      );
+      return assuranceState;
+    };
+    let stepUp: { at: Date; method: string } | undefined;
+
     if (policy === 'stepUpRequired') {
-      const stepUpAt = liveness.principal.stepUpAt;
-      const fresh =
-        stepUpAt !== undefined &&
-        deps.now() - stepUpAt.getTime() <= deps.stepUpMaxAgeSeconds * 1000;
-      if (!fresh) return sendOutcome(reply, 'stepUpRequired');
+      const grant = (await resolveAssurance()).grant;
+      if (grant !== undefined) {
+        stepUp = { at: grant.grantedAt, method: grant.method };
+      } else if (authTimeFresh && authTime !== undefined) {
+        stepUp = { at: authTime, method: 'provider_auth' };
+      } else {
+        return sendOutcome(reply, 'stepUpRequired');
+      }
     }
 
     let adminRoles: AdminRole[] = [];
+    let mfaEnrolled: boolean | undefined;
     if (policy === 'admin') {
-      // Admin surfaces require MFA assurance (docs/23 §7) and at least one
-      // ACTIVE Himma database role, resolved fresh on every request — no
-      // caching, no role material from tokens; changes apply immediately.
-      if (liveness.principal.assurance !== 'mfa') {
-        return sendOutcome(reply, 'mfaRequired');
-      }
+      // Admin surfaces, in the binding order (docs/23 §7, docs/26 §5.8):
+      // (1) live session — established above; (2) at least one ACTIVE Himma
+      // database role, resolved fresh per request (non-admins are simply
+      // `forbidden`, learning nothing about MFA requirements); (3) Himma
+      // MFA enrollment; (4) a sufficiently RECENT MFA-verified factor: an
+      // MFA login within the step-up window, or a live TOTP/recovery-code
+      // grant. No role or assurance material ever comes from provider
+      // claims, and role/session revocation bites regardless of any grant.
       adminRoles = await resolveAdminRoles({ db: deps.db }, liveness.principal.userId);
       if (adminRoles.length === 0) return sendOutcome(reply, 'forbidden');
+      const assurance = await resolveAssurance();
+      mfaEnrolled = assurance.mfaEnrolled;
+      if (!assurance.mfaEnrolled) return sendOutcome(reply, 'mfaRequired');
+      const mfaGrant =
+        assurance.grant !== undefined &&
+        (assurance.grant.method === 'totp' || assurance.grant.method === 'recovery_code')
+          ? assurance.grant
+          : undefined;
+      const sessionMfaVerified = liveness.principal.assurance === 'mfa';
+      if (mfaGrant !== undefined) {
+        stepUp = { at: mfaGrant.grantedAt, method: mfaGrant.method };
+      } else if (sessionMfaVerified && authTimeFresh && authTime !== undefined) {
+        stepUp = { at: authTime, method: 'provider_mfa' };
+      } else {
+        // MFA-verified but stale → step up; never MFA-verified → mfaRequired.
+        return sendOutcome(reply, sessionMfaVerified ? 'stepUpRequired' : 'mfaRequired');
+      }
     }
 
     request.principal = {
@@ -137,6 +188,8 @@ export function installAuthPipeline(app: FastifyInstance, deps: AuthPipelineDeps
       subject: verified.evidence.subject,
       adminRoles,
       orgScope: null,
+      ...(mfaEnrolled !== undefined ? { mfaEnrolled } : {}),
+      ...(stepUp !== undefined ? { stepUp } : {}),
     };
   });
 }

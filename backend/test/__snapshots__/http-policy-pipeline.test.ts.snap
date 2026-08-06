@@ -21,7 +21,13 @@ exports[`route-policy registry and structural deny-by-default every registered r
   "POST /auth/identities/link → stepUpRequired",
   "POST /auth/logout → authenticatedCustomer",
   "POST /auth/logout-all → authenticatedCustomer",
+  "POST /auth/mfa/recovery-codes/regenerate → stepUpRequired",
+  "POST /auth/mfa/totp/confirm → stepUpRequired",
+  "POST /auth/mfa/totp/enroll → stepUpRequired",
   "POST /auth/password/reset-request → unauthenticatedAuthFlow",
   "POST /auth/session → unauthenticatedAuthFlow",
+  "POST /auth/step-up/recovery-code → authenticatedCustomer",
+  "POST /auth/step-up/totp/begin → authenticatedCustomer",
+  "POST /auth/step-up/totp/complete → authenticatedCustomer",
 ]
 `;

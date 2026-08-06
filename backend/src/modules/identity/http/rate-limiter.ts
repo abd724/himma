@@ -85,6 +85,12 @@ export interface RateLimitRules {
   resetRequest: RateLimitRule;
   identityLinking: RateLimitRule;
   invalidBearer: RateLimitRule;
+  /** TOTP enrollment begin/confirm per user (B2-6C). */
+  mfaEnrollment: RateLimitRule;
+  /** Step-up challenge begin/complete per user (B2-6C). */
+  mfaChallenge: RateLimitRule;
+  /** Recovery-code presentation per user — strictest (B2-6C). */
+  recoveryCode: RateLimitRule;
 }
 
 export const DEFAULT_RATE_LIMITS: RateLimitRules = {
@@ -92,4 +98,7 @@ export const DEFAULT_RATE_LIMITS: RateLimitRules = {
   resetRequest: { limit: 5, windowMs: 60_000 },
   identityLinking: { limit: 10, windowMs: 60_000 },
   invalidBearer: { limit: 10, windowMs: 60_000 },
+  mfaEnrollment: { limit: 10, windowMs: 60_000 },
+  mfaChallenge: { limit: 15, windowMs: 60_000 },
+  recoveryCode: { limit: 5, windowMs: 60_000 },
 };

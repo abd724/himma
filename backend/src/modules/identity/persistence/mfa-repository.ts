@@ -326,13 +326,20 @@ export async function insertStepUpGrant(
   return id;
 }
 
+export interface LiveGrantRow {
+  id: string;
+  method: string;
+  granted_at: Date;
+  expires_at: Date;
+}
+
 export async function findLiveGrant(
   trx: Trx,
   input: { userId: string; sessionId: string },
-): Promise<{ id: string } | undefined> {
+): Promise<LiveGrantRow | undefined> {
   return trx
     .selectFrom('step_up_grant')
-    .select(['id'])
+    .select(['id', 'method', 'granted_at', 'expires_at'])
     .where('user_id', '=', input.userId)
     .where('login_session_id', '=', input.sessionId)
     .where('expires_at', '>', new Date())
@@ -340,4 +347,13 @@ export async function findLiveGrant(
     .orderBy('expires_at', 'desc')
     .limit(1)
     .executeTakeFirst();
+}
+
+export async function isMfaEnrolled(trx: Trx, userId: string): Promise<boolean> {
+  const row = await trx
+    .selectFrom('app_user')
+    .select(['mfa_enrolled'])
+    .where('id', '=', userId)
+    .executeTakeFirst();
+  return row?.mfa_enrolled === true;
 }

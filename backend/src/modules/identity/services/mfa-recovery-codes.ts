@@ -123,7 +123,12 @@ export async function generateRecoveryCodes(
 }
 
 export type ConsumeRecoveryCodeResult =
-  | { kind: 'recoveryCodeAccepted'; codeId: string; stepUpGrantId?: string }
+  | {
+      kind: 'recoveryCodeAccepted';
+      codeId: string;
+      stepUpGrantId?: string;
+      stepUpGrantExpiresAt?: Date;
+    }
   | { kind: 'recoveryCodeRejected' }
   | { kind: 'sessionNotLive' };
 
@@ -192,14 +197,18 @@ export async function consumeRecoveryCode(
     });
 
     let stepUpGrantId: string | undefined;
+    let stepUpGrantExpiresAt: Date | undefined;
     if (session !== undefined) {
       const grantedAt = new Date();
+      stepUpGrantExpiresAt = new Date(
+        grantedAt.getTime() + deps.mfaConfig.stepUpTtlSeconds * 1000,
+      );
       stepUpGrantId = await insertStepUpGrant(trx, {
         userId: input.userId,
         sessionId: session.id,
         method: 'recovery_code',
         grantedAt,
-        expiresAt: new Date(grantedAt.getTime() + deps.mfaConfig.stepUpTtlSeconds * 1000),
+        expiresAt: stepUpGrantExpiresAt,
       });
       await appendAuditEvent(trx, {
         actorType: 'user',
@@ -219,6 +228,7 @@ export async function consumeRecoveryCode(
       kind: 'recoveryCodeAccepted' as const,
       codeId: consumed.id,
       ...(stepUpGrantId !== undefined ? { stepUpGrantId } : {}),
+      ...(stepUpGrantExpiresAt !== undefined ? { stepUpGrantExpiresAt } : {}),
     };
   });
 }

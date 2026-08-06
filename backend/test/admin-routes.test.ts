@@ -94,6 +94,28 @@ async function bearerFor(
     })
     .execute();
   void evidence;
+  // B2-6C admin enforcement: an MFA-asserting session is honored only for
+  // an ENROLLED user — mint the enrollment mirror alongside mfa bearers.
+  if (assurance === 'mfa') {
+    const enrolled = await testDb.db
+      .selectFrom('mfa_method')
+      .select(['id'])
+      .where('user_id', '=', userId)
+      .where('state', '=', 'active')
+      .executeTakeFirst();
+    if (enrolled === undefined) {
+      await testDb.db
+        .insertInto('mfa_method')
+        .values({
+          id: newId(),
+          user_id: userId,
+          kind: 'totp',
+          state: 'active',
+          confirmed_at: new Date(),
+        })
+        .execute();
+    }
+  }
   const access: AccessTokenEvidence = {
     issuer: ISSUER,
     subject,
@@ -253,8 +275,8 @@ describe('role-management routes', () => {
   });
 });
 
-describe('production fail-closed boundary (until B2-6 admin MFA)', () => {
-  it('does not register admin routes for a production build, and explicit enablement throws', async () => {
+describe('production fail-closed boundary (B2-6C capability gate)', () => {
+  it('does not register admin routes for an unready production build, and explicit enablement throws', async () => {
     const production = buildApp({
       identity: {
         db: testDb.db,
@@ -285,6 +307,6 @@ describe('production fail-closed boundary (until B2-6 admin MFA)', () => {
           enableAdminRoutes: true,
         },
       }),
-    ).toThrow(/B2-6/);
+    ).toThrow(/fail-closed/);
   });
 });
