@@ -3,7 +3,10 @@ import { ErrorStateCard } from '@/components/domain/error-state-card';
 import { IconButton } from '@/components/ui/icon-button';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
-import { bookingStepHref } from '@/features/booking/booking-navigation';
+import {
+  bookingStepHref,
+  useFlowStartHardwareBack,
+} from '@/features/booking/booking-navigation';
 import { programHref } from '@/features/details/detail-navigation';
 import type {
   BookingOption,
@@ -85,6 +88,8 @@ export function BookingSelectionScreen() {
     if (router.canGoBack()) router.back();
     else router.replace(programHref(programId));
   };
+  // Android hardware back must match the chip above (audit defect A1).
+  useFlowStartHardwareBack(programId);
 
   const browse = () => router.replace('/discover');
 

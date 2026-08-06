@@ -8,6 +8,7 @@ import {
   bookingStepHref,
   participantSelectionValid,
   participantStepAccess,
+  useFlowStartHardwareBack,
 } from '@/features/booking/booking-navigation';
 import { buildParticipantRows, type ParticipantRow } from '@/features/booking/participant-rows';
 import { programHref } from '@/features/details/detail-navigation';
@@ -102,6 +103,9 @@ export function BookingParticipantScreen() {
     if (router.canGoBack()) router.back();
     else router.replace(programHref(programId));
   };
+  // Under the skip rule this screen IS the flow start; Android hardware
+  // back must match the chip above (audit defect A1).
+  useFlowStartHardwareBack(programId);
   const browse = () => router.replace('/discover');
 
   const guest = account.account === null;

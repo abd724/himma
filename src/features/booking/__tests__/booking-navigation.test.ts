@@ -1,7 +1,8 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import {
   bookingHref,
   bookingStepHref,
+  createFlowStartBackHandler,
   checkoutStepAccess,
   participantSelectionValid,
   participantStepAccess,
@@ -218,6 +219,29 @@ describe('checkoutStepAccess (docs/22 §3.3)', () => {
         participantId: 'me',
       }),
     ).toBe('redirect-selection');
+  });
+});
+
+describe('createFlowStartBackHandler (docs/21 §3.2, audit defect A1)', () => {
+  test('normal history pops exactly one screen: the handler declines the event', () => {
+    const replace = jest.fn();
+    const handler = createFlowStartBackHandler(
+      { canGoBack: () => true, replace },
+      'beginner-calisthenics',
+    );
+    expect(handler()).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test('a cold-linked flow start without history mirrors the visible chip fallback', () => {
+    const replace = jest.fn();
+    const handler = createFlowStartBackHandler(
+      { canGoBack: () => false, replace },
+      'beginner-calisthenics',
+    );
+    expect(handler()).toBe(true);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/program/beginner-calisthenics');
   });
 });
 

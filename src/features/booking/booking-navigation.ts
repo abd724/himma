@@ -1,10 +1,12 @@
+import { programHref } from '@/features/details/detail-navigation';
 import type {
   BookingDraft,
   BookingOptionsPage,
   ParticipantEligibility,
 } from '@/services/contracts/booking';
-import { useRouter } from 'expo-router';
-import { useRef } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef } from 'react';
+import { BackHandler, Platform } from 'react-native';
 
 /**
  * Booking-flow navigation policy — docs/21 §3. The flow is a root-level
@@ -89,6 +91,43 @@ export function participantSelectionValid(
 ): boolean {
   if (participantId === undefined) return false;
   return eligibility.some((entry) => entry.participantId === participantId && entry.suitable);
+}
+
+/**
+ * Hardware-back policy for booking flow-start screens (audit defect A1).
+ * Declining the event (false) lets the navigator pop exactly one screen, so
+ * normal in-app chains and the draft behave as before; only a cold-linked
+ * flow start with no usable history takes the visible chip's Program
+ * Details fallback (docs/21 §3.2). `replace` cannot loop back here.
+ */
+export function createFlowStartBackHandler(
+  router: { canGoBack: () => boolean; replace: (href: `/program/${string}`) => void },
+  programId: string,
+): () => boolean {
+  return () => {
+    if (router.canGoBack()) return false;
+    router.replace(programHref(programId));
+    return true;
+  };
+}
+
+/**
+ * Registers the flow-start hardware-back fallback while the screen is
+ * focused — Android only, so iOS swipe-back and web are untouched, and
+ * nothing outside the booking flow is ever intercepted.
+ */
+export function useFlowStartHardwareBack(programId: string) {
+  const router = useRouter();
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') return;
+      const subscription = BackHandler.addEventListener(
+        'hardwareBackPress',
+        createFlowStartBackHandler(router, programId),
+      );
+      return () => subscription.remove();
+    }, [router, programId]),
+  );
 }
 
 /** One press never pushes two copies of the booking flow (details precedent). */
