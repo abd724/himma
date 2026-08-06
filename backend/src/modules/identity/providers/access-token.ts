@@ -28,6 +28,11 @@ export interface AccessTokenEvidence {
   assurance: ProviderAssurance;
   /** Token expiry — sessions never outlive their provider session. */
   expiresAt: Date;
+  /**
+   * When the provider last AUTHENTICATED the user (`auth_time`; refreshed
+   * tokens keep the original value) — the step-up recency source (§3.10).
+   */
+  authTime?: Date;
 }
 
 export type AccessTokenVerificationFailure = 'invalidAccessToken' | 'providerUnavailable';
@@ -78,6 +83,12 @@ export function validateAccessTokenEvidence(input: unknown): AccessTokenEvidence
   if (!(raw.expiresAt instanceof Date) || Number.isNaN(raw.expiresAt.getTime())) {
     return { ok: false };
   }
+  if (
+    raw.authTime !== undefined &&
+    (!(raw.authTime instanceof Date) || Number.isNaN(raw.authTime.getTime()))
+  ) {
+    return { ok: false };
+  }
   if (!Array.isArray(raw.scopes) || raw.scopes.some((s) => typeof s !== 'string')) {
     return { ok: false };
   }
@@ -92,6 +103,7 @@ export function validateAccessTokenEvidence(input: unknown): AccessTokenEvidence
       scopes: raw.scopes as string[],
       assurance: raw.assurance as ProviderAssurance,
       expiresAt: raw.expiresAt,
+      ...(raw.authTime !== undefined ? { authTime: raw.authTime as Date } : {}),
     },
   };
 }

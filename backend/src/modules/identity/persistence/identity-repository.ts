@@ -28,6 +28,8 @@ export interface AccountRow {
   id: string;
   user_id: string;
   status: string;
+  display_name: string;
+  contact_email: string | null;
 }
 
 // -- app_user -----------------------------------------------------------------
@@ -188,7 +190,7 @@ export async function findAccountByUser(
 ): Promise<AccountRow | undefined> {
   return trx
     .selectFrom('customer_account')
-    .select(['id', 'user_id', 'status'])
+    .select(['id', 'user_id', 'status', 'display_name', 'contact_email'])
     .where('user_id', '=', userId)
     .executeTakeFirst();
 }
@@ -223,6 +225,35 @@ export async function insertAccountWithSelfParticipant(
     .values({ id: participantId, account_id: accountId, kind: 'self', first_name: 'Me' })
     .execute();
   return { accountId, participantId };
+}
+
+/** The account's single self participant (docs/24 §1.2). */
+export async function findSelfParticipant(
+  trx: Trx,
+  accountId: string,
+): Promise<{ id: string; first_name: string } | undefined> {
+  return trx
+    .selectFrom('participant')
+    .select(['id', 'first_name'])
+    .where('account_id', '=', accountId)
+    .where('kind', '=', 'self')
+    .executeTakeFirst();
+}
+
+/** Active email-provider identity for an address — enumeration-safe flows
+ *  branch on this internally and never reveal the result. */
+export async function findActiveEmailIdentity(
+  trx: Trx,
+  email: string,
+): Promise<{ id: string; user_id: string } | undefined> {
+  return trx
+    .selectFrom('auth_identity')
+    .select(['id', 'user_id'])
+    .where('provider', '=', 'email')
+    .where('status', '=', 'active')
+    .where(sql`lower(email)`, '=', email.toLowerCase())
+    .limit(1)
+    .executeTakeFirst();
 }
 
 // -- auth_challenge -----------------------------------------------------------

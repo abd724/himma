@@ -39,6 +39,8 @@ export interface AuthenticatedSessionPrincipal {
   assurance: ProviderAssurance;
   /** Provider OAuth scopes — transport metadata, never Himma permissions. */
   scopes: string[];
+  /** Last provider AUTHENTICATION time — step-up recency proof (§3.10). */
+  stepUpAt?: Date;
 }
 
 export type SessionLivenessResult =
@@ -101,6 +103,7 @@ export async function checkSessionLiveness(
         clientKind: live.client_kind,
         assurance: evidence.assurance,
         scopes: evidence.scopes,
+        ...(evidence.authTime !== undefined ? { stepUpAt: evidence.authTime } : {}),
       },
     };
   });

@@ -81,6 +81,12 @@ export class CognitoAccessTokenVerifier implements AccessTokenVerifier {
     }
     if (typeof payload.exp !== 'number') return { ok: false, reason: 'invalidAccessToken' };
 
+    const authTimeSeconds =
+      typeof payload.auth_time === 'number'
+        ? payload.auth_time
+        : typeof payload.iat === 'number'
+          ? payload.iat
+          : undefined;
     const validation = validateAccessTokenEvidence({
       issuer: this.config.issuer,
       subject: payload.sub,
@@ -90,6 +96,7 @@ export class CognitoAccessTokenVerifier implements AccessTokenVerifier {
       scopes: typeof payload.scope === 'string' ? payload.scope.split(' ').filter(Boolean) : [],
       assurance: assuranceOf(payload),
       expiresAt: new Date(payload.exp * 1000),
+      ...(authTimeSeconds !== undefined ? { authTime: new Date(authTimeSeconds * 1000) } : {}),
     });
     if (!validation.ok) return { ok: false, reason: 'invalidAccessToken' };
     return { ok: true, evidence: validation.evidence };

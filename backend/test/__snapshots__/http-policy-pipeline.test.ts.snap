@@ -1,0 +1,19 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`route-policy registry and structural deny-by-default every registered route carries an explicit policy (inventory snapshot) 1`] = `
+[
+  "DELETE /auth/identities/:identityId → stepUpRequired",
+  "DELETE /auth/sessions/:sessionId → stepUpRequired",
+  "GET /auth/sessions → authenticatedCustomer",
+  "GET /internal/health → public",
+  "GET /me → authenticatedCustomer",
+  "HEAD /auth/sessions → authenticatedCustomer",
+  "HEAD /internal/health → public",
+  "HEAD /me → authenticatedCustomer",
+  "POST /auth/identities/link → stepUpRequired",
+  "POST /auth/logout → authenticatedCustomer",
+  "POST /auth/logout-all → authenticatedCustomer",
+  "POST /auth/password/reset-request → unauthenticatedAuthFlow",
+  "POST /auth/session → unauthenticatedAuthFlow",
+]
+`;

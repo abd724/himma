@@ -1,0 +1,565 @@
+/**
+ * Customer identity routes (docs/26 §10 under Amendment A1.1) — B2-4.
+ *
+ * Under the approved Cognito model, credentials and token rotation are
+ * provider-side; every login flow converges on TOKEN PRESENTATION, so the
+ * §10 `login`/`oidc/*` routes collapse into `POST /auth/session` (recorded
+ * deviation): the client authenticates with Cognito, then presents its ID
+ * token (identity evidence, first login/linking only) and access token
+ * (the only API bearer credential). When both are present they MUST agree
+ * on issuer + subject — mismatched pairs are rejected before any user or
+ * session is created.
+ *
+ * Failure boundary of /auth/session (documented rule): first-login and
+ * session establishment are two INDEPENDENT service transactions (docs/26
+ * §9.1's session leg was split into B2-3 by the approved commit plan) — a
+ * canonical user may exist although establishment later failed; both
+ * operations are idempotent/convergent, so a client retry converges on the
+ * same user, account, and one live session with no duplicates.
+ */
+import { Type } from '@sinclair/typebox';
+import type { FastifyInstance } from 'fastify';
+import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
+
+import type { Db } from '../../../db/kysely';
+import type { MailSender } from '../mail/mail-sender';
+import type { AuthProviderAdapter } from '../providers/adapter';
+import type { AccessTokenVerifier } from '../providers/access-token';
+import type { ProviderSessionRevoker } from '../providers/revocation';
+import { firstLogin } from '../services/first-login';
+import { linkIdentity, unlinkIdentity } from '../services/link-identity';
+import { readCustomerProfile } from '../services/profile';
+import { requestPasswordReset } from '../services/password-reset';
+import { establishSession, listSessions } from '../services/sessions';
+import { logoutAllSessions, logoutSession } from '../services/session-revocation';
+import { requirePrincipal } from './auth-plugin';
+import { sendOutcome, type HttpOutcomeName } from './http-outcomes';
+import {
+  rateLimitDigest,
+  type RateLimiterStore,
+  type RateLimitRules,
+} from './rate-limiter';
+
+const AUTH_BODY_LIMIT = 16_384;
+const TokenString = Type.String({ minLength: 8, maxLength: 4096 });
+const ErrorBody = Type.Object({ code: Type.String(), message: Type.String() });
+const Uuid = Type.String({ format: 'uuid' });
+
+export interface IdentityRouteDeps {
+  db: Db;
+  accessTokenVerifier: AccessTokenVerifier;
+  idTokenAdapter: AuthProviderAdapter;
+  mailSender: MailSender;
+  providerRevoker?: ProviderSessionRevoker;
+  rateLimiter: RateLimiterStore;
+  rules: RateLimitRules;
+  /** Minimum handler duration for enumeration-sensitive routes. */
+  enumerationFloorMs: number;
+}
+
+/** First-login/link outcome kinds → external envelope names. */
+function loginFlowOutcome(kind: string): HttpOutcomeName {
+  switch (kind) {
+    case 'identityEnded':
+    case 'verifiedEmailConflict':
+      return 'accountLinkConflict';
+    case 'accountLocked':
+    case 'accountDeleted':
+    case 'accountSuspended':
+      return 'accountSuspended';
+    case 'sessionRevoked':
+      return 'sessionExpired';
+    case 'identityLinkedToAnotherUser':
+      return 'identityAlreadyLinked';
+    case 'lastLoginMethod':
+      return 'lastLoginMethod';
+    case 'staleVersion':
+      return 'staleVersion';
+    case 'identityNotFound':
+      return 'notFound';
+    default:
+      return 'invalidCredentials';
+  }
+}
+
+async function holdUntilFloor(startedAt: number, floorMs: number): Promise<void> {
+  const remaining = startedAt + floorMs - Date.now();
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+}
+
+export function registerIdentityRoutes(
+  instance: FastifyInstance,
+  deps: IdentityRouteDeps,
+): void {
+  const app = instance.withTypeProvider<TypeBoxTypeProvider>();
+  const serviceDeps = { db: deps.db };
+  const revocationDeps = {
+    db: deps.db,
+    ...(deps.providerRevoker !== undefined ? { providerRevoker: deps.providerRevoker } : {}),
+  };
+
+  // ---------------------------------------------------------------------
+  // POST /auth/session — first login + Himma session establishment.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/auth/session',
+    {
+      config: { authPolicy: 'unauthenticatedAuthFlow' },
+      bodyLimit: AUTH_BODY_LIMIT,
+      schema: {
+        body: Type.Object({
+          accessToken: TokenString,
+          idToken: Type.Optional(TokenString),
+          deviceLabel: Type.Optional(Type.String({ maxLength: 120 })),
+        }),
+        response: {
+          200: Type.Object({
+            status: Type.Literal('authenticated'),
+            userId: Uuid,
+            accountId: Type.Optional(Uuid),
+            session: Type.Object({ id: Uuid, expiresAt: Type.String() }),
+          }),
+          401: ErrorBody,
+          403: ErrorBody,
+          409: ErrorBody,
+          422: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request, reply) => {
+      const limited = await deps.rateLimiter.consume(
+        `session:${rateLimitDigest(request.ip)}`,
+        deps.rules.sessionEstablishment,
+        1,
+      );
+      if (!limited.allowed) {
+        return sendOutcome(reply, 'rateLimited', {
+          'retry-after': String(limited.retryAfterSeconds),
+        });
+      }
+
+      // 1. Provider verification — outside any DB transaction.
+      const access = await deps.accessTokenVerifier.verifyAccessToken(request.body.accessToken);
+      if (!access.ok) {
+        return sendOutcome(
+          reply,
+          access.reason === 'providerUnavailable' ? 'providerUnavailable' : 'invalidCredentials',
+        );
+      }
+
+      // 2. Optional ID-token identity evidence (first login / new identity).
+      if (request.body.idToken !== undefined) {
+        const identity = await deps.idTokenAdapter.validateToken(request.body.idToken);
+        if (!identity.ok) {
+          return sendOutcome(
+            reply,
+            identity.reason === 'providerUnavailable'
+              ? 'providerUnavailable'
+              : 'invalidCredentials',
+          );
+        }
+        // 3. Token-pair binding: both tokens must represent the same
+        // provider user. Mismatches create NOTHING.
+        if (
+          identity.evidence.issuer !== access.evidence.issuer ||
+          identity.evidence.subject !== access.evidence.subject
+        ) {
+          return sendOutcome(reply, 'invalidCredentials');
+        }
+        const login = await firstLogin(serviceDeps, { evidence: identity.evidence });
+        if (login.kind !== 'newCustomerCreated' && login.kind !== 'identityResolved') {
+          return sendOutcome(reply, loginFlowOutcome(login.kind));
+        }
+      }
+
+      // 4. Himma session establishment (its own service transaction).
+      const session = await establishSession(serviceDeps, {
+        evidence: access.evidence,
+        client: {
+          ...(request.body.deviceLabel !== undefined
+            ? { deviceLabel: request.body.deviceLabel }
+            : {}),
+          ipAddress: request.ip,
+        },
+      });
+      if (session.kind !== 'sessionEstablished') {
+        // Unknown identities collapse into the single invalidCredentials
+        // class on the login path (docs/26 §5.5) — never not-found-shaped.
+        return sendOutcome(
+          reply,
+          session.kind === 'identityNotFound'
+            ? 'invalidCredentials'
+            : loginFlowOutcome(session.kind),
+        );
+      }
+      return reply.status(200).send({
+        status: 'authenticated' as const,
+        userId: session.userId,
+        ...(session.accountId !== undefined ? { accountId: session.accountId } : {}),
+        session: {
+          id: session.sessionId,
+          expiresAt: access.evidence.expiresAt.toISOString(),
+        },
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // GET /me — principal snapshot (docs/26 §10, §12).
+  // ---------------------------------------------------------------------
+  app.get(
+    '/me',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      schema: {
+        response: {
+          200: Type.Object({
+            user: Type.Object({ id: Uuid }),
+            account: Type.Optional(
+              Type.Object({
+                id: Uuid,
+                displayName: Type.String(),
+                contactEmail: Type.Union([Type.String(), Type.Null()]),
+              }),
+            ),
+            participants: Type.Array(
+              Type.Object({ id: Uuid, kind: Type.Literal('self'), firstName: Type.String() }),
+            ),
+            roles: Type.Array(Type.Never()),
+          }),
+          401: ErrorBody,
+          403: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request) => {
+      const principal = requirePrincipal(request.principal);
+      return readCustomerProfile(serviceDeps, { userId: principal.userId });
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // GET /auth/sessions — the user's own live session/device inventory.
+  // ---------------------------------------------------------------------
+  app.get(
+    '/auth/sessions',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      schema: {
+        response: {
+          200: Type.Object({
+            sessions: Type.Array(
+              Type.Object({
+                id: Uuid,
+                clientKind: Type.String(),
+                deviceLabel: Type.Union([Type.String(), Type.Null()]),
+                createdAt: Type.String(),
+                lastSeenAt: Type.String(),
+                expiresAt: Type.String(),
+                version: Type.Integer(),
+                current: Type.Boolean(),
+              }),
+            ),
+          }),
+          401: ErrorBody,
+          403: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request) => {
+      const principal = requirePrincipal(request.principal);
+      const sessions = await listSessions(serviceDeps, { userId: principal.userId });
+      return {
+        sessions: sessions.map((session) => ({
+          id: session.sessionId,
+          clientKind: session.clientKind,
+          deviceLabel: session.deviceLabel,
+          createdAt: session.createdAt.toISOString(),
+          lastSeenAt: session.lastSeenAt.toISOString(),
+          expiresAt: session.expiresAt.toISOString(),
+          version: session.version,
+          current: session.sessionId === principal.sessionId,
+        })),
+      };
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // DELETE /auth/sessions/:sessionId — selected owned-session logout
+  // (step-up per docs/26 §3.10/§10; ownership enforced by the service).
+  // ---------------------------------------------------------------------
+  app.delete(
+    '/auth/sessions/:sessionId',
+    {
+      config: { authPolicy: 'stepUpRequired' },
+      bodyLimit: AUTH_BODY_LIMIT,
+      schema: {
+        params: Type.Object({ sessionId: Uuid }),
+        body: Type.Object({ expectedVersion: Type.Integer({ minimum: 1 }) }),
+        response: {
+          200: Type.Object({
+            status: Type.Union([Type.Literal('loggedOut'), Type.Literal('alreadyRevoked')]),
+          }),
+          401: ErrorBody,
+          403: ErrorBody,
+          404: ErrorBody,
+          409: ErrorBody,
+          422: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request, reply) => {
+      const principal = requirePrincipal(request.principal);
+      const result = await logoutSession(
+        revocationDeps,
+        { userId: principal.userId },
+        {
+          sessionId: request.params.sessionId,
+          expectedVersion: request.body.expectedVersion,
+        },
+      );
+      if (result.kind === 'loggedOut' || result.kind === 'alreadyRevoked') {
+        return reply.status(200).send({ status: result.kind });
+      }
+      return sendOutcome(reply, result.kind === 'sessionNotFound' ? 'notFound' : 'staleVersion');
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // POST /auth/logout — current session; idempotent. The optional
+  // refreshToken is EPHEMERAL pass-through for provider revocation only.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/auth/logout',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      bodyLimit: AUTH_BODY_LIMIT,
+      schema: {
+        body: Type.Union([
+          Type.Object({ refreshToken: Type.Optional(TokenString) }),
+          Type.Null(),
+        ]),
+        response: {
+          200: Type.Object({
+            status: Type.Union([Type.Literal('loggedOut'), Type.Literal('alreadyRevoked')]),
+          }),
+          401: ErrorBody,
+          403: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request, reply) => {
+      const principal = requirePrincipal(request.principal);
+      const result = await logoutSession(
+        revocationDeps,
+        { userId: principal.userId },
+        {
+          sessionId: principal.sessionId,
+          ...(request.body?.refreshToken !== undefined
+            ? { ephemeralToken: request.body.refreshToken }
+            : {}),
+        },
+      );
+      if (result.kind === 'loggedOut' || result.kind === 'alreadyRevoked') {
+        return reply.status(200).send({ status: result.kind });
+      }
+      // The principal's own session cannot be foreign or stale here.
+      return sendOutcome(reply, 'internalError');
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // POST /auth/logout-all — every session of the user; idempotent.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/auth/logout-all',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      bodyLimit: AUTH_BODY_LIMIT,
+      schema: {
+        body: Type.Union([
+          Type.Object({ refreshToken: Type.Optional(TokenString) }),
+          Type.Null(),
+        ]),
+        response: {
+          200: Type.Object({
+            status: Type.Literal('loggedOutAll'),
+            revokedCount: Type.Integer(),
+          }),
+          401: ErrorBody,
+          403: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request, reply) => {
+      const principal = requirePrincipal(request.principal);
+      const result = await logoutAllSessions(revocationDeps, { userId: principal.userId });
+      return reply
+        .status(200)
+        .send({ status: 'loggedOutAll' as const, revokedCount: result.revokedCount });
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // POST /auth/identities/link — link a SECOND provider identity (fresh ID
+  // token proves present control — docs/26 §3.6); step-up gated.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/auth/identities/link',
+    {
+      config: { authPolicy: 'stepUpRequired' },
+      bodyLimit: AUTH_BODY_LIMIT,
+      schema: {
+        body: Type.Object({ idToken: TokenString }),
+        response: {
+          200: Type.Object({
+            status: Type.Union([Type.Literal('linked'), Type.Literal('alreadyLinked')]),
+            identityId: Uuid,
+          }),
+          401: ErrorBody,
+          403: ErrorBody,
+          409: ErrorBody,
+          422: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request, reply) => {
+      const principal = requirePrincipal(request.principal);
+      const limited = await deps.rateLimiter.consume(
+        `link:${rateLimitDigest(principal.userId)}`,
+        deps.rules.identityLinking,
+        1,
+      );
+      if (!limited.allowed) {
+        return sendOutcome(reply, 'rateLimited', {
+          'retry-after': String(limited.retryAfterSeconds),
+        });
+      }
+      const identity = await deps.idTokenAdapter.validateToken(request.body.idToken);
+      if (!identity.ok) {
+        return sendOutcome(
+          reply,
+          identity.reason === 'providerUnavailable' ? 'providerUnavailable' : 'invalidCredentials',
+        );
+      }
+      const result = await linkIdentity(
+        serviceDeps,
+        { userId: principal.userId },
+        { evidence: identity.evidence },
+      );
+      if (result.kind === 'identityLinked') {
+        return reply.status(200).send({ status: 'linked' as const, identityId: result.identityId });
+      }
+      if (result.kind === 'identityAlreadyLinked') {
+        return reply
+          .status(200)
+          .send({ status: 'alreadyLinked' as const, identityId: result.identityId });
+      }
+      return sendOutcome(reply, loginFlowOutcome(result.kind));
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // DELETE /auth/identities/:identityId — unlink (docs/26 §9.3); step-up.
+  // ---------------------------------------------------------------------
+  app.delete(
+    '/auth/identities/:identityId',
+    {
+      config: { authPolicy: 'stepUpRequired' },
+      bodyLimit: AUTH_BODY_LIMIT,
+      schema: {
+        params: Type.Object({ identityId: Uuid }),
+        body: Type.Object({ expectedVersion: Type.Integer({ minimum: 1 }) }),
+        response: {
+          200: Type.Object({ status: Type.Literal('unlinked') }),
+          401: ErrorBody,
+          403: ErrorBody,
+          404: ErrorBody,
+          409: ErrorBody,
+          422: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+          503: ErrorBody,
+        },
+      },
+    },
+    async (request, reply) => {
+      const principal = requirePrincipal(request.principal);
+      const result = await unlinkIdentity(
+        serviceDeps,
+        { userId: principal.userId },
+        {
+          identityId: request.params.identityId,
+          expectedVersion: request.body.expectedVersion,
+        },
+      );
+      if (result.kind === 'identityUnlinked') {
+        return reply.status(200).send({ status: 'unlinked' as const });
+      }
+      return sendOutcome(reply, loginFlowOutcome(result.kind));
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // POST /auth/password/reset-request — enumeration-safe (docs/26 §5.5,
+  // §10): ALWAYS the same accepted response; bookkeeping + captured mail
+  // happen only when an identity exists, and nothing observable differs.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/auth/password/reset-request',
+    {
+      config: { authPolicy: 'unauthenticatedAuthFlow' },
+      bodyLimit: AUTH_BODY_LIMIT,
+      schema: {
+        body: Type.Object({ email: Type.String({ format: 'email', maxLength: 320 }) }),
+        response: {
+          200: Type.Object({ status: Type.Literal('accepted') }),
+          422: ErrorBody,
+          429: ErrorBody,
+          500: ErrorBody,
+        },
+      },
+    },
+    async (request, reply) => {
+      const startedAt = Date.now();
+      const limited = await deps.rateLimiter.consume(
+        `reset:${rateLimitDigest(request.body.email)}:${rateLimitDigest(request.ip)}`,
+        deps.rules.resetRequest,
+        1,
+      );
+      if (!limited.allowed) {
+        return sendOutcome(reply, 'rateLimited', {
+          'retry-after': String(limited.retryAfterSeconds),
+        });
+      }
+
+      const result = await requestPasswordReset(
+        { db: deps.db, mailSender: deps.mailSender },
+        { email: request.body.email },
+      );
+      await holdUntilFloor(startedAt, deps.enumerationFloorMs);
+      return reply.status(200).send(result);
+    },
+  );
+}
