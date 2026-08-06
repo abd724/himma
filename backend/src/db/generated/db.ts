@@ -288,6 +288,59 @@ export interface Participant {
   version: Generated<number>;
 }
 
+export interface StaffInvitation {
+  accepted_at: Timestamp | null;
+  accepted_by: string | null;
+  /**
+   * Intended branch scope carried until acceptance. Service-validated against the organization's branches at issue time; at acceptance the ids become staff_membership_branch rows whose composite FKs structurally enforce same-organization ownership.
+   */
+  branch_scope_ids: Generated<string[]>;
+  branch_scope_kind: Generated<string>;
+  created_at: Generated<Timestamp>;
+  digest_scheme: Generated<string>;
+  email: string;
+  expired_at: Timestamp | null;
+  expires_at: Timestamp;
+  id: string;
+  invited_by: string;
+  issued_at: Generated<Timestamp>;
+  organization_id: string;
+  pepper_version: number;
+  revoked_at: Timestamp | null;
+  revoked_by: string | null;
+  role: string;
+  state: Generated<string>;
+  token_digest: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface StaffMembership {
+  /**
+   * 'all' = organization-wide within the role's reach; 'branches' = restricted to staff_membership_branch rows. A deferred constraint trigger refuses 'branches' rows with an empty scope set, so an empty selection can never silently mean organization-wide access.
+   */
+  branch_scope_kind: Generated<string>;
+  created_at: Generated<Timestamp>;
+  id: string;
+  invitation_id: string | null;
+  invited_by: string | null;
+  organization_id: string;
+  revoked_at: Timestamp | null;
+  revoked_by: string | null;
+  role: string;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
+export interface StaffMembershipBranch {
+  branch_id: string;
+  created_at: Generated<Timestamp>;
+  membership_id: string;
+  organization_id: string;
+}
+
 export interface StepUpGrant {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
@@ -321,5 +374,8 @@ export interface DB {
   organization_public_profile: OrganizationPublicProfile;
   outbox_event: OutboxEvent;
   participant: Participant;
+  staff_invitation: StaffInvitation;
+  staff_membership: StaffMembership;
+  staff_membership_branch: StaffMembershipBranch;
   step_up_grant: StepUpGrant;
 }

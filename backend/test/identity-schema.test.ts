@@ -278,8 +278,13 @@ describe('structural absence of secret-bearing columns (Amendment A1.1)', () => 
       SELECT table_name, column_name FROM information_schema.columns
       WHERE table_schema = 'public'
     `.execute(testDb.db);
-    const offenders = columns.rows.filter((r) =>
-      /(password|secret|token|totp|recovery|credential)/i.test(r.column_name),
+    const offenders = columns.rows.filter(
+      (r) =>
+        /(password|secret|token|totp|recovery|credential)/i.test(r.column_name) &&
+        // One-way versioned digests are the sanctioned storage form for
+        // verifier material (S3-2 staff_invitation token_digest, docs/27
+        // §9) — the raw value is never a column.
+        !/_digest$/.test(r.column_name),
     );
     expect(offenders).toEqual([]);
   });

@@ -266,6 +266,18 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_org_profile_row_rules' },
     { kind: 'function', name: 'enforce_branch_row_rules' },
   ],
+  '0006_staff_memberships_and_invitations': [
+    { kind: 'table', name: 'staff_invitation' },
+    { kind: 'table', name: 'staff_membership' },
+    { kind: 'table', name: 'staff_membership_branch' },
+    { kind: 'constraint', name: 'uq_staff_invitation_token_digest' },
+    { kind: 'constraint', name: 'uq_staff_membership_id_organization' },
+    { kind: 'function', name: 'enforce_staff_invitation_transition' },
+    { kind: 'function', name: 'enforce_staff_membership_transition' },
+    { kind: 'function', name: 'enforce_last_active_owner' },
+    { kind: 'function', name: 'enforce_staff_scope_row' },
+    { kind: 'function', name: 'enforce_staff_scope_completeness' },
+  ],
 };
 
 export interface VerificationReport {
