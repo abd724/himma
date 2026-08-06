@@ -19,6 +19,10 @@ import {
   createUser,
   TEST_ISSUER,
 } from './helpers/identity-fixtures';
+import {
+  findSecretColumnOffenders,
+  IDENTITY_SECRET_COLUMN_PATTERN,
+} from './helpers/structural-secrets';
 import type { TestDb } from './helpers/test-db';
 import { createMigratedTestDb } from './helpers/test-db';
 
@@ -278,13 +282,13 @@ describe('structural absence of secret-bearing columns (Amendment A1.1)', () => 
       SELECT table_name, column_name FROM information_schema.columns
       WHERE table_schema = 'public'
     `.execute(testDb.db);
-    const offenders = columns.rows.filter(
-      (r) =>
-        /(password|secret|token|totp|recovery|credential)/i.test(r.column_name) &&
-        // One-way versioned digests are the sanctioned storage form for
-        // verifier material (S3-2 staff_invitation token_digest, docs/27
-        // §9) — the raw value is never a column.
-        !/_digest$/.test(r.column_name),
+    // The ONLY digest exemptions are the explicit table-qualified allowlist
+    // entries (specifically reviewed one-way verifier columns, e.g. the
+    // S3-2 staff_invitation.token_digest, docs/27 §9) — a `_digest` or
+    // `_hash` suffix by itself exempts nothing.
+    const offenders = findSecretColumnOffenders(
+      columns.rows,
+      IDENTITY_SECRET_COLUMN_PATTERN,
     );
     expect(offenders).toEqual([]);
   });

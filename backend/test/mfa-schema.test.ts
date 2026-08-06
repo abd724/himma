@@ -18,6 +18,10 @@ import {
   createSession,
   createUser,
 } from './helpers/identity-fixtures';
+import {
+  findSecretColumnOffenders,
+  MFA_SECRET_COLUMN_PATTERN,
+} from './helpers/structural-secrets';
 import type { TestDb } from './helpers/test-db';
 import { createMigratedTestDb } from './helpers/test-db';
 
@@ -495,18 +499,12 @@ describe('structural guarantees (no secret material, ever)', () => {
     const columns = await sql<{ table_name: string; column_name: string }>`
       SELECT table_name, column_name FROM information_schema.columns
       WHERE table_schema = 'public'`.execute(testDb.db);
-    const offenders = columns.rows.filter(
-      (r) =>
-        // Key-material names are explicit: `idempotency_key` (Slice 1) is a
-        // request-deduplication key, not cryptographic key material.
-        /(secret|token|password|credential|totp|recovery|qr|seed|pepper_value|encryption_key|signing_key|hash_key|plain|raw)/i.test(
-          r.column_name,
-        ) &&
-        // One-way versioned digests are the sanctioned storage form for
-        // verifier material (B2-6A code_hash; S3-2 staff_invitation
-        // token_digest, docs/27 §9) — the raw value is never a column.
-        !/_digest$/.test(r.column_name),
-    );
+    // Key-material names are explicit: `idempotency_key` (Slice 1) is a
+    // request-deduplication key, not cryptographic key material. The ONLY
+    // digest exemptions are the explicit table-qualified allowlist entries
+    // (specifically reviewed one-way verifier columns) — a `_digest` or
+    // `_hash` suffix by itself exempts nothing.
+    const offenders = findSecretColumnOffenders(columns.rows, MFA_SECRET_COLUMN_PATTERN);
     expect(offenders).toEqual([]);
   });
 });
