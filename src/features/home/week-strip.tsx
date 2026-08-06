@@ -12,12 +12,10 @@ export function WeekStrip({ days }: { days: WeekDay[] }) {
   return (
     <View style={styles.wrap}>
       {/* accessible={false}: the strip is a list — each session announces
-          itself; a merged parent label would hide every row from VoiceOver. */}
-      <PressableFeedback
-        accessible={false}
-        accessibilityLabel="Your week. Opens your full schedule"
-        style={styles.card}
-      >
+          itself; a merged parent label would hide every row from VoiceOver.
+          No navigation promise in the label while the card is inert (audit
+          defect A2) — restore a destination hint when Bookings ships. */}
+      <PressableFeedback accessible={false} accessibilityLabel="Your week" style={styles.card}>
         {days.map((day, index) => (
           <View
             key={day.dayOffset}
