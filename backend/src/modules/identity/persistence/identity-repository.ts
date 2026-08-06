@@ -8,6 +8,7 @@
 import { sql } from 'kysely';
 
 import { newId } from '../../../db/ids';
+import type { Db } from '../../../db/kysely';
 import type { Trx } from '../../../db/transaction';
 import type { ProviderEvidence } from '../providers/evidence';
 
@@ -85,6 +86,24 @@ export async function findActiveVerifiedEmailOwner(
     .limit(1)
     .executeTakeFirst();
   return row?.user_id;
+}
+
+/**
+ * Provider identifiers of one active identity of the user — the reference
+ * used for user-scoped provider revocation follow-up (post-commit, so this
+ * accepts a plain Db as well as a transaction).
+ */
+export async function findActiveIdentityProviderRef(
+  db: Db | Trx,
+  userId: string,
+): Promise<{ issuer: string; subject: string } | undefined> {
+  return db
+    .selectFrom('auth_identity')
+    .select(['issuer', 'subject'])
+    .where('user_id', '=', userId)
+    .where('status', '=', 'active')
+    .limit(1)
+    .executeTakeFirst();
 }
 
 export async function insertIdentity(

@@ -13,11 +13,15 @@
 export interface CognitoAdapterConfig {
   /** Pool issuer URL, e.g. https://cognito-idp.<region>.amazonaws.com/<poolId>. */
   issuer: string;
-  /** Accepted app-client ids (the id token `aud` claim). */
+  /** Accepted app-client ids (id token `aud` / access token `client_id`). */
   clientIds: string[];
   /** Overrides the derived `<issuer>/.well-known/jwks.json` when set. */
   jwksUri?: string;
+  /** Bounded exp/nbf clock-skew tolerance (0–300 s; verifier default 30 s). */
+  clockToleranceSeconds?: number;
 }
+
+const MAX_CLOCK_TOLERANCE_SECONDS = 300;
 
 export class CognitoConfigError extends Error {}
 
@@ -43,11 +47,36 @@ export function parseCognitoConfig(
     throw new CognitoConfigError('COGNITO_CLIENT_IDS must list at least one app client id.');
   }
   const jwksUri = env.COGNITO_JWKS_URI?.trim();
+  const rawTolerance = env.COGNITO_CLOCK_TOLERANCE_SECONDS?.trim();
+  let clockToleranceSeconds: number | undefined;
+  if (rawTolerance !== undefined && rawTolerance !== '') {
+    clockToleranceSeconds = Number(rawTolerance);
+    if (
+      !Number.isInteger(clockToleranceSeconds) ||
+      clockToleranceSeconds < 0 ||
+      clockToleranceSeconds > MAX_CLOCK_TOLERANCE_SECONDS
+    ) {
+      throw new CognitoConfigError(
+        `COGNITO_CLOCK_TOLERANCE_SECONDS must be an integer between 0 and ${MAX_CLOCK_TOLERANCE_SECONDS}.`,
+      );
+    }
+  }
   return {
     issuer,
     clientIds,
     ...(jwksUri !== undefined && jwksUri !== '' ? { jwksUri } : {}),
+    ...(clockToleranceSeconds !== undefined ? { clockToleranceSeconds } : {}),
   };
+}
+
+/** Fails closed: a verifier can never be built without its trust anchors. */
+export function assertCompleteConfig(config: CognitoAdapterConfig): void {
+  if (config.issuer === '' || !config.issuer.startsWith('https://')) {
+    throw new CognitoConfigError('Cognito config requires an https issuer.');
+  }
+  if (config.clientIds.length === 0) {
+    throw new CognitoConfigError('Cognito config requires at least one app client id.');
+  }
 }
 
 export function jwksUriFor(config: CognitoAdapterConfig): string {
