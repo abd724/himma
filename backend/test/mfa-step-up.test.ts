@@ -1,9 +1,12 @@
 /**
- * B2-6B — TOTP step-up (docs/26 §3.10) on real PostgreSQL with the fake MFA
- * provider. Provider verification happens outside PostgreSQL; success
- * transactionally passes the B2-6A challenge and creates one session-bound
- * step_up_grant; provider verification alone never grants business
- * permissions, and a revoked session makes every grant useless.
+ * B2-6B(+semantics correction) — TOTP step-up (docs/26 §3.10) on real
+ * PostgreSQL with the fake MFA provider. Step-up begins a FRESH provider
+ * reauthentication challenge (SOFTWARE_TOKEN_MFA + provider Session) and
+ * completes it via the challenge-response operation — never the enrollment
+ * verification. The provider Session is ephemeral secret material: it
+ * travels only through the bounded begin→complete flow and never reaches
+ * PostgreSQL, audit, or outbox. Provider verification alone never grants
+ * business permissions; a revoked session makes every grant useless.
  */
 import { sql } from 'kysely';
 
@@ -16,6 +19,7 @@ import {
   resolveStepUpAssurance,
 } from '../src/modules/identity/services/mfa-step-up';
 import { FakeMfaProvider } from '../src/modules/identity/providers/fake/fake-mfa-provider';
+import type { TotpChallengeSession } from '../src/modules/identity/providers/mfa';
 import { sweepDatabaseForValues } from './helpers/db-sweep';
 import { createIdentity, createSession, createUser } from './helpers/identity-fixtures';
 import type { TestDb } from './helpers/test-db';
@@ -50,8 +54,10 @@ afterAll(async () => {
 interface Fixture {
   user: string;
   sessionId: string;
+  providerUserRef: string;
 }
 
+let refCounter = 0;
 async function makeFixture(): Promise<Fixture> {
   const user = await createUser(testDb.db);
   await sql`
@@ -59,16 +65,20 @@ async function makeFixture(): Promise<Fixture> {
     VALUES (gen_random_uuid(), ${user}, 'totp', 'active', now())`.execute(testDb.db);
   const identity = await createIdentity(testDb.db, user);
   const session = await createSession(testDb.db, user, identity);
-  return { user, sessionId: session.id };
+  refCounter += 1;
+  return { user, sessionId: session.id, providerUserRef: `cognito-user-${refCounter}` };
 }
 
-async function startChallenge(fixture: Fixture): Promise<string> {
+async function startChallenge(
+  fixture: Fixture,
+): Promise<{ challengeId: string; providerChallenge: TotpChallengeSession }> {
   const started = await beginStepUpChallenge(deps, {
     userId: fixture.user,
     sessionId: fixture.sessionId,
+    providerUserRef: fixture.providerUserRef,
   });
   if (started.kind !== 'challengeStarted') throw new Error(started.kind);
-  return started.challengeId;
+  return { challengeId: started.challengeId, providerChallenge: started.providerChallenge };
 }
 
 async function grantsForSession(sessionId: string): Promise<number> {
@@ -80,9 +90,10 @@ async function grantsForSession(sessionId: string): Promise<number> {
 }
 
 describe('beginning a step-up challenge', () => {
-  it('creates a pending session-bound challenge for an enrolled user on a live session', async () => {
+  it('starts a provider reauthentication challenge and a pending session-bound Himma record', async () => {
     const fixture = await makeFixture();
-    const challengeId = await startChallenge(fixture);
+    const { challengeId, providerChallenge } = await startChallenge(fixture);
+    expect(providerChallenge.providerChallengeSession.length).toBeGreaterThan(0);
     const row = await sql<{ purpose: string; state: string; login_session_id: string }>`
       SELECT purpose, state, login_session_id FROM mfa_challenge
       WHERE id = ${challengeId}`.execute(testDb.db);
@@ -91,6 +102,26 @@ describe('beginning a step-up challenge', () => {
       state: 'pending',
       login_session_id: fixture.sessionId,
     });
+    // The begin path used ONLY the challenge flow — never enrollment ops.
+    expect(fake.callLog).toEqual(['beginTotpStepUpChallenge']);
+    // The provider session is ephemeral: it exists nowhere in the database.
+    expect(
+      await sweepDatabaseForValues(testDb.db, [providerChallenge.providerChallengeSession]),
+    ).toEqual([]);
+  });
+
+  it('creates no Himma challenge when the provider cannot issue one', async () => {
+    const fixture = await makeFixture();
+    fake.setUnavailable(true);
+    const result = await beginStepUpChallenge(deps, {
+      userId: fixture.user,
+      sessionId: fixture.sessionId,
+      providerUserRef: fixture.providerUserRef,
+    });
+    expect(result.kind).toBe('providerUnavailable');
+    const rows = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM mfa_challenge WHERE user_id = ${fixture.user}`.execute(testDb.db);
+    expect(Number(rows.rows[0]?.n)).toBe(0);
   });
 
   it('refuses users without an active method and sessions that are not live', async () => {
@@ -98,32 +129,50 @@ describe('beginning a step-up challenge', () => {
     const identity = await createIdentity(testDb.db, noMfa);
     const session = await createSession(testDb.db, noMfa, identity);
     expect(
-      (await beginStepUpChallenge(deps, { userId: noMfa, sessionId: session.id })).kind,
+      (
+        await beginStepUpChallenge(deps, {
+          userId: noMfa,
+          sessionId: session.id,
+          providerUserRef: 'cognito-user-nomfa',
+        })
+      ).kind,
     ).toBe('notEligible');
 
     const fixture = await makeFixture();
     await sql`UPDATE login_session SET revoked_at = now(), revoke_reason = 'test'
               WHERE id = ${fixture.sessionId}`.execute(testDb.db);
     expect(
-      (await beginStepUpChallenge(deps, { userId: fixture.user, sessionId: fixture.sessionId }))
-        .kind,
+      (
+        await beginStepUpChallenge(deps, {
+          userId: fixture.user,
+          sessionId: fixture.sessionId,
+          providerUserRef: fixture.providerUserRef,
+        })
+      ).kind,
     ).toBe('sessionNotLive');
   });
 });
 
 describe('completing step-up with TOTP', () => {
-  it('successful provider verification passes the challenge and creates exactly one bounded grant', async () => {
+  it('a successful provider challenge response creates exactly one bounded session-bound grant', async () => {
     const fixture = await makeFixture();
-    const challengeId = await startChallenge(fixture);
+    const { challengeId, providerChallenge } = await startChallenge(fixture);
     const result = await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
       challengeId,
-      code: fake.validCodeFor('step-token'),
-      providerAccessToken: 'step-token',
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge,
     });
     expect(result.kind).toBe('stepUpCompleted');
     if (result.kind !== 'stepUpCompleted') return;
+
+    // Enrollment-verification was NEVER called anywhere in this flow.
+    expect(fake.callLog).toEqual([
+      'beginTotpStepUpChallenge',
+      'respondToTotpStepUpChallenge',
+    ]);
 
     const challenge = await sql<{ state: string; passed_at: Date | null }>`
       SELECT state, passed_at FROM mfa_challenge WHERE id = ${challengeId}`.execute(testDb.db);
@@ -159,13 +208,14 @@ describe('completing step-up with TOTP', () => {
 
   it('failed provider verification produces no grant and increments attempts monotonically', async () => {
     const fixture = await makeFixture();
-    const challengeId = await startChallenge(fixture);
+    const { challengeId, providerChallenge } = await startChallenge(fixture);
     const failed = await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
       challengeId,
       code: 'wrong',
-      providerAccessToken: 't',
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge,
     });
     expect(failed.kind).toBe('invalidCode');
     const row = await sql<{ state: string; attempt_count: number }>`
@@ -174,16 +224,58 @@ describe('completing step-up with TOTP', () => {
     expect(await grantsForSession(fixture.sessionId)).toBe(0);
   });
 
+  it('an invalid or replayed PROVIDER challenge session creates no grant', async () => {
+    const fixture = await makeFixture();
+    const first = await startChallenge(fixture);
+    const completed = await completeStepUpWithTotp(deps, {
+      userId: fixture.user,
+      sessionId: fixture.sessionId,
+      challengeId: first.challengeId,
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge: first.providerChallenge,
+    });
+    expect(completed.kind).toBe('stepUpCompleted');
+
+    // Replaying the CONSUMED provider session against a fresh Himma
+    // challenge fails at the provider and grants nothing.
+    const second = await startChallenge(fixture);
+    const replayed = await completeStepUpWithTotp(deps, {
+      userId: fixture.user,
+      sessionId: fixture.sessionId,
+      challengeId: second.challengeId,
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge: first.providerChallenge,
+    });
+    expect(replayed.kind).toBe('challengeExpired');
+
+    // A forged provider session also grants nothing.
+    const third = await startChallenge(fixture);
+    const forged = await completeStepUpWithTotp(deps, {
+      userId: fixture.user,
+      sessionId: fixture.sessionId,
+      challengeId: third.challengeId,
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge: { providerChallengeSession: 'forged-session-material' },
+    });
+    expect(forged.kind).toBe('invalidProviderState');
+
+    expect(await grantsForSession(fixture.sessionId)).toBe(1);
+  });
+
   it('too many failed attempts finalize the challenge with a normalized outcome', async () => {
     const fixture = await makeFixture();
-    const challengeId = await startChallenge(fixture);
+    const { challengeId, providerChallenge } = await startChallenge(fixture);
     const attempt = () =>
       completeStepUpWithTotp(deps, {
         userId: fixture.user,
         sessionId: fixture.sessionId,
         challengeId,
         code: 'wrong',
-        providerAccessToken: 't',
+        providerUserRef: fixture.providerUserRef,
+        providerChallenge,
       });
     for (let i = 1; i < ATTEMPT_CAP; i += 1) {
       expect((await attempt()).kind).toBe('invalidCode');
@@ -192,19 +284,20 @@ describe('completing step-up with TOTP', () => {
     const row = await sql<{ state: string }>`
       SELECT state FROM mfa_challenge WHERE id = ${challengeId}`.execute(testDb.db);
     expect(row.rows[0]?.state).toBe('failed');
-    // Even a now-valid code cannot reuse the finalized challenge.
+    // Even a now-valid code cannot reuse the finalized Himma challenge.
     const after = await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
       challengeId,
-      code: fake.validCodeFor('t'),
-      providerAccessToken: 't',
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge,
     });
     expect(after.kind).toBe('challengeInvalid');
     expect(await grantsForSession(fixture.sessionId)).toBe(0);
   });
 
-  it('expired and already-used challenges cannot produce a grant', async () => {
+  it('expired and already-used Himma challenges cannot produce a grant', async () => {
     const fixture = await makeFixture();
     // expires_at is immutable after insert (B2-6A), so an already-expired
     // pending challenge is inserted directly.
@@ -213,12 +306,16 @@ describe('completing step-up with TOTP', () => {
       INSERT INTO mfa_challenge (id, user_id, login_session_id, purpose, state, expires_at)
       VALUES (${expired}, ${fixture.user}, ${fixture.sessionId}, 'step_up', 'pending',
               now() - interval '1 minute')`.execute(testDb.db);
+    const providerChallenge = (await fake.beginTotpStepUpChallenge({
+      providerUserRef: fixture.providerUserRef,
+    })) as { kind: 'challengeIssued'; challenge: TotpChallengeSession };
     const expiredResult = await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
       challengeId: expired,
-      code: fake.validCodeFor('t'),
-      providerAccessToken: 't',
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge: providerChallenge.challenge,
     });
     expect(expiredResult.kind).toBe('challengeExpired');
     expect(await grantsForSession(fixture.sessionId)).toBe(0);
@@ -227,34 +324,47 @@ describe('completing step-up with TOTP', () => {
     const first = await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
-      challengeId: used,
-      code: fake.validCodeFor('t'),
-      providerAccessToken: 't',
+      challengeId: used.challengeId,
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge: used.providerChallenge,
     });
     expect(first.kind).toBe('stepUpCompleted');
     const replay = await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
-      challengeId: used,
-      code: fake.validCodeFor('t'),
-      providerAccessToken: 't',
+      challengeId: used.challengeId,
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge: used.providerChallenge,
     });
     expect(replay.kind).toBe('challengeInvalid');
     expect(await grantsForSession(fixture.sessionId)).toBe(1);
   });
 
-  it('concurrent replay of one successful challenge creates exactly one usable grant', async () => {
+  it('concurrent replay of one Himma challenge creates exactly one usable grant', async () => {
     const fixture = await makeFixture();
-    const challengeId = await startChallenge(fixture);
-    const complete = () =>
+    const { challengeId } = await startChallenge(fixture);
+    // Two independently-issued provider sessions, so both provider calls
+    // succeed and the Himma single-use CAS is the deciding guard.
+    const mint = async () => {
+      const issued = await fake.beginTotpStepUpChallenge({
+        providerUserRef: fixture.providerUserRef,
+      });
+      if (issued.kind !== 'challengeIssued') throw new Error(issued.kind);
+      return issued.challenge;
+    };
+    const [challengeA, challengeB] = [await mint(), await mint()];
+    const complete = (providerChallenge: TotpChallengeSession) =>
       completeStepUpWithTotp(deps, {
         userId: fixture.user,
         sessionId: fixture.sessionId,
         challengeId,
-        code: fake.validCodeFor('t'),
-        providerAccessToken: 't',
+        code: fake.validCodeFor(fixture.providerUserRef),
+        providerUserRef: fixture.providerUserRef,
+        providerChallenge,
       });
-    const results = await Promise.all([complete(), complete()]);
+    const results = await Promise.all([complete(challengeA!), complete(challengeB!)]);
     expect(results.map((r) => r.kind).sort()).toEqual(['challengeInvalid', 'stepUpCompleted']);
     expect(await grantsForSession(fixture.sessionId)).toBe(1);
   });
@@ -262,26 +372,28 @@ describe('completing step-up with TOTP', () => {
   it("a challenge cannot be completed by another user or against another session", async () => {
     const fixture = await makeFixture();
     const other = await makeFixture();
-    const challengeId = await startChallenge(fixture);
+    const { challengeId, providerChallenge } = await startChallenge(fixture);
     const wrongUser = await completeStepUpWithTotp(deps, {
       userId: other.user,
       sessionId: other.sessionId,
       challengeId,
-      code: fake.validCodeFor('t'),
-      providerAccessToken: 't',
+      code: fake.validCodeFor(other.providerUserRef),
+      providerUserRef: other.providerUserRef,
+      providerChallenge,
     });
     expect(wrongUser.kind).toBe('challengeInvalid');
   });
 
   it('a revoked session refuses completion and makes existing grants useless', async () => {
     const fixture = await makeFixture();
-    const challengeId = await startChallenge(fixture);
+    const { challengeId, providerChallenge } = await startChallenge(fixture);
     const completed = await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
       challengeId,
-      code: fake.validCodeFor('t'),
-      providerAccessToken: 't',
+      code: fake.validCodeFor(fixture.providerUserRef),
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge,
     });
     expect(completed.kind).toBe('stepUpCompleted');
     expect(
@@ -296,22 +408,32 @@ describe('completing step-up with TOTP', () => {
         .assured,
     ).toBe(false);
 
-    // And a fresh completion attempt on the revoked session is refused.
-    const second = await startChallenge(fixture).catch((e) => (e as Error).message);
-    expect(second).toBe('sessionNotLive');
+    // And a fresh challenge on the revoked session is refused.
+    const second = await beginStepUpChallenge(deps, {
+      userId: fixture.user,
+      sessionId: fixture.sessionId,
+      providerUserRef: fixture.providerUserRef,
+    });
+    expect(second.kind).toBe('sessionNotLive');
   });
 
-  it('secret hygiene: OTP codes and provider tokens never reach the database', async () => {
+  it('secret hygiene: OTP codes and provider challenge sessions never reach the database, audit, or outbox', async () => {
     const fixture = await makeFixture();
-    const challengeId = await startChallenge(fixture);
-    const code = fake.validCodeFor('hygiene-step-token');
+    const { challengeId, providerChallenge } = await startChallenge(fixture);
+    const code = fake.validCodeFor(fixture.providerUserRef);
     await completeStepUpWithTotp(deps, {
       userId: fixture.user,
       sessionId: fixture.sessionId,
       challengeId,
       code,
-      providerAccessToken: 'hygiene-step-token',
+      providerUserRef: fixture.providerUserRef,
+      providerChallenge,
     });
-    expect(await sweepDatabaseForValues(testDb.db, [code, 'hygiene-step-token'])).toEqual([]);
+    expect(
+      await sweepDatabaseForValues(testDb.db, [
+        code,
+        providerChallenge.providerChallengeSession,
+      ]),
+    ).toEqual([]);
   });
 });

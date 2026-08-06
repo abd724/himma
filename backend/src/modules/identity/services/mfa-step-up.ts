@@ -1,12 +1,18 @@
 /**
- * TOTP step-up (docs/26 §3.10, §6) — B2-6B.
+ * TOTP step-up (docs/26 §3.10, §6) — B2-6B, TOTP-semantics correction.
  *
- * Provider verification (Cognito) happens strictly OUTSIDE PostgreSQL
- * transactions; only a successful verification transactionally passes the
- * B2-6A challenge and creates ONE session-bound `step_up_grant`. Provider
- * verification alone grants no business permission — it produces Himma
- * step-up assurance, which additionally requires a LIVE session at every
- * resolution (a revoked/expired session makes every grant useless).
+ * Step-up is the provider's REAL challenge flow: `beginStepUpChallenge`
+ * starts a fresh Cognito reauthentication challenge (SOFTWARE_TOKEN_MFA)
+ * outside any transaction, records the non-secret Himma bookkeeping row,
+ * and hands the provider challenge session back ONLY as an ephemeral
+ * result — it travels through the bounded begin→complete flow and never
+ * reaches PostgreSQL, audit, outbox, or logs. `completeStepUpWithTotp`
+ * answers that provider challenge (RespondToAuthChallenge semantics)
+ * outside any transaction; only a confirmed provider verification
+ * transactionally passes the B2-6A challenge and creates ONE session-bound
+ * `step_up_grant`. The enrollment-verification operation is never called
+ * here. Provider verification alone grants no business permission — Himma
+ * assurance additionally requires a LIVE session at every resolution.
  *
  * Challenge handling enforces the B2-6A machine: user/session binding,
  * pending-only, expiry, monotonic attempts with a configured cap and the
@@ -29,6 +35,7 @@ import {
 } from '../persistence/mfa-repository';
 import { findSessionById, type SessionRow } from '../persistence/session-repository';
 import type { Trx } from '../../../db/transaction';
+import type { TotpChallengeSession } from '../providers/mfa';
 import type { MfaServiceDeps } from './mfa-enrollment';
 
 function isLive(row: SessionRow | undefined, userId: string): row is SessionRow {
@@ -41,20 +48,42 @@ function isLive(row: SessionRow | undefined, userId: string): row is SessionRow 
 }
 
 export type BeginStepUpChallengeResult =
-  | { kind: 'challengeStarted'; challengeId: string; expiresAt: Date }
+  | {
+      kind: 'challengeStarted';
+      challengeId: string;
+      expiresAt: Date;
+      /** Ephemeral provider challenge session — bounded round-trip only. */
+      providerChallenge: TotpChallengeSession;
+    }
   | { kind: 'sessionNotLive' }
-  | { kind: 'notEligible' };
+  | { kind: 'notEligible' }
+  | { kind: 'providerUnavailable' }
+  | { kind: 'invalidProviderState' };
 
 export async function beginStepUpChallenge(
   deps: MfaServiceDeps,
-  input: { userId: string; sessionId: string },
+  input: { userId: string; sessionId: string; providerUserRef: string },
 ): Promise<BeginStepUpChallengeResult> {
-  return withTransaction(deps.db, async (trx) => {
+  const eligible = await withTransaction(deps.db, async (trx) => {
     const session = await findSessionById(trx, input.sessionId);
     if (!isLive(session, input.userId)) return { kind: 'sessionNotLive' as const };
     if ((await findActiveMethodForUpdate(trx, input.userId)) === undefined) {
       return { kind: 'notEligible' as const };
     }
+    return { kind: 'ok' as const };
+  });
+  if (eligible.kind !== 'ok') return eligible;
+
+  // Fresh provider reauthentication challenge — outside any transaction.
+  // Failure creates no Himma bookkeeping at all.
+  const issued = await deps.mfaProvider.beginTotpStepUpChallenge({
+    providerUserRef: input.providerUserRef,
+  });
+  if (issued.kind !== 'challengeIssued') return { kind: issued.kind };
+
+  return withTransaction(deps.db, async (trx) => {
+    const session = await findSessionById(trx, input.sessionId);
+    if (!isLive(session, input.userId)) return { kind: 'sessionNotLive' as const };
     const expiresAt = new Date(Date.now() + deps.mfaConfig.challengeTtlSeconds * 1000);
     const challengeId = await insertStepUpChallenge(trx, {
       userId: input.userId,
@@ -68,7 +97,13 @@ export async function beginStepUpChallenge(
       entityType: 'mfa_challenge',
       entityId: challengeId,
     });
-    return { kind: 'challengeStarted' as const, challengeId, expiresAt };
+    // The provider session rides ONLY this ephemeral result.
+    return {
+      kind: 'challengeStarted' as const,
+      challengeId,
+      expiresAt,
+      providerChallenge: issued.challenge,
+    };
   });
 }
 
@@ -104,7 +139,9 @@ export async function completeStepUpWithTotp(
     sessionId: string;
     challengeId: string;
     code: string;
-    providerAccessToken: string;
+    providerUserRef: string;
+    /** The ephemeral provider session from beginStepUpChallenge. */
+    providerChallenge: TotpChallengeSession;
   },
 ): Promise<CompleteStepUpResult> {
   // 1. Bookkeeping pre-check (its own transaction): binding, state, expiry,
@@ -137,10 +174,12 @@ export async function completeStepUpWithTotp(
   });
   if (pre.kind !== 'ok') return pre;
 
-  // 2. Provider verification — outside any transaction; the code and token
-  //    stay ephemeral and are never written anywhere.
-  const verified = await deps.mfaProvider.verifyTotpChallenge({
-    providerAccessToken: input.providerAccessToken,
+  // 2. Provider challenge response — the SOFTWARE_TOKEN_MFA flow, outside
+  //    any transaction; the code and the provider session stay ephemeral
+  //    and are never written anywhere.
+  const verified = await deps.mfaProvider.respondToTotpStepUpChallenge({
+    providerUserRef: input.providerUserRef,
+    challenge: input.providerChallenge,
     code: input.code,
   });
 
