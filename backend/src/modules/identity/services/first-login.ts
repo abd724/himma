@@ -142,7 +142,15 @@ async function attemptFirstLogin(trx: Trx, evidence: ProviderEvidence): Promise<
   // exclusion constraint enforces the same rule under race conditions.
   if (evidence.emailVerified && evidence.email !== undefined) {
     const owner = await findActiveVerifiedEmailOwner(trx, evidence.email);
-    if (owner !== undefined) return { kind: 'verifiedEmailConflict' };
+    if (owner !== undefined) {
+      // READ COMMITTED race: an IDENTICAL concurrent first login may have
+      // committed this same issuer+subject identity between the lookup at
+      // the top and this read — that is convergence, not a conflict.
+      // Re-resolve; the conflict stands only for a truly foreign identity.
+      const raced = await findIdentityByIssuerSubject(trx, evidence.issuer, evidence.subject);
+      if (raced === undefined) return { kind: 'verifiedEmailConflict' };
+      return attemptFirstLogin(trx, evidence);
+    }
   }
 
   const userId = await insertUser(trx);
@@ -185,7 +193,12 @@ export async function firstLogin(
         // is unexpected and propagates.
         return await run();
       case 'verifiedEmailConflict':
-        return { kind: 'verifiedEmailConflict' };
+        // The exclusion constraint can also fire for an IDENTICAL
+        // concurrent first login (same issuer+subject, loser allocated its
+        // own user id). Re-resolve once: the second pass returns the
+        // winner's identity, or a deterministic conflict when the email
+        // truly belongs to a foreign identity.
+        return await run();
       default:
         // Unexpected database failures stay failures (owner directive) —
         // never mislabeled as user-facing conflicts.
