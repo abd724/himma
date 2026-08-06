@@ -19,6 +19,7 @@ import {
   checkSessionLiveness,
   type AuthenticatedSessionPrincipal,
 } from '../services/session-liveness';
+import { resolveAdminRoles, type AdminRole } from '../services/admin-roles';
 import type { AccessTokenVerifier } from '../providers/access-token';
 import { livenessOutcomeName, sendOutcome } from './http-outcomes';
 import { policyOf } from './policies';
@@ -29,11 +30,13 @@ import {
 } from './rate-limiter';
 
 /** Minimum approved request principal: B2-3 session principal + provider
- *  reference + typed EMPTY future authorization slots (never fabricated). */
+ *  reference + Himma-database-resolved admin roles (empty for customers and
+ *  on non-admin routes) + typed empty future org scope. Roles come ONLY
+ *  from `admin_role_assignment` — never from provider claims. */
 export interface RequestPrincipal extends AuthenticatedSessionPrincipal {
   issuer: string;
   subject: string;
-  adminRoles: never[];
+  adminRoles: AdminRole[];
   orgScope: null;
 }
 
@@ -116,11 +119,23 @@ export function installAuthPipeline(app: FastifyInstance, deps: AuthPipelineDeps
       if (!fresh) return sendOutcome(reply, 'stepUpRequired');
     }
 
+    let adminRoles: AdminRole[] = [];
+    if (policy === 'admin') {
+      // Admin surfaces require MFA assurance (docs/23 §7) and at least one
+      // ACTIVE Himma database role, resolved fresh on every request — no
+      // caching, no role material from tokens; changes apply immediately.
+      if (liveness.principal.assurance !== 'mfa') {
+        return sendOutcome(reply, 'mfaRequired');
+      }
+      adminRoles = await resolveAdminRoles({ db: deps.db }, liveness.principal.userId);
+      if (adminRoles.length === 0) return sendOutcome(reply, 'forbidden');
+    }
+
     request.principal = {
       ...liveness.principal,
       issuer: verified.evidence.issuer,
       subject: verified.evidence.subject,
-      adminRoles: [],
+      adminRoles,
       orgScope: null,
     };
   });

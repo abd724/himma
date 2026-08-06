@@ -20,6 +20,9 @@ export const ROUTE_POLICIES = [
   'authenticatedCustomer',
   /** authenticatedCustomer + recent provider authentication (§3.10). */
   'stepUpRequired',
+  /** Live session + MFA assurance + ≥1 active Himma admin role (B2-5).
+   *  Route handlers still check the specific role; deny-by-default holds. */
+  'admin',
 ] as const;
 
 export type RoutePolicy = (typeof ROUTE_POLICIES)[number];

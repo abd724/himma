@@ -2,14 +2,22 @@
 
 exports[`route-policy registry and structural deny-by-default every registered route carries an explicit policy (inventory snapshot) 1`] = `
 [
+  "DELETE /admin/role-assignments/:assignmentId → admin",
   "DELETE /auth/identities/:identityId → stepUpRequired",
   "DELETE /auth/sessions/:sessionId → stepUpRequired",
+  "GET /admin/role-assignments → admin",
+  "GET /admin/role-assignments/:assignmentId → admin",
   "GET /auth/sessions → authenticatedCustomer",
   "GET /internal/health → public",
   "GET /me → authenticatedCustomer",
+  "HEAD /admin/role-assignments → admin",
+  "HEAD /admin/role-assignments/:assignmentId → admin",
   "HEAD /auth/sessions → authenticatedCustomer",
   "HEAD /internal/health → public",
   "HEAD /me → authenticatedCustomer",
+  "POST /admin/role-requests → admin",
+  "POST /admin/role-requests/:assignmentId/approve → admin",
+  "POST /admin/role-requests/:assignmentId/deny → admin",
   "POST /auth/identities/link → stepUpRequired",
   "POST /auth/logout → authenticatedCustomer",
   "POST /auth/logout-all → authenticatedCustomer",

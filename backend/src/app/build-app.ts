@@ -22,6 +22,7 @@ import type { AuthProviderAdapter } from '../modules/identity/providers/adapter'
 import type { AccessTokenVerifier } from '../modules/identity/providers/access-token';
 import type { ProviderSessionRevoker } from '../modules/identity/providers/revocation';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
+import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
 import { installRoutePolicyGuard } from '../modules/identity/http/policies';
 import {
@@ -48,6 +49,12 @@ export interface IdentityHttpOptions {
   enumerationFloorMs?: number;
   rateLimits?: Partial<RateLimitRules>;
   now?: () => number;
+  /**
+   * B2-5 fail-closed boundary: admin routes register only outside
+   * production; forcing them on in production THROWS until B2-6 lands
+   * admin MFA enforcement. Do not flip this before B2-6.
+   */
+  enableAdminRoutes?: boolean;
 }
 
 export interface BuildAppOptions {
@@ -128,6 +135,19 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       rules,
       enumerationFloorMs: identity.enumerationFloorMs ?? DEFAULT_ENUMERATION_FLOOR_MS,
     });
+
+    // Admin surface (B2-5): fail closed in production until B2-6 admin MFA
+    // enforcement exists — absent by default, and explicit enablement in a
+    // production build refuses startup rather than allowing it silently.
+    const nodeEnv = identity.nodeEnv ?? 'development';
+    if (identity.enableAdminRoutes === true && nodeEnv === 'production') {
+      throw new Error(
+        'Admin routes are disabled in production until B2-6 admin MFA enforcement lands (docs/23 §7).',
+      );
+    }
+    if (nodeEnv !== 'production' && identity.enableAdminRoutes !== false) {
+      registerAdminRoutes(app, { db: identity.db });
+    }
   }
 
   return app;

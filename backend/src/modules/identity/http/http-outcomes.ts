@@ -47,6 +47,26 @@ export const HTTP_OUTCOMES = {
     code: 'stepUpRequired',
     message: 'Please re-authenticate to continue.',
   },
+  mfaRequired: {
+    statusCode: 403,
+    code: 'mfaRequired',
+    message: 'Multi-factor authentication is required for this action.',
+  },
+  dualControlViolation: {
+    statusCode: 409,
+    code: 'dualControlViolation',
+    message: 'A different Access Administrator must approve this request.',
+  },
+  roleConflict: {
+    statusCode: 409,
+    code: 'roleConflict',
+    message: 'This role conflicts with a role the user already holds.',
+  },
+  assignmentAlreadyFinalized: {
+    statusCode: 409,
+    code: 'assignmentAlreadyFinalized',
+    message: 'This assignment has already been finalized.',
+  },
   forbidden: {
     statusCode: 403,
     code: 'forbidden',

@@ -15,7 +15,9 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:down": "tsx scripts/db-down.ts",
     "db:verify": "tsx scripts/db-verify.ts",
-    "db:codegen": "tsx scripts/db-codegen.ts"
+    "db:codegen": "tsx scripts/db-codegen.ts",
+    "db:seed-admins": "tsx scripts/db-seed-admins.ts",
+    "bootstrap:admins": "tsx scripts/db-bootstrap-admins.ts"
   },
   "dependencies": {
     "@fastify/type-provider-typebox": "^5.2.0",
