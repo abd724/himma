@@ -225,6 +225,69 @@ describe('first login — resolution and idempotency', () => {
   });
 });
 
+describe('first login — display names are never inferred from email addresses', () => {
+  async function createdAccountName(evidence: ProviderEvidence): Promise<string> {
+    const result = await firstLogin({ db: testDb.db }, { evidence });
+    if (result.kind !== 'newCustomerCreated') throw new Error(result.kind);
+    const account = await testDb.db
+      .selectFrom('customer_account')
+      .select(['display_name'])
+      .where('id', '=', result.accountId)
+      .executeTakeFirstOrThrow();
+    return account.display_name;
+  }
+
+  it('retains a valid provider-supplied display name', async () => {
+    expect(await createdAccountName(makeEvidence({ displayName: 'Noor Haddad' }))).toBe(
+      'Noor Haddad',
+    );
+  });
+
+  it('uses the neutral placeholder when the provider supplies no name — never the email local part', async () => {
+    const evidence = makeEvidence();
+    const name = await createdAccountName(evidence);
+    expect(name).toBe('Customer');
+    expect(name).not.toBe(evidence.email?.split('@')[0]);
+  });
+
+  it('treats Apple private-relay addresses identically: the relay local part is never a name', async () => {
+    const name = await createdAccountName(
+      makeEvidence({
+        provider: 'apple',
+        issuer: 'https://appleid.apple.com',
+        email: 'xk4q2n9@privaterelay.appleid.com',
+        emailVerified: true,
+        isPrivateRelay: true,
+      }),
+    );
+    expect(name).toBe('Customer');
+  });
+
+  it('uses the neutral placeholder for blank or oversized provider names', async () => {
+    expect(await createdAccountName(makeEvidence({ displayName: '   ' }))).toBe('Customer');
+    expect(await createdAccountName(makeEvidence({ displayName: 'x'.repeat(600) }))).toBe(
+      'Customer',
+    );
+  });
+
+  it('a repeat first login never rewrites the stored display name', async () => {
+    const evidence = makeEvidence({ displayName: 'Original Name' });
+    const created = await firstLogin({ db: testDb.db }, { evidence });
+    if (created.kind !== 'newCustomerCreated') throw new Error(created.kind);
+    const repeat = await firstLogin(
+      { db: testDb.db },
+      { evidence: { ...evidence, displayName: 'Different Name' } },
+    );
+    expect(repeat.kind).toBe('identityResolved');
+    const account = await testDb.db
+      .selectFrom('customer_account')
+      .select(['display_name'])
+      .where('id', '=', created.accountId)
+      .executeTakeFirstOrThrow();
+    expect(account.display_name).toBe('Original Name');
+  });
+});
+
 describe('first login — verified-email ownership (no merges, ever)', () => {
   it('refuses a new user claiming an email another user actively verified, without creating anything', async () => {
     const email = `owned-${newId()}@example.test`;

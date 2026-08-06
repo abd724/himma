@@ -71,11 +71,17 @@ export function classifyIdentityWriteError(
   return 'unexpected';
 }
 
-/** Provisional account-name default until W1 onboarding provides real names. */
+/**
+ * Neutral account-name placeholder pending W1 profile onboarding (owner
+ * ruling on the B2-2 correction, 2026-08-06): a person's name is NEVER
+ * inferred from an email address — private-relay and ordinary addresses
+ * alike. Only a validated provider-supplied display name is used; blank or
+ * malformed names were already dropped by evidence validation.
+ */
+const NEUTRAL_DISPLAY_NAME = 'Customer';
+
 function defaultDisplayName(evidence: ProviderEvidence): string {
-  if (evidence.displayName !== undefined) return evidence.displayName;
-  const localPart = evidence.email?.split('@')[0];
-  return localPart !== undefined && localPart.length > 0 ? localPart : 'Customer';
+  return evidence.displayName ?? NEUTRAL_DISPLAY_NAME;
 }
 
 async function createAccountWithEvents(
