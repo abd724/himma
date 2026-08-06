@@ -151,6 +151,60 @@ export interface LoginSession {
   version: Generated<number>;
 }
 
+export interface MfaChallenge {
+  attempt_count: Generated<number>;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  login_session_id: string | null;
+  passed_at: Timestamp | null;
+  purpose: string;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
+export interface MfaMethod {
+  confirmed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  ended_at: Timestamp | null;
+  enrollment_expires_at: Timestamp | null;
+  id: string;
+  kind: string;
+  provider_managed: Generated<boolean>;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
+export interface MfaRecoveryCode {
+  batch_id: string;
+  code_hash: string;
+  consumed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  invalidated_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
+export interface MfaRecoveryCodeBatch {
+  code_count: number;
+  created_at: Generated<Timestamp>;
+  digest_scheme: string;
+  ended_at: Timestamp | null;
+  id: string;
+  issued_at: Generated<Timestamp>;
+  pepper_version: number;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
 export interface OutboxEvent {
   aggregate_id: string;
   aggregate_type: string;
@@ -176,6 +230,19 @@ export interface Participant {
   version: Generated<number>;
 }
 
+export interface StepUpGrant {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  granted_at: Generated<Timestamp>;
+  id: string;
+  invalidated_at: Timestamp | null;
+  login_session_id: string;
+  method: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
 export interface DB {
   admin_role_assignment: AdminRoleAssignment;
   app_user: AppUser;
@@ -187,6 +254,11 @@ export interface DB {
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
   login_session: LoginSession;
+  mfa_challenge: MfaChallenge;
+  mfa_method: MfaMethod;
+  mfa_recovery_code: MfaRecoveryCode;
+  mfa_recovery_code_batch: MfaRecoveryCodeBatch;
   outbox_event: OutboxEvent;
   participant: Participant;
+  step_up_grant: StepUpGrant;
 }

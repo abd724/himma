@@ -241,6 +241,22 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_admin_role_immutability' },
     { kind: 'function', name: 'enforce_finance_activation_controls' },
   ],
+  '0004_mfa_and_step_up_foundation': [
+    { kind: 'table', name: 'mfa_method' },
+    { kind: 'table', name: 'mfa_recovery_code_batch' },
+    { kind: 'table', name: 'mfa_recovery_code' },
+    { kind: 'table', name: 'mfa_challenge' },
+    { kind: 'table', name: 'step_up_grant' },
+    { kind: 'constraint', name: 'uq_login_session_id_user' },
+    { kind: 'function', name: 'enforce_mfa_method_transition' },
+    { kind: 'function', name: 'maintain_mfa_enrolled_mirror' },
+    { kind: 'function', name: 'enforce_mfa_enrolled_consistency' },
+    { kind: 'function', name: 'enforce_mfa_recovery_batch_transition' },
+    { kind: 'function', name: 'enforce_mfa_recovery_code_transition' },
+    { kind: 'function', name: 'cascade_recovery_batch_invalidation' },
+    { kind: 'function', name: 'enforce_mfa_challenge_transition' },
+    { kind: 'function', name: 'enforce_step_up_grant_transition' },
+  ],
 };
 
 export interface VerificationReport {
