@@ -6,8 +6,9 @@ import { colors, fontFamily, radii, shadows, spacing, typography } from '@/theme
 import type { Program } from '@/types/domain';
 import { ageRangeLabel, isChildRelevant, isLadiesOnly, spokenAgeLabel } from '@/utils/eligibility';
 import { formatPrice } from '@/utils/price';
+import { useMidWordFitCap } from '@/utils/text-fit';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 interface Props {
   program: Program;
@@ -18,6 +19,10 @@ interface Props {
   /** Opens Program Details (HMA-015); the favourite toggle stays a sibling. */
   onPress?: () => void;
 }
+
+/** Single source for the title's metrics — the fitting hook derives its
+    scaled sizes from the same values the stylesheet uses. */
+const TITLE_METRICS = { fontSize: 15, lineHeight: 20 };
 
 /**
  * Dense vertical result card — same family and information hierarchy as the
@@ -42,6 +47,11 @@ export function CompactProgramRow({
     : ladies
       ? { label: 'Ladies only', variant: 'eligibility' as const }
       : undefined;
+  // At large font scale on narrow widths the longest title word can exceed
+  // the column and split mid-word ("Beginner C/alisthenics"); the cap only
+  // engages on a detected split and never drops below base size.
+  const { fontScale } = useWindowDimensions();
+  const titleFit = useMidWordFitCap(program.title, TITLE_METRICS, fontScale);
 
   return (
     <View style={styles.card}>
@@ -65,7 +75,14 @@ export function CompactProgramRow({
               ) : null}
             </View>
           ) : null}
-          <Text style={styles.title} numberOfLines={2}>
+          <Text
+            key={titleFit.key}
+            style={[styles.title, titleFit.style]}
+            numberOfLines={2}
+            onTextLayout={titleFit.onTextLayout}
+            adjustsFontSizeToFit={titleFit.adjustsFontSizeToFit}
+            minimumFontScale={titleFit.minimumFontScale}
+          >
             {program.title}
           </Text>
           <View style={styles.providerRow}>
@@ -144,8 +161,7 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.cardTitle,
-    fontSize: 15,
-    lineHeight: 20,
+    ...TITLE_METRICS,
     color: colors.text.primary,
   },
   providerRow: {
