@@ -23,6 +23,11 @@ export type JsonPrimitive = boolean | number | string | null;
 
 export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
+export type Point = {
+  x: number;
+  y: number;
+};
+
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface AdminRoleAssignment {
@@ -99,6 +104,23 @@ export interface BootstrapSeal {
   manifest_digest: string;
   sealed_at: Generated<Timestamp>;
   singleton: Generated<boolean>;
+}
+
+export interface Branch {
+  active: Generated<boolean>;
+  address_line: string | null;
+  area_id: string | null;
+  area_label: string;
+  city: string | null;
+  created_at: Generated<Timestamp>;
+  facilities: Generated<string[]>;
+  geo_point: Point | null;
+  id: string;
+  label: string;
+  opening_hours: Json | null;
+  organization_id: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
 }
 
 export interface CustomerAccount {
@@ -205,6 +227,42 @@ export interface MfaRecoveryCodeBatch {
   version: Generated<number>;
 }
 
+export interface Organization {
+  commercial_terms_ref: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  legal_name: string;
+  offboarded_at: Timestamp | null;
+  org_kind: Generated<string>;
+  origin: Generated<string>;
+  suspended_at: Timestamp | null;
+  trade_name: string;
+  updated_at: Generated<Timestamp>;
+  /**
+   * docs/24 §5.1 lifecycle. Only 'live' organizations can be publicly served, and only together with organization_public_profile.published (docs/27 §3, Amendment A1). Production transitions to verified/live are additionally fail-closed behind the D-S3-3 verificationEvidenceCapabilityReady gate — a SERVICE/API-layer capability arriving with its owning later commit, deliberately not modeled in this schema.
+   */
+  verification_state: Generated<string>;
+  version: Generated<number>;
+}
+
+export interface OrganizationPublicProfile {
+  cover_media_ref: string | null;
+  created_at: Generated<Timestamp>;
+  description_ar: string | null;
+  description_en: string | null;
+  display_name: string;
+  gallery_media_refs: Generated<string[]>;
+  logo_media_ref: string | null;
+  organization_id: string;
+  public_email: string | null;
+  public_instagram: string | null;
+  public_phone: string | null;
+  public_website: string | null;
+  published: Generated<boolean>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface OutboxEvent {
   aggregate_id: string;
   aggregate_type: string;
@@ -250,6 +308,7 @@ export interface DB {
   auth_challenge: AuthChallenge;
   auth_identity: AuthIdentity;
   bootstrap_seal: BootstrapSeal;
+  branch: Branch;
   customer_account: CustomerAccount;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
@@ -258,6 +317,8 @@ export interface DB {
   mfa_method: MfaMethod;
   mfa_recovery_code: MfaRecoveryCode;
   mfa_recovery_code_batch: MfaRecoveryCodeBatch;
+  organization: Organization;
+  organization_public_profile: OrganizationPublicProfile;
   outbox_event: OutboxEvent;
   participant: Participant;
   step_up_grant: StepUpGrant;

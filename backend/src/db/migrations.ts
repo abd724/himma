@@ -257,6 +257,15 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_mfa_challenge_transition' },
     { kind: 'function', name: 'enforce_step_up_grant_transition' },
   ],
+  '0005_provider_organizations': [
+    { kind: 'table', name: 'organization' },
+    { kind: 'table', name: 'organization_public_profile' },
+    { kind: 'table', name: 'branch' },
+    { kind: 'constraint', name: 'uq_branch_id_organization' },
+    { kind: 'function', name: 'enforce_organization_transition' },
+    { kind: 'function', name: 'enforce_org_profile_row_rules' },
+    { kind: 'function', name: 'enforce_branch_row_rules' },
+  ],
 };
 
 export interface VerificationReport {
