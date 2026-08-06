@@ -286,18 +286,27 @@ export async function revokeRoleAssignment(
 }
 
 /** Expiry sweep (docs/26 §7.3): resolution already ignores overdue rows;
- *  this finalizes their state. Audit-only — no approved outbox event. */
+ *  this finalizes their state, emitting the `admin_role.expired` audit and
+ *  outbox events in the SAME transaction as each canonical transition.
+ *  Merely reading an overdue assignment never emits anything — only the
+ *  sweep's active→expired transition does, exactly once per assignment. */
 export async function processExpiredAssignments(
   deps: IdentityServiceDeps,
 ): Promise<{ expiredCount: number }> {
   return withTransaction(deps.db, async (trx) => {
     const expired = await expireDueAssignments(trx);
-    for (const assignmentId of expired) {
+    for (const { id: assignmentId, user_id: targetUserId } of expired) {
       await appendAuditEvent(trx, {
         actorType: 'system',
         action: 'auth.admin_role_expired',
         entityType: 'admin_role_assignment',
         entityId: assignmentId,
+      });
+      await appendOutboxEvent(trx, {
+        aggregateType: 'app_user',
+        aggregateId: targetUserId,
+        eventType: 'admin_role.expired',
+        payload: { assignmentId },
       });
     }
     return { expiredCount: expired.length };

@@ -166,13 +166,33 @@ export async function runProductionBootstrap(
         payload: { assignmentId },
       });
     }
-    await sql`INSERT INTO bootstrap_seal (manifest_digest, executed_by)
-              VALUES (${digest}, ${input.executedBy})`.execute(trx);
+    const seal = await sql<{ sealed_at: Date }>`
+      INSERT INTO bootstrap_seal (manifest_digest, executed_by)
+      VALUES (${digest}, ${input.executedBy})
+      RETURNING sealed_at`.execute(trx);
+    const sealedAt = seal.rows[0]?.sealed_at;
+    if (sealedAt === undefined) throw new Error('bootstrap seal insert returned no row');
     await appendAuditEvent(trx, {
       actorType: 'system',
       action: 'auth.bootstrap_completed',
       entityType: 'bootstrap_seal',
       entityId: digest,
+    });
+    // Completion event, same transaction as the assignments and the seal.
+    // The seal is a singleton keyed by its manifest digest — the digest IS
+    // its safe identifier. Safe identifiers only: no secret, no manifest
+    // contents, no emails (executedBy is the reviewed ticket/operator ref).
+    await appendOutboxEvent(trx, {
+      aggregateType: 'bootstrap_seal',
+      aggregateId: digest,
+      eventType: 'admin.bootstrap.completed',
+      payload: {
+        manifestDigest: digest,
+        assignmentIds: [assignmentA, assignmentB],
+        userIds: [userA, userB],
+        sealedAt: sealedAt.toISOString(),
+        executedBy: input.executedBy,
+      },
     });
     return {
       kind: 'bootstrapCompleted' as const,

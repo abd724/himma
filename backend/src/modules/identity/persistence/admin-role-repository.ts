@@ -156,17 +156,21 @@ export async function listAssignments(
   return query.orderBy('created_at', 'desc').execute();
 }
 
-/** Finalizes active assignments whose expiry passed; returns finalized ids. */
-export async function expireDueAssignments(trx: Trx): Promise<string[]> {
-  const rows = await trx
+/** Finalizes active assignments whose expiry passed; returns the finalized
+ *  rows' identifiers. Row locks make concurrent sweeps converge: a second
+ *  processor re-evaluates the committed `state` and skips already-expired
+ *  rows, so each assignment transitions (and is returned) exactly once. */
+export async function expireDueAssignments(
+  trx: Trx,
+): Promise<{ id: string; user_id: string }[]> {
+  return trx
     .updateTable('admin_role_assignment')
     .set({ state: 'expired' })
     .where('state', '=', 'active')
     .where('expires_at', 'is not', null)
     .where('expires_at', '<=', new Date())
-    .returning('id')
+    .returning(['id', 'user_id'])
     .execute();
-  return rows.map((r) => r.id);
 }
 
 /** Any assignment rows at all (bootstrap zero-state check). */
