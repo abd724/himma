@@ -205,18 +205,33 @@ export async function runMigrationsDown(
   }
 }
 
-/** Foundation objects whose presence `verify` asserts once 0001 is applied. */
-const FOUNDATION_CHECKS: { kind: 'domain' | 'table' | 'function'; name: string }[] = [
-  { kind: 'domain', name: 'money_fils' },
-  { kind: 'domain', name: 'currency_code' },
-  { kind: 'function', name: 'set_updated_at' },
-  { kind: 'function', name: 'bump_row_version' },
-  { kind: 'function', name: 'forbid_mutation' },
-  { kind: 'table', name: 'audit_event' },
-  { kind: 'table', name: 'outbox_event' },
-  { kind: 'table', name: 'inbox_event' },
-  { kind: 'table', name: 'idempotency_key' },
-];
+/** Schema objects whose presence `verify` asserts per applied migration. */
+type SchemaCheck = { kind: 'domain' | 'table' | 'function'; name: string };
+const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
+  '0001_foundation': [
+    { kind: 'domain', name: 'money_fils' },
+    { kind: 'domain', name: 'currency_code' },
+    { kind: 'function', name: 'set_updated_at' },
+    { kind: 'function', name: 'bump_row_version' },
+    { kind: 'function', name: 'forbid_mutation' },
+    { kind: 'table', name: 'audit_event' },
+    { kind: 'table', name: 'outbox_event' },
+    { kind: 'table', name: 'inbox_event' },
+    { kind: 'table', name: 'idempotency_key' },
+  ],
+  '0002_identity': [
+    { kind: 'table', name: 'app_user' },
+    { kind: 'table', name: 'auth_identity' },
+    { kind: 'table', name: 'customer_account' },
+    { kind: 'table', name: 'participant' },
+    { kind: 'table', name: 'login_session' },
+    { kind: 'table', name: 'auth_challenge' },
+    { kind: 'table', name: 'admin_role_assignment' },
+    { kind: 'table', name: 'bootstrap_seal' },
+    { kind: 'function', name: 'enforce_admin_role_exclusivity' },
+    { kind: 'function', name: 'enforce_admin_role_transition' },
+  ],
+};
 
 export interface VerificationReport {
   ok: boolean;
@@ -266,9 +281,11 @@ export async function verifyMigrations(
     // 3. Pending files (informational; verify fails when schema is behind).
     const pending = fileNames.filter((name) => !applied.includes(name));
 
-    // 4. Foundation objects exist once the foundation migration is applied.
-    if (applied.includes('0001_foundation')) {
-      for (const check of FOUNDATION_CHECKS) {
+    // 4. Expected schema objects exist for every applied migration we track.
+    for (const migrationName of applied) {
+      const checks = SCHEMA_CHECKS[migrationName];
+      if (checks === undefined) continue;
+      for (const check of checks) {
         const query =
           check.kind === 'domain'
             ? `SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace

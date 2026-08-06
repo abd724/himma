@@ -97,7 +97,7 @@ describe('migration foundation', () => {
       copyFileSync(path.join(defaultMigrationsDir(), f), path.join(scratchDir, f));
     }
     writeFileSync(
-      path.join(scratchDir, '0002_broken.sql'),
+      path.join(scratchDir, '9999_broken.sql'),
       `-- Up Migration
 CREATE TABLE should_not_survive (id int);
 SELECT 1 / 0;
@@ -117,22 +117,26 @@ DROP TABLE should_not_survive;
       );
       expect(table.rowCount).toBe(0);
       const applied = await client.query(`SELECT name FROM pgmigrations ORDER BY id`);
-      expect(applied.rows.map((r) => r.name)).toEqual(['0001_foundation']);
+      expect(applied.rows.map((r) => r.name)).toEqual(
+        listMigrationFiles().map((f) => f.name),
+      );
     } finally {
       await client.end();
     }
   });
 
-  it('down migration reverts and re-apply restores (development/test only)', async () => {
+  it('down migration reverts the latest migration and re-apply restores (dev/test only)', async () => {
     const scratch = await createMigratedTestDb();
+    const files = listMigrationFiles();
+    const latest = files[files.length - 1]?.name;
     try {
       await runMigrationsDown(scratch.config, { quiet: true });
       const afterDown = await verifyMigrations(scratch.config);
       expect(afterDown.ok).toBe(false);
-      expect(afterDown.pending).toContain('0001_foundation');
+      expect(afterDown.pending).toEqual([latest]);
 
       const reapplied = await runMigrationsUp(scratch.config, { quiet: true });
-      expect(reapplied.applied).toEqual(['0001_foundation']);
+      expect(reapplied.applied).toEqual([latest]);
       const report = await verifyMigrations(scratch.config);
       expect(report.ok).toBe(true);
     } finally {

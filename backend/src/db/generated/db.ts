@@ -25,6 +25,32 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AdminRoleAssignment {
+  approved_by: string | null;
+  created_at: Generated<Timestamp>;
+  denied_by: string | null;
+  expires_at: Timestamp | null;
+  id: string;
+  requested_by: string;
+  revoked_by: string | null;
+  role: string;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
+export interface AppUser {
+  created_at: Generated<Timestamp>;
+  id: string;
+  last_login_at: Timestamp | null;
+  locked_reason: string | null;
+  mfa_enrolled: Generated<boolean>;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface AuditEvent {
   action: string;
   actor_id: string | null;
@@ -37,6 +63,53 @@ export interface AuditEvent {
   occurred_at: Generated<Timestamp>;
   principal_context: string | null;
   request_id: string | null;
+}
+
+export interface AuthChallenge {
+  attempt_count: Generated<number>;
+  auth_identity_id: string;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp | null;
+  id: string;
+  kind: string;
+  requested_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+  version: Generated<number>;
+}
+
+export interface AuthIdentity {
+  created_at: Generated<Timestamp>;
+  email: string | null;
+  email_verified: Generated<boolean>;
+  id: string;
+  is_private_relay: Generated<boolean>;
+  issuer: string;
+  provider: string;
+  status: Generated<string>;
+  subject: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
+export interface BootstrapSeal {
+  executed_by: string;
+  manifest_digest: string;
+  sealed_at: Generated<Timestamp>;
+  singleton: Generated<boolean>;
+}
+
+export interface CustomerAccount {
+  contact_email: string | null;
+  created_at: Generated<Timestamp>;
+  display_name: string;
+  id: string;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
 }
 
 export interface IdempotencyKey {
@@ -59,6 +132,25 @@ export interface InboxEvent {
   processed_at: Generated<Timestamp>;
 }
 
+export interface LoginSession {
+  client_kind: string;
+  created_at: Generated<Timestamp>;
+  device_label: string | null;
+  expires_at: Timestamp;
+  id: string;
+  ip_digest: string | null;
+  last_seen_at: Generated<Timestamp>;
+  origin_jti: string;
+  principal_kind: string;
+  provider_issuer: string;
+  provider_subject: string;
+  revoke_reason: string | null;
+  revoked_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<number>;
+}
+
 export interface OutboxEvent {
   aggregate_id: string;
   aggregate_type: string;
@@ -72,9 +164,29 @@ export interface OutboxEvent {
   sequence_no: Int8;
 }
 
+export interface Participant {
+  account_id: string;
+  created_at: Generated<Timestamp>;
+  date_of_birth: Timestamp | null;
+  first_name: string;
+  id: string;
+  kind: string;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface DB {
+  admin_role_assignment: AdminRoleAssignment;
+  app_user: AppUser;
   audit_event: AuditEvent;
+  auth_challenge: AuthChallenge;
+  auth_identity: AuthIdentity;
+  bootstrap_seal: BootstrapSeal;
+  customer_account: CustomerAccount;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
+  login_session: LoginSession;
   outbox_event: OutboxEvent;
+  participant: Participant;
 }
