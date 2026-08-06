@@ -8,6 +8,7 @@
  */
 export type DbErrorKind =
   | 'uniqueViolation'
+  | 'exclusionViolation'
   | 'checkViolation'
   | 'foreignKeyViolation'
   | 'notNullViolation'
@@ -19,6 +20,7 @@ export type DbErrorKind =
 
 const SQLSTATE_TO_KIND: Record<string, DbErrorKind> = {
   '23505': 'uniqueViolation',
+  '23P01': 'exclusionViolation',
   '23514': 'checkViolation',
   '23503': 'foreignKeyViolation',
   '23502': 'notNullViolation',
