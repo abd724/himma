@@ -1,0 +1,297 @@
+/**
+ * Migration execution and verification (owner ruling 5; docs/25 §9).
+ *
+ * node-pg-migrate applies the numbered SQL files in `migrations/` — each
+ * migration runs in its own transaction and a failed migration aborts the
+ * run with nothing partially applied.
+ *
+ * On top of node-pg-migrate this module enforces the migration policy:
+ * - applied migrations are IMMUTABLE: a sha256 of every applied file is
+ *   recorded in `migration_checksum`; any later edit to an applied file makes
+ *   both `migrate` and `verify` fail closed;
+ * - order is enforced (`checkOrder`) and files must be lexically ordered;
+ * - down migrations are refused in production;
+ * - verification reports pending files, unknown applied rows, order drift,
+ *   checksum drift, and missing foundation objects.
+ */
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { runner } from 'node-pg-migrate';
+import { Client } from 'pg';
+
+import type { BackendConfig, DatabaseConfig } from '../config/env';
+import { assertSafeTestDatabase } from './safety';
+
+export const MIGRATIONS_TABLE = 'pgmigrations';
+export const CHECKSUM_TABLE = 'migration_checksum';
+
+export function defaultMigrationsDir(): string {
+  return path.resolve(__dirname, '..', '..', 'migrations');
+}
+
+export function databaseUrl(db: DatabaseConfig): string {
+  const auth =
+    db.password === undefined
+      ? encodeURIComponent(db.user)
+      : `${encodeURIComponent(db.user)}:${encodeURIComponent(db.password)}`;
+  const host = db.host.includes(':') ? `[${db.host}]` : db.host;
+  return `postgres://${auth}@${host}:${db.port}/${db.database}`;
+}
+
+export interface MigrationFile {
+  /** Migration name as recorded by node-pg-migrate (filename without extension). */
+  name: string;
+  filename: string;
+  sha256: string;
+}
+
+export function listMigrationFiles(dir: string = defaultMigrationsDir()): MigrationFile[] {
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  return files.map((filename) => ({
+    name: filename.replace(/\.sql$/, ''),
+    filename,
+    sha256: createHash('sha256')
+      .update(readFileSync(path.join(dir, filename)))
+      .digest('hex'),
+  }));
+}
+
+async function connect(db: DatabaseConfig): Promise<Client> {
+  const client = new Client({
+    host: db.host,
+    port: db.port,
+    database: db.database,
+    user: db.user,
+    ...(db.password !== undefined ? { password: db.password } : {}),
+  });
+  await client.connect();
+  return client;
+}
+
+async function ensureChecksumTable(client: Client): Promise<void> {
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS ${CHECKSUM_TABLE} (
+       name        text        NOT NULL,
+       sha256      text        NOT NULL,
+       recorded_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT pk_${CHECKSUM_TABLE} PRIMARY KEY (name)
+     )`,
+  );
+}
+
+async function recordedChecksums(client: Client): Promise<Map<string, string>> {
+  const result = await client.query<{ name: string; sha256: string }>(
+    `SELECT name, sha256 FROM ${CHECKSUM_TABLE}`,
+  );
+  return new Map(result.rows.map((r) => [r.name, r.sha256]));
+}
+
+async function appliedMigrations(client: Client): Promise<string[]> {
+  const exists = await client.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_name = $1`,
+    [MIGRATIONS_TABLE],
+  );
+  if (exists.rowCount === 0) return [];
+  const result = await client.query<{ name: string }>(
+    `SELECT name FROM ${MIGRATIONS_TABLE} ORDER BY id`,
+  );
+  return result.rows.map((r) => r.name);
+}
+
+export class MigrationPolicyError extends Error {}
+
+function assertImmutableApplied(
+  files: MigrationFile[],
+  recorded: Map<string, string>,
+): void {
+  const byName = new Map(files.map((f) => [f.name, f]));
+  for (const [name, sha] of recorded) {
+    const file = byName.get(name);
+    if (file === undefined) {
+      throw new MigrationPolicyError(
+        `Applied migration "${name}" is missing from the migrations directory. Applied migrations are immutable — restore the file; never delete or rename applied migrations.`,
+      );
+    }
+    if (file.sha256 !== sha) {
+      throw new MigrationPolicyError(
+        `Applied migration "${name}" has been edited after being applied (checksum mismatch). Applied migrations are immutable — write a new migration instead.`,
+      );
+    }
+  }
+}
+
+export interface MigrateResult {
+  applied: string[];
+}
+
+export async function runMigrationsUp(
+  config: BackendConfig,
+  options: { dir?: string; quiet?: boolean } = {},
+): Promise<MigrateResult> {
+  const dir = options.dir ?? defaultMigrationsDir();
+  if (config.nodeEnv === 'test') assertSafeTestDatabase(config.database);
+  const files = listMigrationFiles(dir);
+  const client = await connect(config.database);
+  try {
+    await ensureChecksumTable(client);
+    assertImmutableApplied(files, await recordedChecksums(client));
+
+    const before = await appliedMigrations(client);
+    await runner({
+      dbClient: client,
+      dir,
+      migrationsTable: MIGRATIONS_TABLE,
+      direction: 'up',
+      checkOrder: true,
+      ...(options.quiet === true
+        ? { log: () => undefined }
+        : {}),
+    });
+    const after = await appliedMigrations(client);
+    const applied = after.filter((name) => !before.includes(name));
+
+    const byName = new Map(files.map((f) => [f.name, f]));
+    for (const name of applied) {
+      const file = byName.get(name);
+      if (file !== undefined) {
+        await client.query(
+          `INSERT INTO ${CHECKSUM_TABLE} (name, sha256) VALUES ($1, $2)
+           ON CONFLICT (name) DO NOTHING`,
+          [name, file.sha256],
+        );
+      }
+    }
+    return { applied };
+  } finally {
+    await client.end();
+  }
+}
+
+export async function runMigrationsDown(
+  config: BackendConfig,
+  options: { dir?: string; count?: number; quiet?: boolean } = {},
+): Promise<void> {
+  if (config.nodeEnv === 'production') {
+    throw new MigrationPolicyError(
+      'Down migrations are forbidden in production (docs/25 §9). Roll forward with a new migration.',
+    );
+  }
+  if (config.nodeEnv === 'test') assertSafeTestDatabase(config.database);
+  const dir = options.dir ?? defaultMigrationsDir();
+  const client = await connect(config.database);
+  try {
+    const before = await appliedMigrations(client);
+    await runner({
+      dbClient: client,
+      dir,
+      migrationsTable: MIGRATIONS_TABLE,
+      direction: 'down',
+      count: options.count ?? 1,
+      checkOrder: true,
+      ...(options.quiet === true ? { log: () => undefined } : {}),
+    });
+    const after = await appliedMigrations(client);
+    const reverted = before.filter((name) => !after.includes(name));
+    await ensureChecksumTable(client);
+    for (const name of reverted) {
+      await client.query(`DELETE FROM ${CHECKSUM_TABLE} WHERE name = $1`, [name]);
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+/** Foundation objects whose presence `verify` asserts once 0001 is applied. */
+const FOUNDATION_CHECKS: { kind: 'domain' | 'table' | 'function'; name: string }[] = [
+  { kind: 'domain', name: 'money_fils' },
+  { kind: 'domain', name: 'currency_code' },
+  { kind: 'function', name: 'set_updated_at' },
+  { kind: 'function', name: 'bump_row_version' },
+  { kind: 'function', name: 'forbid_mutation' },
+  { kind: 'table', name: 'audit_event' },
+  { kind: 'table', name: 'outbox_event' },
+  { kind: 'table', name: 'inbox_event' },
+  { kind: 'table', name: 'idempotency_key' },
+];
+
+export interface VerificationReport {
+  ok: boolean;
+  appliedCount: number;
+  pending: string[];
+  problems: string[];
+}
+
+export async function verifyMigrations(
+  config: BackendConfig,
+  options: { dir?: string } = {},
+): Promise<VerificationReport> {
+  const dir = options.dir ?? defaultMigrationsDir();
+  if (config.nodeEnv === 'test') assertSafeTestDatabase(config.database);
+  const files = listMigrationFiles(dir);
+  const problems: string[] = [];
+  const client = await connect(config.database);
+  try {
+    await ensureChecksumTable(client);
+    const applied = await appliedMigrations(client);
+    const recorded = await recordedChecksums(client);
+    const fileNames = files.map((f) => f.name);
+
+    // 1. Applied rows must be exactly the first N committed files, in order.
+    applied.forEach((name, index) => {
+      if (fileNames[index] !== name) {
+        problems.push(
+          `Applied migration order drift at position ${index + 1}: database has "${name}", files have "${fileNames[index] ?? '(none)'}".`,
+        );
+      }
+    });
+
+    // 2. Checksums of applied files must match the recorded values.
+    try {
+      assertImmutableApplied(files, recorded);
+    } catch (error) {
+      problems.push((error as Error).message);
+    }
+    for (const name of applied) {
+      if (!recorded.has(name)) {
+        problems.push(
+          `Applied migration "${name}" has no recorded checksum — run \`npm run db:migrate\` (which records checksums) instead of invoking node-pg-migrate directly.`,
+        );
+      }
+    }
+
+    // 3. Pending files (informational; verify fails when schema is behind).
+    const pending = fileNames.filter((name) => !applied.includes(name));
+
+    // 4. Foundation objects exist once the foundation migration is applied.
+    if (applied.includes('0001_foundation')) {
+      for (const check of FOUNDATION_CHECKS) {
+        const query =
+          check.kind === 'domain'
+            ? `SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+               WHERE t.typtype = 'd' AND t.typname = $1 AND n.nspname = 'public'`
+            : check.kind === 'function'
+              ? `SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                 WHERE p.proname = $1 AND n.nspname = 'public'`
+              : `SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = 'public' AND table_name = $1`;
+        const result = await client.query(query, [check.name]);
+        if (result.rowCount === 0) {
+          problems.push(`Missing foundation ${check.kind}: ${check.name}`);
+        }
+      }
+    }
+
+    return {
+      ok: problems.length === 0 && pending.length === 0,
+      appliedCount: applied.length,
+      pending,
+      problems,
+    };
+  } finally {
+    await client.end();
+  }
+}
