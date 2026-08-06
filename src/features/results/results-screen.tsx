@@ -289,7 +289,16 @@ export function ResultsScreen() {
                   onPress={() => session.setTab(tab.id)}
                   style={[styles.tab, selected && styles.tabSelected]}
                 >
-                  <Text style={[styles.tabLabel, selected && styles.tabLabelSelected]}>
+                  {/* Whole labels only in the fixed-width segments: at large
+                      font scale the label shrinks toward (never below) its
+                      base size instead of breaking mid-word (audit defect
+                      A3; docs/12 §4 dense-control allowance). */}
+                  <Text
+                    style={[styles.tabLabel, selected && styles.tabLabelSelected]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
                     {tab.label}
                   </Text>
                 </PressableFeedback>
@@ -724,6 +733,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.button - 4,
     alignItems: 'center',
     justifyContent: 'center',
+    // Keeps fitted labels visually separated at large font scale (A3).
+    paddingHorizontal: 4,
   },
   tabSelected: {
     backgroundColor: colors.brand.primary,
