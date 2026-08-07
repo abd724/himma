@@ -28,6 +28,8 @@ import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-m
 import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-taxonomy-routes';
 import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
 import { registerPublicCatalogueRoutes } from '../modules/catalogue/http/public-catalogue-routes';
+import { registerSearchRoutes } from '../modules/catalogue/http/search-routes';
+import { PostgresSearchReadPort } from '../modules/catalogue/services/search-read-port';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
@@ -283,6 +285,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // live authoritative state, registered unconditionally with the
     // identity surface. Reads only; no search surface exists yet.
     registerPublicCatalogueRoutes(app, { db: identity.db });
+
+    // Customer-public search (Slice 4, docs/28 §16.1): the HTTP layer
+    // depends on the SearchReadPort boundary only; PostgreSQL is the
+    // launch engine behind it (docs/28 §12). Public read, registered
+    // unconditionally like the other public projections.
+    registerSearchRoutes(app, {
+      searchPort: new PostgresSearchReadPort({ db: identity.db }),
+    });
 
     // Provider-private management surface (S3-3). D-S3-5 makes the MFA
     // baseline mandatory on every provider route, and production TOTP

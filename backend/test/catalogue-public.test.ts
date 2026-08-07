@@ -842,7 +842,7 @@ describe('structural public/private separation and route inventory', () => {
     }
   });
 
-  it('the inventory gains exactly the six public catalogue GET routes — no search, no public mutation', () => {
+  it('the inventory gains exactly the six public catalogue GET routes — no public mutation', () => {
     const publicCatalogue = app.routePolicyInventory.filter(
       (route) =>
         route.method !== 'HEAD' &&
@@ -865,10 +865,8 @@ describe('structural public/private separation and route inventory', () => {
     for (const route of app.routePolicyInventory.filter((r) => r.policy === 'public')) {
       expect(['GET', 'HEAD']).toContain(route.method);
     }
-    // No search surface of any kind exists yet (that is the NEXT commit).
-    expect(
-      app.routePolicyInventory.filter((route) => /search/i.test(route.url)),
-    ).toEqual([]);
+    // The search surface (GET /search) arrived with the owner-approved
+    // search-foundation task and is locked by catalogue-search.test.ts.
   });
 
   it('the S3-4 public storefront contract is untouched by the listings composition', async () => {

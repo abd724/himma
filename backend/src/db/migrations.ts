@@ -278,6 +278,11 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_staff_scope_row' },
     { kind: 'function', name: 'enforce_staff_scope_completeness' },
   ],
+  '0010_search': [
+    { kind: 'extension', name: 'pg_trgm' },
+    { kind: 'table', name: 'program_search_document' },
+    { kind: 'function', name: 'enforce_search_document_rules' },
+  ],
 };
 
 export interface VerificationReport {

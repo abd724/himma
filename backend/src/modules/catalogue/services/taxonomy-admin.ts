@@ -26,6 +26,10 @@ import type { Trx } from '../../../db/transaction';
 import { withTransaction } from '../../../db/transaction';
 import { appendOutboxEvent } from '../../../outbox/outbox';
 import { hasOperationsRole } from './moderation';
+import {
+  refreshActivityTypeSearchDocumentsInTrx,
+  refreshCategorySearchDocumentsInTrx,
+} from './search-projection';
 
 export interface TaxonomyAdminDeps {
   db: Db;
@@ -461,6 +465,9 @@ export async function updateCategory(
       .select(CATEGORY_COLUMNS)
       .where('id', '=', input.categoryId)
       .executeTakeFirstOrThrow();
+    // Category labels feed search vectors — same-transaction refresh of
+    // every document under the category (docs/28 §13a).
+    await refreshCategorySearchDocumentsInTrx(trx, input.categoryId);
     return { kind: 'categoryUpdated' as const, category: toCategoryView(row) };
   });
 }
@@ -573,6 +580,9 @@ export async function updateActivityType(
       .select(TYPE_COLUMNS)
       .where('id', '=', input.activityTypeId)
       .executeTakeFirstOrThrow();
+    // Type labels/synonyms feed search vectors — same-transaction refresh
+    // (docs/28 §13a). Deactivation never hides existing published listings.
+    await refreshActivityTypeSearchDocumentsInTrx(trx, input.activityTypeId);
     return { kind: 'activityTypeUpdated' as const, activityType: toTypeView(row) };
   });
 }

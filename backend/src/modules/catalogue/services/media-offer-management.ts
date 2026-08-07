@@ -25,6 +25,7 @@ import {
   type ProgramMediaView,
 } from './catalogue-shared';
 import { emitListingEvent } from './program-management';
+import { refreshProgramSearchDocumentsInTrx } from './search-projection';
 
 type ProgramGate =
   | { kind: 'ok' }
@@ -345,6 +346,9 @@ export async function addOffer(
       .select(OFFER_COLUMNS)
       .where('id', '=', id)
       .executeTakeFirstOrThrow();
+    // Trial offers feed the search projection (has_trial) — same
+    // transaction per docs/28 §13a.
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'offerAdded' as const, offer: toOfferView(created) };
   });
 }
@@ -428,6 +432,7 @@ export async function updateOffer(
       .select(OFFER_COLUMNS)
       .where('id', '=', input.offerId)
       .executeTakeFirstOrThrow();
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'offerUpdated' as const, offer: toOfferView(row) };
   });
 }
@@ -469,6 +474,7 @@ export async function endOffer(
     await emitListingEvent(trx, actor, scope, input.programId, 'offer.ended', 'offer.ended', {
       offerId: input.offerId,
     });
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'offerEnded' as const };
   });
 }

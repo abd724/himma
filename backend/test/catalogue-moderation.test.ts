@@ -676,14 +676,14 @@ describe('event payload hygiene and route boundary', () => {
     for (const route of moderation) {
       expect(route.policy).toBe('admin');
     }
-    // Still no search or session/booking/payment surface. (The Slice-2
-    // /auth/session identity routes are the AUTH session store — not the
-    // booking-domain Session; /admin/taxonomy and the customer-public
-    // /listings, /catalogue/*, and /providers/:id/listings reads arrived
+    // Still no session/booking/payment surface. (The Slice-2 /auth/session
+    // identity routes are the AUTH session store — not the booking-domain
+    // Session; /admin/taxonomy and the customer-public /listings,
+    // /catalogue/*, /providers/:id/listings, and /search reads arrived
     // legitimately with their own owner-approved tasks and are locked by
     // their own suites.)
     const forbidden = app.routePolicyInventory.filter((route) =>
-      /^\/(programs|search|sessions|bookings|payments)([/?]|$)/.test(route.url),
+      /^\/(programs|sessions|bookings|payments)([/?]|$)/.test(route.url),
     );
     expect(forbidden).toEqual([]);
   });

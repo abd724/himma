@@ -474,6 +474,39 @@ export interface ProgramRevision {
   version: Generated<number>;
 }
 
+export interface ProgramSearchDocument {
+  active: Generated<boolean>;
+  activity_type_id: string;
+  all_ages: Generated<boolean>;
+  area_ids: Generated<string[]>;
+  branch_ids: Generated<string[]>;
+  category_id: string;
+  created_at: Generated<Timestamp>;
+  display_name: string;
+  gender_eligibility: string;
+  has_trial: Generated<boolean>;
+  max_age: number | null;
+  min_age: number | null;
+  /**
+   * MIN(amount_fils) over the listing's ACTIVE paid options — filter/sort metadata derived per docs/28 §14, never an authoritative Program price (none exists; PriceQuote remains booking-time truth).
+   */
+  min_price_fils: Int8 | null;
+  organization_id: string;
+  price_kinds: Generated<string[]>;
+  program_id: string;
+  published_at: Timestamp;
+  rebuilt_at: Generated<Timestamp>;
+  /**
+   * English launch configuration (docs/28 §12): setweight A=title_en, B=activity-type label+synonyms_en, C=category label, D=storefront display name. Arabic arrives as an additive configuration (docs/24 §14.B12).
+   */
+  search_vector: string;
+  setting: string;
+  skill_level: string | null;
+  title_en: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface StaffInvitation {
   accepted_at: Timestamp | null;
   accepted_by: string | null;
@@ -570,6 +603,7 @@ export interface DB {
   program_media: ProgramMedia;
   program_price_option: ProgramPriceOption;
   program_revision: ProgramRevision;
+  program_search_document: ProgramSearchDocument;
   staff_invitation: StaffInvitation;
   staff_membership: StaffMembership;
   staff_membership_branch: StaffMembershipBranch;

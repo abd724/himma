@@ -31,6 +31,7 @@ import {
   loadProgramDetailInTrx,
 } from './program-management';
 import { optionShapeValid, type PriceOptionKind } from './price-option-management';
+import { refreshProgramSearchDocumentsInTrx } from './search-projection';
 import type { ProgramDetailView } from './catalogue-shared';
 
 export interface ModerationDeps {
@@ -785,6 +786,9 @@ export async function approveRevision(
         ...(newOptionId !== undefined ? { newOptionId } : {}),
       },
     );
+    // Sensitive-revision application is publish-affecting — the search
+    // projection refreshes in the SAME transaction (docs/28 §13a).
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return {
       kind: 'revisionApproved' as const,
       programVersion: updatedProgram.version,

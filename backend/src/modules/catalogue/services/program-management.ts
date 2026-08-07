@@ -33,6 +33,7 @@ import {
   type ProgramDetailView,
   type ProgramSummaryView,
 } from './catalogue-shared';
+import { refreshProgramSearchDocumentsInTrx } from './search-projection';
 
 // -- shared emit helpers ------------------------------------------------------
 
@@ -649,6 +650,9 @@ export async function updateProgram(
       }
       const revision = await createSensitiveRevision(trx, scope, actor, input.programId, changes);
       if (revision.kind === 'revisionPending') return { kind: 'revisionPending' as const };
+      // Direct fields (if any) were applied above — keep the projection in
+      // step within the same transaction (docs/28 §13a).
+      await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
       return {
         kind: 'revisionSubmitted' as const,
         revisionId: revision.revisionId,
@@ -656,6 +660,7 @@ export async function updateProgram(
         deferredFields,
       };
     }
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'programUpdated' as const, version };
   });
 }
@@ -787,6 +792,7 @@ export async function publishProgram(
     await emitListingEvent(trx, actor, scope, input.programId, 'listing.published', 'listing.published', {
       previousState: program.listing_state,
     });
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'programPublished' as const, version: updated.version };
   });
 }
@@ -817,6 +823,7 @@ export async function pauseProgram(
       .executeTakeFirst();
     if (updated === undefined) return { kind: 'staleVersion' as const };
     await emitListingEvent(trx, actor, scope, input.programId, 'listing.paused', 'listing.paused');
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'programPaused' as const, version: updated.version };
   });
 }
@@ -848,6 +855,7 @@ export async function archiveProgram(
       .executeTakeFirst();
     if (updated.numUpdatedRows !== 1n) return { kind: 'staleVersion' as const };
     await emitListingEvent(trx, actor, scope, input.programId, 'listing.archived', 'listing.archived');
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'programArchived' as const };
   });
 }
@@ -924,6 +932,7 @@ export async function addProgramBranch(
       'listing.branch_association_changed',
       { branchId: input.branchId, active: true },
     );
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'branchAssociated' as const };
   });
 }
@@ -975,6 +984,7 @@ export async function removeProgramBranch(
       'listing.branch_association_changed',
       { branchId: input.branchId, active: false },
     );
+    await refreshProgramSearchDocumentsInTrx(trx, [input.programId]);
     return { kind: 'branchAssociationRemoved' as const };
   });
 }

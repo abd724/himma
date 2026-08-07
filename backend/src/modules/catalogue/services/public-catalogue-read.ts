@@ -275,11 +275,15 @@ const LISTING_ROW_COLUMNS = [
   'category.label_ar as category_label_ar',
 ] as const;
 
-/** The §6 compound visibility predicate, evaluated live on every request:
- *  one fully-typed base query rooted at `program`, joined only to the
- *  approved public sources. Every column named here is in
- *  PUBLIC_LISTING_SOURCES. */
-function visibleListingQuery(trx: Trx) {
+/**
+ * THE single definition of customer-public listing visibility (docs/28 §6),
+ * as a reusable id subquery over live authoritative state: published
+ * listing AND live organization AND published storefront AND ≥ 1 active
+ * association to an active branch. The detail/storefront reads AND the
+ * search read-port all consume this one predicate — search documents are
+ * never trusted for visibility (docs/28 §13c).
+ */
+export function visibleProgramIds(trx: Trx) {
   return trx
     .selectFrom('program')
     .innerJoin('organization', 'organization.id', 'program.organization_id')
@@ -288,9 +292,7 @@ function visibleListingQuery(trx: Trx) {
       'organization_public_profile.organization_id',
       'program.organization_id',
     )
-    .innerJoin('activity_type', 'activity_type.id', 'program.activity_type_id')
-    .innerJoin('category', 'category.id', 'activity_type.category_id')
-    .select(LISTING_ROW_COLUMNS)
+    .select('program.id')
     .where('program.listing_state', '=', 'published')
     .where('organization.verification_state', '=', 'live')
     .where('organization_public_profile.published', '=', true)
@@ -304,6 +306,24 @@ function visibleListingQuery(trx: Trx) {
           .where('branch.active', '=', true),
       ),
     );
+}
+
+/** Visible-listing base query: the §6 predicate (via visibleProgramIds)
+ *  joined to the approved public column sources. Every column named here
+ *  is in PUBLIC_LISTING_SOURCES. */
+function visibleListingQuery(trx: Trx) {
+  return trx
+    .selectFrom('program')
+    .innerJoin('organization', 'organization.id', 'program.organization_id')
+    .innerJoin(
+      'organization_public_profile',
+      'organization_public_profile.organization_id',
+      'program.organization_id',
+    )
+    .innerJoin('activity_type', 'activity_type.id', 'program.activity_type_id')
+    .innerJoin('category', 'category.id', 'activity_type.category_id')
+    .select(LISTING_ROW_COLUMNS)
+    .where('program.id', 'in', visibleProgramIds(trx));
 }
 
 interface ListingRow {
@@ -587,57 +607,105 @@ export async function listStorefrontListings(
     }
     const rows: ListingRow[] = await pageQuery.execute();
     const page = rows.slice(0, limit);
-    const programIds = page.map((row) => row.id);
-
-    const [options, media, offers] = [
-      await activeOptionsFor(trx, programIds),
-      await activeMediaFor(trx, programIds),
-      await currentOffersFor(trx, programIds),
-    ];
-    const optionsByProgram = new Map<string, PublicPriceOptionView[]>();
-    for (const row of options) {
-      const list = optionsByProgram.get(row.program_id) ?? [];
-      list.push(toOptionView(row));
-      optionsByProgram.set(row.program_id, list);
-    }
-    const mediaByProgram = new Map<string, PublicMediaView[]>();
-    for (const row of media) {
-      const list = mediaByProgram.get(row.program_id) ?? [];
-      list.push(toMediaView(row));
-      mediaByProgram.set(row.program_id, list);
-    }
-    const badgesByProgram = new Map<string, string[]>();
-    for (const row of offers) {
-      const badges = badgesByProgram.get(row.program_id) ?? [];
-      if (!badges.includes(row.kind)) badges.push(row.kind);
-      badgesByProgram.set(row.program_id, badges);
-    }
+    const summarized = await summarizeListingRowsInTrx(trx, page);
 
     return {
       kind: 'listings' as const,
       provider: { id: storefront.id, displayName: storefront.display_name },
-      listings: page.map((row) => {
-        const optionViews = optionsByProgram.get(row.id) ?? [];
-        return {
-          id: row.id,
-          titleEn: row.title_en,
-          titleAr: row.title_ar,
-          setting: row.setting,
-          minAge: row.min_age,
-          maxAge: row.max_age,
-          allAges: row.all_ages,
-          genderEligibility: row.gender_eligibility,
-          skillLevel: row.skill_level,
-          ...toTaxonomyRefs(row),
-          media: mediaByProgram.get(row.id) ?? [],
-          fromPrice: deriveFromPrice(optionViews),
-          offerBadges: (badgesByProgram.get(row.id) ?? []).sort(),
-        };
-      }),
+      listings: summarized.map((entry) => entry.summary),
       nextCursor:
         rows.length > limit ? encodeListingCursor(page[page.length - 1]!.id) : null,
     };
   });
+}
+
+// -- shared public summary hydration (storefront listings + search) -----------
+
+export interface PublicProviderRef {
+  id: string;
+  displayName: string;
+}
+
+/** A search result is the public listing summary plus the provider
+ *  storefront identity every result must navigate back to (Amendment A1). */
+export interface PublicSearchResult extends PublicListingSummary {
+  provider: PublicProviderRef;
+}
+
+/** Builds the public summary projection (+ provider identity) for visible
+ *  listing rows, preserving the given row order. */
+async function summarizeListingRowsInTrx(
+  trx: Trx,
+  rows: ListingRow[],
+): Promise<{ summary: PublicListingSummary; provider: PublicProviderRef }[]> {
+  const programIds = rows.map((row) => row.id);
+  const [options, media, offers] = [
+    await activeOptionsFor(trx, programIds),
+    await activeMediaFor(trx, programIds),
+    await currentOffersFor(trx, programIds),
+  ];
+  const optionsByProgram = new Map<string, PublicPriceOptionView[]>();
+  for (const row of options) {
+    const list = optionsByProgram.get(row.program_id) ?? [];
+    list.push(toOptionView(row));
+    optionsByProgram.set(row.program_id, list);
+  }
+  const mediaByProgram = new Map<string, PublicMediaView[]>();
+  for (const row of media) {
+    const list = mediaByProgram.get(row.program_id) ?? [];
+    list.push(toMediaView(row));
+    mediaByProgram.set(row.program_id, list);
+  }
+  const badgesByProgram = new Map<string, string[]>();
+  for (const row of offers) {
+    const badges = badgesByProgram.get(row.program_id) ?? [];
+    if (!badges.includes(row.kind)) badges.push(row.kind);
+    badgesByProgram.set(row.program_id, badges);
+  }
+
+  return rows.map((row) => {
+    const optionViews = optionsByProgram.get(row.id) ?? [];
+    return {
+      provider: { id: row.organization_id, displayName: row.display_name },
+      summary: {
+        id: row.id,
+        titleEn: row.title_en,
+        titleAr: row.title_ar,
+        setting: row.setting,
+        minAge: row.min_age,
+        maxAge: row.max_age,
+        allAges: row.all_ages,
+        genderEligibility: row.gender_eligibility,
+        skillLevel: row.skill_level,
+        ...toTaxonomyRefs(row),
+        media: mediaByProgram.get(row.id) ?? [],
+        fromPrice: deriveFromPrice(optionViews),
+        offerBadges: (badgesByProgram.get(row.id) ?? []).sort(),
+      },
+    };
+  });
+}
+
+/**
+ * Hydrates public search results for ranked program ids, preserving the
+ * given order. Rows are re-read through visibleListingQuery, so the §6
+ * predicate applies AGAIN at hydration time — an id from a stale search
+ * document simply drops out.
+ */
+export async function loadPublicSearchResultsInTrx(
+  trx: Trx,
+  programIds: string[],
+): Promise<PublicSearchResult[]> {
+  if (programIds.length === 0) return [];
+  const rows: ListingRow[] = await visibleListingQuery(trx)
+    .where('program.id', 'in', programIds)
+    .execute();
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const ordered = programIds
+    .map((id) => byId.get(id))
+    .filter((row): row is ListingRow => row !== undefined);
+  const summarized = await summarizeListingRowsInTrx(trx, ordered);
+  return summarized.map((entry) => ({ ...entry.summary, provider: entry.provider }));
 }
 
 // -- public taxonomy reads (docs/28 §16.1; D-S4-3) ----------------------------
