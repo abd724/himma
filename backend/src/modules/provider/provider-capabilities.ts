@@ -43,18 +43,36 @@ export const ACTIVE_PROVIDER_CAPABILITIES = [
   'staff.manage',
   /** draft/rejected → submitted lifecycle edge — owner (docs/27 §10). */
   'org.submit',
+  // -- Slice-4 catalogue activation (docs/28 §1.5, §6; D-S4-2) ------------
+  /** Provider-private catalogue read (own listings incl. drafts) — owner,
+   *  org_manager, branch_manager (scoped), listings_editor. */
+  'catalogue.read',
+  /** Listing create/edit/submit + price-option, offer, and branch-
+   *  association management — owner, org_manager, listings_editor;
+   *  branch_manager within branch scope only (service-enforced). Offer
+   *  management rides this capability: docs/28 §1.5 activates exactly
+   *  `listings.manage`, `media.manage`, `listings.publish`, and
+   *  `catalogue.read` — `offers.manage` stays reserved. */
+  'listings.manage',
+  /** Publish/unpublish/pause/archive — Owner + Organization Manager ONLY
+   *  (D-S4-2). Listings Editor never publishes; Branch Manager holds no
+   *  publication authority. */
+  'listings.publish',
+  /** Listing media-reference metadata management (references only). */
+  'media.manage',
 ] as const;
 
 export type ProviderCapability = (typeof ACTIVE_PROVIDER_CAPABILITIES)[number];
 
-/** Approved future vocabulary — named, typed, and INERT in Slice 3. */
+/** Approved future vocabulary — named, typed, and INERT until the owning
+ *  slice activates an entry by MOVING it into the active set (S4-2 moved
+ *  `listings.manage` + `media.manage` and added `listings.publish` +
+ *  `catalogue.read` per docs/28 §1.5). */
 export const RESERVED_PROVIDER_CAPABILITIES = [
-  'listings.manage',
   'schedules.manage',
   'sessions.manage',
   'capacity.manage',
   'offers.manage',
-  'media.manage',
   'bulk_import.run',
   'bookings.view',
   'reports.view',
@@ -69,7 +87,10 @@ export const RESERVED_PROVIDER_CAPABILITIES = [
 export type ReservedProviderCapability =
   (typeof RESERVED_PROVIDER_CAPABILITIES)[number];
 
-/** Role → ACTIVE capabilities (docs/27 §6, Slice-3-active column). */
+/** Role → ACTIVE capabilities (docs/27 §6 Slice-3 column + the docs/28 §6
+ *  Slice-4 catalogue activation; D-S4-2 publication matrix). Coach, Front
+ *  Desk, and Finance gain NO catalogue capability — Finance acquires nothing
+ *  merely because price options carry monetary catalogue metadata. */
 export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderCapability[]> = {
   owner: [
     'org.read',
@@ -82,6 +103,10 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'staff.read',
     'staff.manage',
     'org.submit',
+    'catalogue.read',
+    'listings.manage',
+    'listings.publish',
+    'media.manage',
   ],
   org_manager: [
     'org.read',
@@ -90,9 +115,26 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'branch.create',
     'branch.edit',
     'branch.deactivate',
+    'catalogue.read',
+    'listings.manage',
+    'listings.publish',
+    'media.manage',
   ],
-  branch_manager: ['org.read', 'org.legal.view', 'branch.edit'],
-  listings_editor: ['org.read', 'org.legal.view'],
+  branch_manager: [
+    'org.read',
+    'org.legal.view',
+    'branch.edit',
+    'catalogue.read',
+    'listings.manage',
+    'media.manage',
+  ],
+  listings_editor: [
+    'org.read',
+    'org.legal.view',
+    'catalogue.read',
+    'listings.manage',
+    'media.manage',
+  ],
   coach: ['org.read'],
   front_desk: ['org.read', 'org.legal.view'],
   finance: ['org.read', 'org.legal.view'],
@@ -110,7 +152,6 @@ export const PROVIDER_ROLE_RESERVED_CAPABILITIES: Record<
 > = {
   owner: ['payout_bank_details.manage'],
   org_manager: [
-    'listings.manage',
     'schedules.manage',
     'sessions.manage',
     'capacity.manage',
@@ -120,7 +161,6 @@ export const PROVIDER_ROLE_RESERVED_CAPABILITIES: Record<
     'bulk_import.run',
   ],
   branch_manager: [
-    'listings.manage',
     'schedules.manage',
     'sessions.manage',
     'capacity.manage',
@@ -128,7 +168,7 @@ export const PROVIDER_ROLE_RESERVED_CAPABILITIES: Record<
     'bookings.view',
     'reports.view',
   ],
-  listings_editor: ['listings.manage', 'schedules.manage', 'media.manage', 'bulk_import.run'],
+  listings_editor: ['schedules.manage', 'bulk_import.run'],
   coach: ['roster.view', 'attendance.manage'],
   front_desk: ['sessions.manage', 'attendance.manage', 'bookings.view'],
   finance: ['statements.view', 'payouts.view', 'refund_reports.view'],

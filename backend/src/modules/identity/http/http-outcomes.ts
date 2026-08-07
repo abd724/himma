@@ -134,6 +134,36 @@ export const HTTP_OUTCOMES = {
     code: 'lifecycleConflict',
     message: "This action is not available in the resource's current state.",
   },
+  organizationNotLive: {
+    statusCode: 409,
+    code: 'organizationNotLive',
+    message: 'The organization must be live before listings can be published.',
+  },
+  revisionPending: {
+    statusCode: 409,
+    code: 'revisionPending',
+    message: 'A pending revision already exists for this listing. Wait for its review to finish.',
+  },
+  invalidTaxonomy: {
+    statusCode: 422,
+    code: 'invalidTaxonomy',
+    message: 'The selected category or activity type is not available.',
+  },
+  invalidEligibility: {
+    statusCode: 422,
+    code: 'invalidEligibility',
+    message: 'The eligibility values are contradictory or out of range.',
+  },
+  invalidPriceOption: {
+    statusCode: 422,
+    code: 'invalidPriceOption',
+    message: 'The price option shape is invalid for its kind.',
+  },
+  invalidOffer: {
+    statusCode: 422,
+    code: 'invalidOffer',
+    message: 'The offer shape is invalid for its kind or effective period.',
+  },
   verificationEvidenceUnavailable: {
     statusCode: 503,
     code: 'verificationEvidenceUnavailable',

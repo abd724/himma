@@ -24,6 +24,7 @@ import type { ProviderSessionRevoker } from '../modules/identity/providers/revoc
 import type { MfaProviderPort } from '../modules/identity/providers/mfa';
 import type { MfaConfig } from '../modules/identity/services/mfa-config';
 import type { StaffInvitationConfig } from '../modules/provider/staff-invitation-config';
+import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
@@ -294,9 +295,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         }
         if (ready && identity.enableProviderRoutes !== false) {
           registerProviderRoutes(app, providerDeps);
+          // Provider catalogue management (S4-2, docs/28 §16.2) shares the
+          // provider surface's production capability gate: same MFA
+          // baseline, same fail-closed activation, no bypass.
+          registerCatalogueRoutes(app, { db: identity.db });
         }
       } else if (identity.enableProviderRoutes !== false) {
         registerProviderRoutes(app, providerDeps);
+        registerCatalogueRoutes(app, { db: identity.db });
       }
     }
   }
