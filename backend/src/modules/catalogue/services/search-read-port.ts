@@ -283,7 +283,21 @@ export class PostgresSearchReadPort implements SearchReadPort {
         conditions.push(sql`'free' = ANY(psd.price_kinds)`);
       }
       if (filters.trial === true) {
-        conditions.push(sql`psd.has_trial`);
+        // LIVE evaluation, not the projected has_trial boolean: an offer's
+        // effective window opens/closes by pure time passage, which emits
+        // no mutation event — the projected flag is refresh-time metadata
+        // and would go stale at every window boundary. Same live-truth
+        // discipline as the visibility predicate (docs/28 §13c).
+        conditions.push(
+          sql`EXISTS (
+            SELECT 1 FROM offer f
+            WHERE f.program_id = psd.program_id
+              AND f.state = 'active'
+              AND f.kind IN ('freeTrial', 'paidTrial')
+              AND (f.effective_start IS NULL OR f.effective_start <= now())
+              AND (f.effective_end IS NULL OR f.effective_end > now())
+          )`,
+        );
       }
       if (filters.skillLevel !== undefined) {
         conditions.push(
