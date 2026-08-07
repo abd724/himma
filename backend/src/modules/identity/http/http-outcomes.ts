@@ -103,6 +103,37 @@ export const HTTP_OUTCOMES = {
     code: 'staleVersion',
     message: 'The resource changed since you loaded it. Refresh and try again.',
   },
+  organizationSuspended: {
+    statusCode: 403,
+    code: 'organizationSuspended',
+    message: 'This organization is currently suspended. Changes are unavailable.',
+  },
+  organizationIncomplete: {
+    statusCode: 409,
+    code: 'organizationIncomplete',
+    message:
+      'The organization is not ready for submission. Complete the profile and add at least one branch.',
+  },
+  lastOwnerProtected: {
+    statusCode: 409,
+    code: 'lastOwnerProtected',
+    message: 'An organization must keep at least one active Owner.',
+  },
+  invitationInvalid: {
+    statusCode: 400,
+    code: 'invitationInvalid',
+    message: 'This invitation is not valid for this account.',
+  },
+  invalidBranchScope: {
+    statusCode: 422,
+    code: 'invalidBranchScope',
+    message: 'Branch scope must reference active branches of this organization.',
+  },
+  lifecycleConflict: {
+    statusCode: 409,
+    code: 'lifecycleConflict',
+    message: "This action is not available in the resource's current state.",
+  },
   rateLimited: {
     statusCode: 429,
     code: 'rateLimited',

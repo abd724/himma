@@ -9,6 +9,7 @@
 import { buildApp } from '../src/app/build-app';
 import { FakeMfaProvider } from '../src/modules/identity/providers/fake/fake-mfa-provider';
 import { parseMfaConfig } from '../src/modules/identity/services/mfa-config';
+import { parseStaffInvitationConfig } from '../src/modules/provider/staff-invitation-config';
 import type { FastifyInstance } from 'fastify';
 
 import { FakeAccessTokenVerifier } from '../src/modules/identity/providers/fake/fake-access-token-verifier';
@@ -43,6 +44,8 @@ beforeAll(async () => {
       // B2-6C: the canonical inventory snapshot covers the MFA surface too.
       mfaProvider: new FakeMfaProvider(),
       mfaConfig: parseMfaConfig('test', {}),
+      // S3-3: and the provider-private management surface.
+      staffInvitationConfig: parseStaffInvitationConfig('test', {}),
     },
   });
   await app.ready();
@@ -100,7 +103,7 @@ describe('route-policy registry and structural deny-by-default', () => {
     expect(inventory.length).toBeGreaterThan(0);
     for (const line of inventory) {
       expect(line).toMatch(
-        /→ (public|unauthenticatedAuthFlow|authenticatedCustomer|stepUpRequired|admin)$/,
+        /→ (public|unauthenticatedAuthFlow|authenticatedCustomer|stepUpRequired|admin|provider|providerStepUp)$/,
       );
     }
   });

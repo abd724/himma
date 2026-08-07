@@ -91,6 +91,12 @@ export interface RateLimitRules {
   mfaChallenge: RateLimitRule;
   /** Recovery-code presentation per user — strictest (B2-6C). */
   recoveryCode: RateLimitRule;
+  /** Staff-invitation issue/resend per issuer+organization (S3-3). */
+  staffInvitation: RateLimitRule;
+  /** Sensitive staff-management mutations per issuer+organization (S3-3). */
+  staffManagement: RateLimitRule;
+  /** Invitation acceptance attempts per user (S3-3 — token guessing). */
+  invitationAccept: RateLimitRule;
 }
 
 export const DEFAULT_RATE_LIMITS: RateLimitRules = {
@@ -101,4 +107,7 @@ export const DEFAULT_RATE_LIMITS: RateLimitRules = {
   mfaEnrollment: { limit: 10, windowMs: 60_000 },
   mfaChallenge: { limit: 15, windowMs: 60_000 },
   recoveryCode: { limit: 5, windowMs: 60_000 },
+  staffInvitation: { limit: 10, windowMs: 60_000 },
+  staffManagement: { limit: 20, windowMs: 60_000 },
+  invitationAccept: { limit: 10, windowMs: 60_000 },
 };

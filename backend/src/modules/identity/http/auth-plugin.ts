@@ -16,6 +16,10 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Db } from '../../../db/kysely';
 import {
+  resolveOrgScope,
+  type OrgScope,
+} from '../../provider/services/provider-principal';
+import {
   checkSessionLiveness,
   type AuthenticatedSessionPrincipal,
 } from '../services/session-liveness';
@@ -26,7 +30,7 @@ import {
 } from '../services/mfa-step-up';
 import type { AccessTokenVerifier } from '../providers/access-token';
 import { livenessOutcomeName, sendOutcome } from './http-outcomes';
-import { policyOf } from './policies';
+import { isProviderPolicy, policyOf, providerCapabilityOf } from './policies';
 import {
   rateLimitDigest,
   type RateLimiterStore,
@@ -35,15 +39,19 @@ import {
 
 /** Minimum approved request principal: B2-3 session principal + provider
  *  reference + Himma-database-resolved admin roles (empty for customers and
- *  on non-admin routes) + typed empty future org scope + safe derived MFA
- *  assurance (B2-6C). Roles come ONLY from `admin_role_assignment` — never
- *  from provider claims — and assurance comes from the live session plus
- *  Himma `step_up_grant` rows, never from enrollment state alone. */
+ *  on non-admin routes) + the per-request provider org scope (S3-3; only on
+ *  provider policies) + safe derived MFA assurance (B2-6C). Roles and org
+ *  scope come ONLY from Himma PostgreSQL (`admin_role_assignment` /
+ *  `staff_membership`) — never from provider claims — and assurance comes
+ *  from the live session plus Himma `step_up_grant` rows, never from
+ *  enrollment state alone. */
 export interface RequestPrincipal extends AuthenticatedSessionPrincipal {
   issuer: string;
   subject: string;
   adminRoles: AdminRole[];
-  orgScope: null;
+  /** Resolved provider context for the ONE addressed organization (docs/27
+   *  §8); null outside provider policies. Exactly one org per request. */
+  orgScope: OrgScope | null;
   /** app_user.mfa_enrolled mirror — resolved on assurance-gated policies. */
   mfaEnrolled?: boolean;
   /** Most recent valid step-up proof honored for this request. */
@@ -150,8 +158,67 @@ export function installAuthPipeline(app: FastifyInstance, deps: AuthPipelineDeps
       }
     }
 
+    let orgScope: OrgScope | null = null;
     let adminRoles: AdminRole[] = [];
     let mfaEnrolled: boolean | undefined;
+    if (policy !== undefined && isProviderPolicy(policy)) {
+      // Provider-private management (docs/27 §7–§8; D-S3-5), in the binding
+      // order: (1) live session — established above; (2) an ACTIVE staff
+      // membership for the ONE addressed organization, resolved fresh from
+      // PostgreSQL — no membership, unknown org, and terminal (offboarded)
+      // org are all the same not-found shape, so nothing about another
+      // provider's existence leaks and Cognito claims grant nothing;
+      // (3) the MFA baseline: Himma enrollment + an MFA-verified session
+      // factor (MFA login or a live TOTP/recovery-code grant); (4) for the
+      // higher-risk set, a sufficiently RECENT step-up; (5) the declared
+      // ACTIVE capability; (6) the suspended-organization mutation refusal.
+      const organizationId = (request.params as Record<string, unknown> | null)?.organizationId;
+      if (typeof organizationId !== 'string') {
+        request.log.error('provider route without :organizationId param');
+        return sendOutcome(reply, 'notFound');
+      }
+      const resolved = await resolveOrgScope(
+        { db: deps.db },
+        { userId: liveness.principal.userId, organizationId },
+      );
+      if (resolved.kind !== 'resolved') return sendOutcome(reply, 'notFound');
+
+      const assurance = await resolveAssurance();
+      mfaEnrolled = assurance.mfaEnrolled;
+      if (!assurance.mfaEnrolled) return sendOutcome(reply, 'mfaRequired');
+      const mfaGrant =
+        assurance.grant !== undefined &&
+        (assurance.grant.method === 'totp' || assurance.grant.method === 'recovery_code')
+          ? assurance.grant
+          : undefined;
+      const sessionMfaVerified = liveness.principal.assurance === 'mfa';
+      if (mfaGrant === undefined && !sessionMfaVerified) {
+        return sendOutcome(reply, 'mfaRequired');
+      }
+      if (policy === 'providerStepUp') {
+        // Slice-2 recency semantics composed on top of the baseline.
+        if (mfaGrant !== undefined) {
+          stepUp = { at: mfaGrant.grantedAt, method: mfaGrant.method };
+        } else if (sessionMfaVerified && authTimeFresh && authTime !== undefined) {
+          stepUp = { at: authTime, method: 'provider_mfa' };
+        } else {
+          return sendOutcome(reply, 'stepUpRequired');
+        }
+      }
+
+      const capability = providerCapabilityOf(request.routeOptions.config);
+      if (capability === undefined || !resolved.orgScope.capabilities.includes(capability)) {
+        // Right organization, insufficient role/scope (docs/27 §7.3).
+        return sendOutcome(reply, 'forbidden');
+      }
+      const mutating = request.method !== 'GET' && request.method !== 'HEAD';
+      if (mutating && resolved.orgScope.organizationState === 'suspended') {
+        // Suspended: provider-private reads still work; every provider
+        // mutation is refused (docs/27 §7.5).
+        return sendOutcome(reply, 'organizationSuspended');
+      }
+      orgScope = resolved.orgScope;
+    }
     if (policy === 'admin') {
       // Admin surfaces, in the binding order (docs/23 §7, docs/26 §5.8):
       // (1) live session — established above; (2) at least one ACTIVE Himma
@@ -187,7 +254,7 @@ export function installAuthPipeline(app: FastifyInstance, deps: AuthPipelineDeps
       issuer: verified.evidence.issuer,
       subject: verified.evidence.subject,
       adminRoles,
-      orgScope: null,
+      orgScope,
       ...(mfaEnrolled !== undefined ? { mfaEnrolled } : {}),
       ...(stepUp !== undefined ? { stepUp } : {}),
     };
@@ -200,4 +267,13 @@ export function requirePrincipal(principal: RequestPrincipal | null): RequestPri
     throw new Error('principal missing behind an authenticated route policy');
   }
   return principal;
+}
+
+/** The org scope is always present behind provider policies. */
+export function requireOrgScope(principal: RequestPrincipal | null): OrgScope {
+  const scope = requirePrincipal(principal).orgScope;
+  if (scope === null) {
+    throw new Error('orgScope missing behind a provider route policy');
+  }
+  return scope;
 }

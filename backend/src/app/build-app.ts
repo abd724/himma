@@ -23,10 +23,12 @@ import type { AccessTokenVerifier } from '../modules/identity/providers/access-t
 import type { ProviderSessionRevoker } from '../modules/identity/providers/revocation';
 import type { MfaProviderPort } from '../modules/identity/providers/mfa';
 import type { MfaConfig } from '../modules/identity/services/mfa-config';
+import type { StaffInvitationConfig } from '../modules/provider/staff-invitation-config';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
 import { registerMfaRoutes } from '../modules/identity/http/mfa-routes';
+import { registerProviderRoutes } from '../modules/provider/http/provider-routes';
 import { installRoutePolicyGuard } from '../modules/identity/http/policies';
 import {
   createRateLimiterStore,
@@ -69,6 +71,8 @@ export interface IdentityHttpOptions {
   /** MFA routes register when both provider port and config are supplied. */
   mfaProvider?: MfaProviderPort;
   mfaConfig?: MfaConfig;
+  /** Provider-private management surface (S3-3) registers when supplied. */
+  staffInvitationConfig?: StaffInvitationConfig;
   /** Defaults via createRateLimiterStore — which FAILS CLOSED in production. */
   rateLimiterStore?: RateLimiterStore;
   nodeEnv?: NodeEnv;
@@ -87,6 +91,10 @@ export interface IdentityHttpOptions {
   /** Set false to omit admin routes in dev/test; forcing true in an
    *  UNREADY production build refuses startup. */
   enableAdminRoutes?: boolean;
+  /** Set false to omit provider routes in dev/test; forcing true in an
+   *  UNREADY production build refuses startup (D-S3-5 shares the identity
+   *  MFA-activation gate — no bypass). */
+  enableProviderRoutes?: boolean;
 }
 
 function adminProductionReady(readiness: AdminProductionReadiness | undefined): boolean {
@@ -210,6 +218,38 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }
     } else if (identity.enableAdminRoutes !== false) {
       registerAdminRoutes(app, { db: identity.db });
+    }
+
+    // Provider-private management surface (S3-3). D-S3-5 makes the MFA
+    // baseline mandatory on every provider route, and production TOTP
+    // activation is still pending the docs/26 §14.E′ real-pool smoke — so
+    // the provider surface shares the SAME production capability gate as
+    // the admin surface: absent (fail-closed 404) until every identity
+    // MFA-activation capability reports ready, refusing startup loudly if
+    // explicitly forced on while unready. There is no bypass and no
+    // provider-specific weakening. Dev/test register the full surface and
+    // exercise the complete behavior through deterministic adapters.
+    if (identity.staffInvitationConfig !== undefined) {
+      const providerDeps = {
+        db: identity.db,
+        mailSender: identity.mailSender,
+        invitationConfig: identity.staffInvitationConfig,
+        rateLimiter,
+        rules,
+      };
+      if (nodeEnv === 'production') {
+        const ready = adminProductionReady(identity.adminReadiness);
+        if (identity.enableProviderRoutes === true && !ready) {
+          throw new Error(
+            'Production provider-surface activation is fail-closed: the D-S3-5 MFA baseline depends on the identity MFA capabilities (Cognito integration, MFA provider validation, real-pool SOFTWARE_TOKEN_MFA smoke, approved production configuration), which have not all reported ready (docs/27 §7.9; docs/26 §14.E′).',
+          );
+        }
+        if (ready && identity.enableProviderRoutes !== false) {
+          registerProviderRoutes(app, providerDeps);
+        }
+      } else if (identity.enableProviderRoutes !== false) {
+        registerProviderRoutes(app, providerDeps);
+      }
     }
   }
 
