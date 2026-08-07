@@ -1,0 +1,241 @@
+.loading {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+.unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  max-width: 560px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-section);
+  max-width: 720px;
+}
+
+.statusCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  padding: var(--hp-space-xxl);
+  background: var(--hp-color-background-elevated);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-panel);
+  box-shadow: var(--hp-shadow-card);
+}
+
+.statusCardLive {
+  border-color: var(--hp-color-status-success);
+}
+
+.statusHead {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+}
+
+.statusIcon {
+  width: 22px;
+  height: 22px;
+  color: var(--hp-color-status-success);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--hp-space-md);
+  border-radius: var(--hp-radius-chip);
+  background: var(--hp-color-brand-primary-soft);
+  color: var(--hp-color-brand-primary);
+  font: var(--hp-type-caption);
+  letter-spacing: 0.3px;
+}
+
+.statusHeading {
+  font: var(--hp-type-section-title);
+}
+
+.statusBody {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+  max-width: 60ch;
+}
+
+.statusAction {
+  margin-block-start: var(--hp-space-xs);
+}
+
+.submitArea {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-sm);
+  margin-block-start: var(--hp-space-xs);
+}
+
+.submitNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.submitDone {
+  font: var(--hp-type-body);
+  color: var(--hp-color-status-success);
+}
+
+.alertFocus:focus {
+  outline: none;
+}
+
+.sectionTitle {
+  font: var(--hp-type-section-title);
+  margin-block-end: var(--hp-space-lg);
+}
+
+.items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hp-space-lg);
+  padding: var(--hp-space-lg) var(--hp-space-xs);
+  border-block-end: 1px solid var(--hp-color-border-default);
+}
+
+.item:last-child {
+  border-block-end: 0;
+}
+
+.itemIcon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-block-start: 1px;
+}
+
+.iconComplete {
+  color: var(--hp-color-status-success);
+}
+
+.iconAction {
+  color: var(--hp-color-brand-primary);
+}
+
+.iconWaiting {
+  color: var(--hp-color-text-secondary);
+}
+
+.iconOptional {
+  color: var(--hp-color-text-secondary);
+}
+
+.itemBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.itemTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--hp-space-sm);
+  font: var(--hp-type-card-title);
+}
+
+.stateChip {
+  font: var(--hp-type-micro-label);
+  letter-spacing: 0.4px;
+  padding: 1px var(--hp-space-sm);
+  border-radius: var(--hp-radius-chip);
+  border: 1px solid var(--hp-color-border-default);
+  color: var(--hp-color-text-secondary);
+  background: var(--hp-color-background-main);
+}
+
+.chip-complete {
+  color: var(--hp-color-status-success);
+  border-color: currentcolor;
+}
+
+.chip-actionRequired {
+  color: var(--hp-color-brand-primary);
+  border-color: currentcolor;
+  background: var(--hp-color-brand-primary-soft);
+}
+
+.itemText {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+  max-width: 52ch;
+}
+
+.itemNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+  font-style: italic;
+}
+
+.itemCta {
+  flex-shrink: 0;
+  font: var(--hp-type-nav-label);
+  color: var(--hp-color-brand-primary);
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.itemCta:hover {
+  text-decoration: underline;
+}
+
+.documentsCard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  padding: var(--hp-space-xl);
+  border: 1px dashed var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-main);
+}
+
+.documentsIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--hp-color-text-secondary);
+}
+
+.documentsBody {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+  max-width: 60ch;
+}
+
+@media (max-width: 767.98px) {
+  .item {
+    flex-wrap: wrap;
+  }
+
+  /* The CTA takes its own line so step text keeps a readable measure
+     (padding, not margin — it must stay inside the 100% basis). */
+  .itemCta {
+    flex-basis: 100%;
+    padding-inline-start: calc(22px + var(--hp-space-lg));
+    min-height: 40px;
+  }
+}

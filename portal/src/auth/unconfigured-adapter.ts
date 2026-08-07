@@ -1,4 +1,6 @@
 import type { PortalAuthAdapter } from './adapter';
+import type { InvitationPort } from '../invitations/contract';
+import type { OnboardingPort } from '../onboarding/contract';
 import type { ProviderAccessPort } from '../provider-access/contract';
 
 /**
@@ -22,5 +24,18 @@ export function createUnconfiguredAuthAdapter(): PortalAuthAdapter {
 export function createUnconfiguredAccessPort(): ProviderAccessPort {
   return {
     resolveAccess: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredInvitationPort(): InvitationPort {
+  return {
+    accept: async () => ({ kind: 'providerUnavailable' }),
+  };
+}
+
+export function createUnconfiguredOnboardingPort(): OnboardingPort {
+  return {
+    loadSnapshot: async () => ({ kind: 'unavailable' }),
+    submitForVerification: async () => ({ kind: 'unavailable' }),
   };
 }

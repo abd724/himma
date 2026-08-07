@@ -3,8 +3,12 @@ import { resolveAuthMode } from '../auth/auth-mode';
 import {
   createUnconfiguredAccessPort,
   createUnconfiguredAuthAdapter,
+  createUnconfiguredInvitationPort,
+  createUnconfiguredOnboardingPort,
 } from '../auth/unconfigured-adapter';
 import type { PortalEnv } from '../api/env';
+import type { InvitationPort } from '../invitations/contract';
+import type { OnboardingPort } from '../onboarding/contract';
 import type { ProviderAccessPort } from '../provider-access/contract';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
@@ -12,6 +16,8 @@ export interface AuthRuntime {
   readonly mode: 'fixture' | 'unconfigured';
   readonly adapter: PortalAuthAdapter;
   readonly accessPort: ProviderAccessPort;
+  readonly invitationPort: InvitationPort;
+  readonly onboardingPort: OnboardingPort;
 }
 
 declare global {
@@ -37,12 +43,20 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     if (typeof window !== 'undefined') {
       window.__himmaPortalAccessFixture = fixture.controls;
     }
-    return { mode, adapter: fixture.adapter, accessPort: fixture.accessPort };
+    return {
+      mode,
+      adapter: fixture.adapter,
+      accessPort: fixture.accessPort,
+      invitationPort: fixture.invitationPort,
+      onboardingPort: fixture.onboardingPort,
+    };
   }
 
   return {
     mode,
     adapter: createUnconfiguredAuthAdapter(),
     accessPort: createUnconfiguredAccessPort(),
+    invitationPort: createUnconfiguredInvitationPort(),
+    onboardingPort: createUnconfiguredOnboardingPort(),
   };
 }

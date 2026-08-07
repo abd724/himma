@@ -163,7 +163,15 @@ export function sessionReducer(
       return state.status === 'mfaChallenge' ? signedOut('initial') : state;
 
     case 'ACCESS_RESULT': {
-      if (state.status === 'resolvingAccess' || state.status === 'active') {
+      // Valid in every authenticated state: access can be re-resolved after
+      // membership changes in BOTH directions (revocation → noMembership,
+      // invitation acceptance → active again).
+      if (
+        state.status === 'resolvingAccess' ||
+        state.status === 'active' ||
+        state.status === 'noMembership' ||
+        state.status === 'accessUnavailable'
+      ) {
         return accessFrom(state, event.outcome);
       }
       return state;

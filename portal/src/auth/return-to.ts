@@ -8,7 +8,9 @@
  * flow. Anything unsafe resolves to null and callers fall back to the
  * default landing.
  */
-const ACCESS_ZONE_PREFIXES = ['/sign-in', '/mfa', '/step-up', '/signed-out', '/invitation'];
+// `/invitation` is deliberately allowed: an invitation journey is a
+// legitimate continuation destination after sign-in/MFA (W2-3).
+const ACCESS_ZONE_PREFIXES = ['/sign-in', '/mfa', '/step-up', '/signed-out'];
 
 export function safeReturnTo(candidate: string | null | undefined): string | null {
   if (!candidate) {

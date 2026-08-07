@@ -44,6 +44,16 @@
   cursor: default;
 }
 
+/* Inert-with-reason: visually muted, still focusable and explained nearby. */
+.button[aria-disabled='true']:not(.busy) {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.primary[aria-disabled='true']:not(.busy):hover {
+  background: var(--hp-color-brand-primary);
+}
+
 .busy.primary {
   background: var(--hp-color-brand-primary-pressed);
 }

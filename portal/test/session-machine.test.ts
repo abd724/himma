@@ -166,6 +166,22 @@ describe('session state machine', () => {
     expect(state.status).toBe('noMembership');
   });
 
+  test('a no-membership session can GAIN access (invitation acceptance re-resolution)', () => {
+    const noMembership = sessionReducer(
+      sessionReducer(initialSessionState(), {
+        type: 'BOOTSTRAP_RESULT',
+        outcome: { kind: 'session', assurance: 'mfa', identity },
+      }),
+      { type: 'ACCESS_RESULT', outcome: { kind: 'resolved', memberships: [] } },
+    );
+    expect(noMembership.status).toBe('noMembership');
+    const regained = sessionReducer(noMembership, {
+      type: 'ACCESS_RESULT',
+      outcome: { kind: 'resolved', memberships: [membership] },
+    });
+    expect(regained).toMatchObject({ status: 'active', memberships: [membership] });
+  });
+
   test('session interruption lands on signed out with the canonical expired reason', () => {
     for (const start of [
       authenticated(),

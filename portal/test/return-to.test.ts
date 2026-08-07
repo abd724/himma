@@ -6,6 +6,7 @@ describe('safeReturnTo (open-redirect protection)', () => {
     ['/o/abc', '/o/abc'],
     ['/settings', '/settings'],
     ['/o/abc/listings?tab=media', '/o/abc/listings?tab=media'],
+    ['/invitation/SOME-OPAQUE-TOKEN', '/invitation/SOME-OPAQUE-TOKEN'],
   ])('accepts internal path %s', (input, expected) => {
     expect(safeReturnTo(input)).toBe(expected);
   });

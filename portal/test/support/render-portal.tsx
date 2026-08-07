@@ -56,21 +56,42 @@ export function activeSessionState(
  * Renders the full application over a memory router.
  * Default: an authenticated multi-org session (shell-focused suites).
  * Pass `authenticated: false` to start from the real bootstrap (access
- * suites), optionally with a shared fixture runtime for scenario control.
+ * suites), `asIdentity` to seed a specific fixture identity (its CURRENT
+ * fixture memberships become the session state), or `runtime` to share a
+ * fixture runtime across setup steps and the render.
  */
 export function renderPortal({
   initialEntries = ['/'],
   organizations,
   authenticated = true,
+  asIdentity,
   runtime,
 }: {
   initialEntries?: string[];
   organizations?: readonly ShellOrganization[];
   authenticated?: boolean;
+  asIdentity?: string;
   runtime?: FixtureAuthRuntime;
 } = {}) {
   const fixture = runtime ?? createFixtureAuthRuntime();
-  if (authenticated) {
+  let seededState: PortalSessionState | undefined;
+  if (asIdentity) {
+    fixture.seedSession(asIdentity);
+    const seeded = fixture.sessionStateFor(asIdentity);
+    if (!seeded) {
+      throw new Error(`unknown fixture identity ${asIdentity}`);
+    }
+    seededState =
+      seeded.memberships.length > 0
+        ? {
+            status: 'active',
+            assurance: seeded.assurance,
+            identity: seeded.identity,
+            memberships: seeded.memberships,
+            stepUpExpiresAt: null,
+          }
+        : { status: 'noMembership', assurance: seeded.assurance, identity: seeded.identity };
+  } else if (authenticated) {
     // Keep the fixture store consistent with the seeded session state.
     fixture.seedSession(testIdentity.email);
   }
@@ -78,12 +99,16 @@ export function renderPortal({
     mode: 'fixture',
     adapter: fixture.adapter,
     accessPort: fixture.accessPort,
+    invitationPort: fixture.invitationPort,
+    onboardingPort: fixture.onboardingPort,
   };
   const router = createMemoryRouter(portalRoutes, { initialEntries });
+  const initialSessionState =
+    seededState ?? (authenticated ? activeSessionState(organizations) : undefined);
   const result = render(
     <AppProviders
       authRuntime={authRuntime}
-      {...(authenticated ? { initialSessionState: activeSessionState(organizations) } : {})}
+      {...(initialSessionState ? { initialSessionState } : {})}
     >
       <RouterProvider router={router} />
     </AppProviders>,

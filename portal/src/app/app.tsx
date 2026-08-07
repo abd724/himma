@@ -5,9 +5,12 @@ import type { PortalSessionState } from '../auth/session-machine';
 import {
   createUnconfiguredAccessPort,
   createUnconfiguredAuthAdapter,
+  createUnconfiguredInvitationPort,
+  createUnconfiguredOnboardingPort,
 } from '../auth/unconfigured-adapter';
 import { AppErrorBoundary } from './app-error-boundary';
 import type { AuthRuntime } from './auth-runtime';
+import { PortsProvider } from './ports-context';
 import { createQueryClient } from './query-client';
 
 /**
@@ -35,6 +38,8 @@ export function AppProviders({
         mode: 'unconfigured',
         adapter: createUnconfiguredAuthAdapter(),
         accessPort: createUnconfiguredAccessPort(),
+        invitationPort: createUnconfiguredInvitationPort(),
+        onboardingPort: createUnconfiguredOnboardingPort(),
       },
   );
 
@@ -46,7 +51,11 @@ export function AppProviders({
           accessPort={runtime.accessPort}
           {...(initialSessionState ? { initialState: initialSessionState } : {})}
         >
-          {children}
+          <PortsProvider
+            ports={{ invitationPort: runtime.invitationPort, onboardingPort: runtime.onboardingPort }}
+          >
+            {children}
+          </PortsProvider>
         </SessionProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

@@ -5,7 +5,7 @@ import {
   ActiveOrganizationProvider,
   useRouteOrganization,
 } from '../organization/organization-context';
-import { InvitationPlaceholderPage } from '../pages/access/invitation-placeholder-page';
+import { InvitationPage } from '../pages/access/invitation-page';
 import { MfaChallengePage } from '../pages/access/mfa-challenge-page';
 import { MfaEnrollPage } from '../pages/access/mfa-enroll-page';
 import { WorkspaceUnavailablePage } from '../pages/access/session-surfaces';
@@ -19,6 +19,7 @@ import { DashboardPage } from '../pages/dashboard-page';
 import { FinancePage } from '../pages/finance-page';
 import { ListingsPage } from '../pages/listings-page';
 import { NotFoundPage, OrganizationSectionNotFoundPage } from '../pages/not-found-page';
+import { OnboardingPage } from '../pages/onboarding/onboarding-page';
 import { SchedulePage } from '../pages/schedule-page';
 import { SettingsPage } from '../pages/settings-page';
 import { SupportPage } from '../pages/support-page';
@@ -59,7 +60,7 @@ export const portalRoutes: RouteObject[] = [
       { path: 'mfa/enroll', element: <MfaEnrollPage /> },
       { path: 'step-up', element: <StepUpPage /> },
       { path: 'signed-out', element: <SignedOutPage /> },
-      { path: 'invitation/:token', element: <InvitationPlaceholderPage /> },
+      { path: 'invitation/:token', element: <InvitationPage /> },
       {
         element: <RequireProviderAccess />,
         children: [
@@ -70,6 +71,7 @@ export const portalRoutes: RouteObject[] = [
             element: <OrganizationScope />,
             children: [
               { index: true, element: <DashboardPage /> },
+              { path: 'onboarding', element: <OnboardingPage /> },
               { path: 'listings', element: <ListingsPage /> },
               { path: 'schedule', element: <SchedulePage /> },
               { path: 'bookings', element: <BookingsPage /> },

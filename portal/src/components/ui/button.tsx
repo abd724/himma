@@ -14,6 +14,7 @@ export function Button({
   type = 'button',
   onClick,
   className,
+  'aria-disabled': ariaDisabled,
   ...rest
 }: {
   children: ReactNode;
@@ -28,7 +29,7 @@ export function Button({
       className={[styles.button, styles[variant], busy ? styles.busy : '', className ?? '']
         .filter(Boolean)
         .join(' ')}
-      aria-disabled={busy || undefined}
+      aria-disabled={busy || ariaDisabled || undefined}
       aria-busy={busy || undefined}
       onClick={busy ? (event) => event.preventDefault() : onClick}
     >

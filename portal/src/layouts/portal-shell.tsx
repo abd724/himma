@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { InlineAlert } from '../components/ui/inline-alert';
 import { SkipLink } from '../components/ui/skip-link';
 import { Wordmark } from '../components/ui/wordmark';
+import { organizationPath } from '../navigation/nav-items';
 import { useActiveOrganization } from '../organization/organization-context';
 import { MobileDrawer } from './mobile-drawer';
 import { PortalNav } from './portal-nav';
 import { TopBar } from './top-bar';
 import styles from './portal-shell.module.css';
+
+/** verification_state values whose shell carries the setup-in-progress bar. */
+const SETUP_STATES = new Set(['draft', 'submitted', 'in_review', 'rejected', 'verified']);
 
 const MAIN_CONTENT_ID = 'main-content';
 
@@ -64,6 +68,19 @@ export function PortalShell({ children }: { children: ReactNode }) {
             <div className={styles.suspendedBanner}>
               <InlineAlert tone="info">
                 This organization is currently suspended. Changes are unavailable.
+              </InlineAlert>
+            </div>
+          ) : SETUP_STATES.has(organization.organizationState) &&
+            !location.pathname.endsWith('/onboarding') ? (
+            <div className={styles.suspendedBanner}>
+              <InlineAlert tone="info">
+                Your organization isn&rsquo;t live on Himma yet.{' '}
+                <Link
+                  className={styles.setupLink}
+                  to={organizationPath(organization.id, 'onboarding')}
+                >
+                  View your setup status
+                </Link>
               </InlineAlert>
             </div>
           ) : null}

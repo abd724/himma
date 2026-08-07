@@ -37,6 +37,11 @@
   padding: var(--hp-space-lg) var(--hp-space-xxl) 0;
 }
 
+.setupLink {
+  color: var(--hp-color-brand-primary);
+  font: var(--hp-type-nav-label);
+}
+
 .main {
   flex: 1;
   padding: var(--hp-space-section) var(--hp-space-xxl) var(--hp-space-huge);
