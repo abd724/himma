@@ -176,9 +176,9 @@ describe('onboarding hub (readiness orchestration over canonical states)', () =>
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();
     hub.unmount();
 
-    // Branches (W2-5) and Team (W2-6) remain honest placeholders
-    // (the Business Profile became the real W2-4 experience).
-    for (const segment of ['branches', 'team']) {
+    // Team (W2-6) remains an honest placeholder (Business Profile became the
+    // real W2-4 experience, Branches the real W2-5 experience).
+    for (const segment of ['team']) {
       const view = renderPortal({
         asIdentity: 'assistant@coral.demo',
         initialEntries: [`/o/${fixtureOrganizations.coral.organizationId}/${segment}`],
@@ -188,6 +188,17 @@ describe('onboarding hub (readiness orchestration over canonical states)', () =>
       expect(screen.queryByRole('button', { name: /invite/i })).not.toBeInTheDocument();
       view.unmount();
     }
+
+    // The real W2-5 Branches surface stays equally honest for a role
+    // without branch authority: no form controls, no invite affordance.
+    const branchesView = renderPortal({
+      asIdentity: 'assistant@coral.demo',
+      initialEntries: [`/o/${fixtureOrganizations.coral.organizationId}/branches`],
+    });
+    await screen.findByRole('heading', { level: 2, name: 'No branches yet' });
+    expect(branchesView.container.querySelector('input, textarea, select')).toBeNull();
+    expect(screen.queryByRole('button', { name: /invite/i })).not.toBeInTheDocument();
+    branchesView.unmount();
 
     // No self-registration affordance exists on sign-in.
     renderPortal({ authenticated: false });

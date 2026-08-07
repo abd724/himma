@@ -102,6 +102,8 @@ export function renderPortal({
     invitationPort: fixture.invitationPort,
     onboardingPort: fixture.onboardingPort,
     profilePort: fixture.profilePort,
+    branchPort: fixture.branchPort,
+    areaPort: fixture.areaPort,
   };
   const router = createMemoryRouter(portalRoutes, { initialEntries });
   const initialSessionState =

@@ -2,16 +2,20 @@ import type { PortalAuthAdapter } from '../auth/adapter';
 import { resolveAuthMode } from '../auth/auth-mode';
 import {
   createUnconfiguredAccessPort,
+  createUnconfiguredAreaPort,
   createUnconfiguredAuthAdapter,
+  createUnconfiguredBranchPort,
   createUnconfiguredInvitationPort,
   createUnconfiguredOnboardingPort,
   createUnconfiguredProfilePort,
 } from '../auth/unconfigured-adapter';
 import type { PortalEnv } from '../api/env';
+import type { BranchPort } from '../branches/contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
 import type { ProviderAccessPort } from '../provider-access/contract';
+import type { AreaReadPort } from '../taxonomy/contract';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
 export interface AuthRuntime {
@@ -21,6 +25,8 @@ export interface AuthRuntime {
   readonly invitationPort: InvitationPort;
   readonly onboardingPort: OnboardingPort;
   readonly profilePort: OrganizationProfilePort;
+  readonly branchPort: BranchPort;
+  readonly areaPort: AreaReadPort;
 }
 
 declare global {
@@ -53,6 +59,8 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       invitationPort: fixture.invitationPort,
       onboardingPort: fixture.onboardingPort,
       profilePort: fixture.profilePort,
+      branchPort: fixture.branchPort,
+      areaPort: fixture.areaPort,
     };
   }
 
@@ -63,5 +71,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     invitationPort: createUnconfiguredInvitationPort(),
     onboardingPort: createUnconfiguredOnboardingPort(),
     profilePort: createUnconfiguredProfilePort(),
+    branchPort: createUnconfiguredBranchPort(),
+    areaPort: createUnconfiguredAreaPort(),
   };
 }

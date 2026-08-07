@@ -26,7 +26,6 @@ describe('honest placeholder pages', () => {
   test.each([
     ['', 'Dashboard'],
     ['/listings', 'Listings'],
-    ['/branches', 'Branches'],
     ['/team', 'Team'],
     ['/settings', 'Settings & Support'],
     ['/support', 'Support'],

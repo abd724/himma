@@ -16,6 +16,9 @@
  * - newowner@coral.demo      → no access yet; founding-Owner invitation target
  * - newcoach@bluewave.demo   → no access yet; ordinary staff invitation target
  * - assistant@coral.demo     → coach at draft Coral (role-aware read-only)
+ * - manager@bluewave.demo    → branch-scoped Branch Manager (Dubai Marina pool only)
+ * - frontdesk@bluewave.demo  → Front Desk at Blue Wave (branches read-only)
+ * - finance@bluewave.demo    → Finance at Blue Wave (branches read-only)
  * - coach@noor.demo          → signs in WITHOUT MFA enrolled (single_factor)
  * - former@himma.demo        → authenticated, zero memberships
  * - flaky@bluewave.demo      → first access resolution fails, retry succeeds
@@ -38,6 +41,15 @@ import type {
   SignInOutcome,
   StepUpOutcome,
 } from '../../auth/adapter';
+import type {
+  BranchInput,
+  BranchPatch,
+  BranchPort,
+  CreateBranchOutcome,
+  DeactivateBranchOutcome,
+  UpdateBranchOutcome,
+} from '../../branches/contract';
+import { BRANCH_FIELD_LIMITS } from '../../branches/contract';
 import type { InvitationAcceptOutcome, InvitationPort } from '../../invitations/contract';
 import type {
   OnboardingPort,
@@ -59,6 +71,7 @@ import type {
   ProviderMembership,
   ProviderRole,
 } from '../../provider-access/contract';
+import type { AreaReadPort, AreaRecord } from '../../taxonomy/contract';
 
 export const fixtureOrganizations = {
   blueWave: {
@@ -96,6 +109,38 @@ export const fixtureOrganizations = {
 } as const;
 
 const NOOR_BRANCH_ID = '0198a2f0-5b7a-7000-8000-2b6c3e8f7a11';
+
+/** Stable branch ids (exported for tests and branch-scope fixtures). */
+export const fixtureBranches = {
+  blueWaveMarina: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a01',
+  blueWaveBay: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a02',
+  blueWaveSufouh: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a03',
+  noorBarsha: NOOR_BRANCH_ID,
+} as const;
+
+/**
+ * Fixture area directory — shaped exactly on the public taxonomy read
+ * `GET /catalogue/areas` (ACTIVE admin-owned rows only, deterministic
+ * order). 'Al Sufouh' is deliberately ABSENT: it models a historical/
+ * deactivated area still referenced by an old branch's `areaLabel`.
+ */
+function areaDirectory(): AreaRecord[] {
+  const area = (suffix: string, slug: string, labelEn: string): AreaRecord => ({
+    id: `0198a2f0-5b7a-7000-8000-3c7d4f9a8b${suffix}`,
+    slug,
+    labelEn,
+    labelAr: null,
+    city: 'Dubai',
+  });
+  return [
+    area('01', 'al-barsha', 'Al Barsha'),
+    area('02', 'business-bay', 'Business Bay'),
+    area('03', 'deira', 'Deira'),
+    area('04', 'downtown-dubai', 'Downtown Dubai'),
+    area('05', 'dubai-marina', 'Dubai Marina'),
+    area('06', 'jumeirah', 'Jumeirah'),
+  ];
+}
 
 export const FIXTURE_PASSWORD = 'himma-demo';
 export const FIXTURE_TOTP_CODE = '246810';
@@ -261,13 +306,20 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
           published: true,
         },
         branches: [
-          branch(fixtureOrganizations.blueWave.organizationId, 'branch-1', 'Dubai Marina pool', 'Dubai Marina', {
+          branch(fixtureOrganizations.blueWave.organizationId, fixtureBranches.blueWaveMarina, 'Dubai Marina pool', 'Dubai Marina', {
             addressLine: 'Marina Promenade, Block C',
             facilities: ['Indoor pool', 'Changing rooms', 'Parking'],
           }),
-          branch(fixtureOrganizations.blueWave.organizationId, 'branch-2', 'Business Bay pool', 'Business Bay', {
+          branch(fixtureOrganizations.blueWave.organizationId, fixtureBranches.blueWaveBay, 'Business Bay pool', 'Business Bay', {
             addressLine: 'Bay Avenue, Tower 2',
             facilities: ['Outdoor pool', 'Café'],
+          }),
+          // Deactivated location referencing a HISTORICAL area label that is
+          // no longer in the active area taxonomy (preserved, never offered
+          // for new selection, never silently rewritten).
+          branch(fixtureOrganizations.blueWave.organizationId, fixtureBranches.blueWaveSufouh, 'Al Sufouh training pool', 'Al Sufouh', {
+            addressLine: 'Knowledge Park, Gate 4',
+            active: false,
           }),
         ],
       }),
@@ -279,7 +331,7 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
           published: true,
         },
         branches: [
-          branch(fixtureOrganizations.noor.organizationId, NOOR_BRANCH_ID, 'Al Barsha centre', 'Al Barsha'),
+          branch(fixtureOrganizations.noor.organizationId, fixtureBranches.noorBarsha, 'Al Barsha centre', 'Al Barsha'),
         ],
       }),
       org(fixtureOrganizations.falcon, 'suspended', {
@@ -380,6 +432,29 @@ function identityDirectory(): FixtureIdentity[] {
       memberships: [seat(fixtureOrganizations.coral, 'coach')],
     },
     {
+      // Branch-scoped Branch Manager: edit reach = Dubai Marina pool ONLY
+      // (the real org view still lists every branch — scope limits
+      // MUTATION, never the org.read projection).
+      email: 'manager@bluewave.demo',
+      displayName: 'Salem Qassim',
+      mfaEnrolled: true,
+      memberships: [
+        seat(fixtureOrganizations.blueWave, 'branch_manager', [fixtureBranches.blueWaveMarina]),
+      ],
+    },
+    {
+      email: 'frontdesk@bluewave.demo',
+      displayName: 'Dana Mansour',
+      mfaEnrolled: true,
+      memberships: [seat(fixtureOrganizations.blueWave, 'front_desk')],
+    },
+    {
+      email: 'finance@bluewave.demo',
+      displayName: 'Tariq Aswad',
+      mfaEnrolled: true,
+      memberships: [seat(fixtureOrganizations.blueWave, 'finance')],
+    },
+    {
       email: 'coach@noor.demo',
       displayName: 'Lina Aziz',
       mfaEnrolled: false,
@@ -462,6 +537,9 @@ interface FixtureSessionStore {
   usedRecoveryCodes: Set<string>;
   profileLoadFailures: Set<string>;
   profileSaveFailures: Set<string>;
+  branchMutationFailures: Set<string>;
+  areaLoadFailurePending: boolean;
+  createdBranchCount: number;
   listeners: Set<(interrupt: SessionInterrupt) => void>;
 }
 
@@ -480,6 +558,16 @@ export interface FixtureAccessControls {
   failNextProfileLoad(organizationId: string): void;
   /** Make the next profile save fail transiently. */
   failNextProfileSave(organizationId: string): void;
+  /**
+   * Simulate ANOTHER staff member saving the branch while this one is open
+   * (bumps the branch row's version): the next mutation carrying the old
+   * `expectedVersion` receives the canonical `staleVersion`.
+   */
+  simulateConcurrentBranchEdit(organizationId: string, branchId: string): void;
+  /** Make the next branch create/update/deactivate fail transiently. */
+  failNextBranchMutation(organizationId: string): void;
+  /** Make the next area taxonomy read fail transiently. */
+  failNextAreaLoad(): void;
 }
 
 export interface FixtureAuthRuntime {
@@ -488,6 +576,8 @@ export interface FixtureAuthRuntime {
   invitationPort: InvitationPort;
   onboardingPort: OnboardingPort;
   profilePort: OrganizationProfilePort;
+  branchPort: BranchPort;
+  areaPort: AreaReadPort;
   controls: FixtureAccessControls;
   /**
    * Test-harness seeding: aligns the fixture store with a prepared session
@@ -519,8 +609,12 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     usedRecoveryCodes: new Set(),
     profileLoadFailures: new Set(),
     profileSaveFailures: new Set(),
+    branchMutationFailures: new Set(),
+    areaLoadFailurePending: false,
+    createdBranchCount: 0,
     listeners: new Set(),
   };
+  const areas = areaDirectory();
 
   const identityView = (identity: FixtureIdentity): SessionIdentity => ({
     email: identity.email,
@@ -911,6 +1005,223 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
+  /**
+   * Mirrors the branch route TypeBox constraints so the server-side 422
+   * `validationError` seam is real in fixture mode too (the client form
+   * validates first; this is the backend-authoritative backstop).
+   */
+  const branchFieldsViolateConstraints = (input: BranchInput | BranchPatch): boolean => {
+    const badString = (value: string | null | undefined, max: number, min = 0) =>
+      typeof value === 'string' && (value.length > max || value.length < min);
+    if (badString(input.label, BRANCH_FIELD_LIMITS.label, 1)) {
+      return true;
+    }
+    if (badString(input.areaLabel, BRANCH_FIELD_LIMITS.areaLabel, 1)) {
+      return true;
+    }
+    if (
+      badString(input.addressLine, BRANCH_FIELD_LIMITS.addressLine) ||
+      badString(input.city, BRANCH_FIELD_LIMITS.city)
+    ) {
+      return true;
+    }
+    if (input.geoPoint !== undefined && input.geoPoint !== null) {
+      const { longitude, latitude } = input.geoPoint;
+      if (longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) {
+        return true;
+      }
+    }
+    if (input.facilities !== undefined) {
+      if (input.facilities.length > BRANCH_FIELD_LIMITS.facilitiesCount) {
+        return true;
+      }
+      return input.facilities.some(
+        (facility) =>
+          facility.length < 1 || facility.length > BRANCH_FIELD_LIMITS.facilityLength,
+      );
+    }
+    return false;
+  };
+
+  /**
+   * Shared mutation-context resolution mirroring the provider policy
+   * pipeline: unknown org, no membership, and offboarded org collapse into
+   * ONE not-found shape; then the declared capability; then the
+   * suspended-organization mutation refusal.
+   */
+  const resolveBranchMutation = (
+    organizationId: string,
+    capability: string,
+  ):
+    | { refusal: 'notFound' | 'forbidden' | 'organizationSuspended' | 'unavailable' }
+    | {
+        refusal: null;
+        organization: FixtureOrganizationState;
+        seatEntry: FixtureMembershipSeat;
+      } => {
+    const caller = store.current;
+    if (!caller) {
+      return { refusal: 'unavailable' };
+    }
+    const organization = organizations.get(organizationId);
+    const seatEntry = caller.memberships.find(
+      (candidate) => candidate.organizationId === organizationId,
+    );
+    if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+      return { refusal: 'notFound' };
+    }
+    if (!ROLE_CAPABILITIES[seatEntry.role].includes(capability)) {
+      return { refusal: 'forbidden' };
+    }
+    if (organization.verificationState === 'suspended') {
+      return { refusal: 'organizationSuspended' };
+    }
+    if (store.branchMutationFailures.delete(organizationId)) {
+      return { refusal: 'unavailable' };
+    }
+    return { refusal: null, organization, seatEntry };
+  };
+
+  /** TRUE iff the seat's scope reaches the branch (org-wide, or assigned +
+   *  still ACTIVE — deactivation removes reach, exactly like the real
+   *  principal resolution that lists assigned ACTIVE branches only). */
+  const branchInFixtureScope = (
+    seatEntry: FixtureMembershipSeat,
+    branchRow: FixtureBranchState,
+  ): boolean =>
+    seatEntry.branchScope === 'all' ||
+    (branchRow.active && seatEntry.branchScope.includes(branchRow.id));
+
+  const copyBranch = (branchRow: FixtureBranchState) => ({
+    ...branchRow,
+    facilities: [...branchRow.facilities],
+  });
+
+  const branchPort: BranchPort = {
+    /** Mirrors POST /provider/organizations/:organizationId/branches. */
+    async createBranch(organizationId, input): Promise<CreateBranchOutcome> {
+      const context = resolveBranchMutation(organizationId, 'branch.create');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      if (branchFieldsViolateConstraints(input)) {
+        return { kind: 'validationError' };
+      }
+      store.createdBranchCount += 1;
+      const branchRow: FixtureBranchState = {
+        id: `${organizationId.slice(0, 8)}-created-${store.createdBranchCount}`,
+        label: input.label,
+        addressLine: input.addressLine ?? null,
+        city: input.city ?? null,
+        areaLabel: input.areaLabel,
+        geoPoint: input.geoPoint ?? null,
+        openingHours: input.openingHours ?? null,
+        facilities: input.facilities ? [...input.facilities] : [],
+        active: true,
+        version: 1,
+      };
+      context.organization.branches.push(branchRow);
+      return { kind: 'branchCreated', branch: copyBranch(branchRow) };
+    },
+
+    /**
+     * Mirrors PATCH .../branches/:branchId, including the service order:
+     * org-scoped lookup (foreign/unknown ids are not-found-shaped by
+     * construction) → branch-scope check (`forbidden`) → version CAS.
+     */
+    async updateBranch(
+      organizationId,
+      branchId,
+      expectedVersion,
+      patch,
+    ): Promise<UpdateBranchOutcome> {
+      const context = resolveBranchMutation(organizationId, 'branch.edit');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      if (branchFieldsViolateConstraints(patch)) {
+        return { kind: 'validationError' };
+      }
+      const branchRow = context.organization.branches.find(
+        (candidate) => candidate.id === branchId,
+      );
+      if (!branchRow) {
+        return { kind: 'notFound' };
+      }
+      if (!branchInFixtureScope(context.seatEntry, branchRow)) {
+        return { kind: 'forbidden' };
+      }
+      if (branchRow.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      const apply = <K extends 'label' | 'areaLabel' | 'addressLine' | 'city'>(
+        key: K,
+        value: FixtureBranchState[K] | undefined,
+      ) => {
+        if (value !== undefined) {
+          branchRow[key] = value;
+        }
+      };
+      apply('label', patch.label);
+      apply('areaLabel', patch.areaLabel);
+      apply('addressLine', patch.addressLine);
+      apply('city', patch.city);
+      if (patch.geoPoint !== undefined) {
+        branchRow.geoPoint = patch.geoPoint;
+      }
+      if (patch.openingHours !== undefined) {
+        branchRow.openingHours = patch.openingHours;
+      }
+      if (patch.facilities !== undefined) {
+        branchRow.facilities = [...patch.facilities];
+      }
+      branchRow.version += 1;
+      return { kind: 'branchUpdated', branch: copyBranch(branchRow) };
+    },
+
+    /**
+     * Mirrors POST .../branches/:branchId/deactivate — idempotent on an
+     * already-inactive branch (no version change), CAS otherwise. There is
+     * deliberately NO reactivation operation anywhere on this port.
+     */
+    async deactivateBranch(
+      organizationId,
+      branchId,
+      expectedVersion,
+    ): Promise<DeactivateBranchOutcome> {
+      const context = resolveBranchMutation(organizationId, 'branch.deactivate');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const branchRow = context.organization.branches.find(
+        (candidate) => candidate.id === branchId,
+      );
+      if (!branchRow) {
+        return { kind: 'notFound' };
+      }
+      if (!branchRow.active) {
+        return { kind: 'branchDeactivated' };
+      }
+      if (branchRow.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      branchRow.active = false;
+      branchRow.version += 1;
+      return { kind: 'branchDeactivated' };
+    },
+  };
+
+  const areaPort: AreaReadPort = {
+    /** Mirrors GET /catalogue/areas — active areas in deterministic order. */
+    async listAreas() {
+      if (store.areaLoadFailurePending) {
+        store.areaLoadFailurePending = false;
+        return { kind: 'unavailable' as const };
+      }
+      return { kind: 'loaded' as const, areas: areas.map((area) => ({ ...area })) };
+    },
+  };
+
   const controls: FixtureAccessControls = {
     expireSession() {
       store.current = null;
@@ -932,6 +1243,19 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
     failNextProfileSave(organizationId) {
       store.profileSaveFailures.add(organizationId);
+    },
+    simulateConcurrentBranchEdit(organizationId, branchId) {
+      const organization = organizations.get(organizationId);
+      const branchRow = organization?.branches.find((candidate) => candidate.id === branchId);
+      if (branchRow) {
+        branchRow.version += 1;
+      }
+    },
+    failNextBranchMutation(organizationId) {
+      store.branchMutationFailures.add(organizationId);
+    },
+    failNextAreaLoad() {
+      store.areaLoadFailurePending = true;
     },
   };
 
@@ -957,6 +1281,8 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     invitationPort,
     onboardingPort,
     profilePort,
+    branchPort,
+    areaPort,
     controls,
     seedSession,
     sessionStateFor,
