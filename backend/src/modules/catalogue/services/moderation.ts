@@ -42,8 +42,9 @@ export interface ModerationActor {
 }
 
 /** Operations-role check, fresh from PostgreSQL inside the transaction —
- *  listing review is operations-only (docs/24 §10.2), not every admin role. */
-async function hasOperationsRole(trx: Trx, userId: string): Promise<boolean> {
+ *  listing review AND taxonomy administration are operations-only
+ *  (docs/24 §10.2), not every admin role. Shared with taxonomy-admin. */
+export async function hasOperationsRole(trx: Trx, userId: string): Promise<boolean> {
   return (await listActiveRoles(trx, userId)).includes('operations');
 }
 

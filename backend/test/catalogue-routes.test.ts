@@ -146,14 +146,11 @@ describe('route inventory and structural deny-by-default', () => {
       expect(route.policy).toBe('provider');
       expect(route.url.startsWith('/provider/organizations/:organizationId/listings')).toBe(true);
     }
-    // Amended by the moderation task: internal-admin review/revision routes
-    // now legitimately exist under /admin (their own suite locks them). The
-    // PROVIDER surface still carries no decision path, and taxonomy admin
-    // remains future.
+    // Amended by the moderation + taxonomy-admin tasks: those internal-admin
+    // surfaces now legitimately exist under /admin (their own suites lock
+    // them). The PROVIDER surface still carries no decision path.
     const decisionish = app.routePolicyInventory.filter(
-      (route) =>
-        (route.policy !== 'admin' && /revision|review|approve|moderat/i.test(route.url)) ||
-        route.url.startsWith('/admin/taxonomy'),
+      (route) => route.policy !== 'admin' && /revision|review|approve|moderat/i.test(route.url),
     );
     expect(decisionish).toEqual([]);
   });

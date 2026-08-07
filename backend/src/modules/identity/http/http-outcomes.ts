@@ -144,6 +144,11 @@ export const HTTP_OUTCOMES = {
     code: 'revisionPending',
     message: 'A pending revision already exists for this listing. Wait for its review to finish.',
   },
+  slugConflict: {
+    statusCode: 409,
+    code: 'slugConflict',
+    message: 'This slug is already in use. Slugs are stable identifiers and must be unique.',
+  },
   invalidTaxonomy: {
     statusCode: 422,
     code: 'invalidTaxonomy',
