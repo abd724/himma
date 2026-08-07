@@ -277,4 +277,24 @@ Per docs/24 §12 (already owner-approved) plus this slice's split:
 
 ---
 
-*This plan writes no code and provisions nothing. Implementation begins only after owner approval, commit by commit per §16, within the docs/23 §16 phase gates. Production identity activation items (docs/26 §15) remain independent operational work.*
+## 18. Implementation status (S3-5 closeout, 2026-08-07)
+
+**Slice 3 implementation is COMPLETE.** Commits, each individually owner-approved before the next began:
+
+| # | Commit | Content |
+|---|---|---|
+| S3-1 | `3b5d12f` | Migration 0005 — organization + public profile + branch, §5.1 machine, seams, grants |
+| S3-2 | `3bcb37d` + `8784ce0` | Migration 0006 — staff memberships/branch scopes/invitations, last-owner guard, D-S3-1 invitation services; structural-secret allowlist correction |
+| S3-3 | `051d77c` | Provider principal (orgScope), capability registry, `provider`/`providerStepUp` policies (D-S3-5 MFA baseline + step-up), §13.2 provider-private routes |
+| S3-4 | `4ff461a` | §13.3 admin org lifecycle + founding-Owner creation (D-S3-3 evidence gate, fail-closed), §13.1 customer-public storefront read with structural projection lock |
+| S3-5 | this commit | Bounded hardening review (zero defects; new negative suites), §7.8 RLS evaluation, full certification, closeout |
+
+**Certification (2026-08-07):** backend tsc + ESLint clean · backend Jest 498/498 across 43 suites · migrate-from-zero, explicit 0006 rollback + reapply, `db:verify` green · Kysely codegen zero drift · route-policy inventory snapshot current · root customer app non-regression: tsc clean, lint clean, Jest 421/421 across 24 suites (no customer UI was modified; no native recertification required).
+
+**§7.8 RLS evaluation — DEFERRED (explicit decision).** PostgreSQL Row-Level Security is NOT adopted in Slice 3. Rationale: the API runs as one pooled `himma_app` principal, so per-organization policies would hinge on a transaction-local context GUC set at the start of every transaction — under connection pooling the realistic failure modes are forgotten-context breakage or, worse, session-level context bleed; meanwhile the intrinsic cross-organization paths (expiry sweep, admin lifecycle, invitation acceptance before org context exists, public storefront reads, `/provider/me`) would each need bypasses that reduce the policies to decoration over the slice that is already quadruple-guarded (composite FKs carrying `organization_id` · mandatory org-scoped repository predicates · per-request policy-pipeline resolution · the S3-3/S3-5 negative isolation suites). Adopting now would add migration complexity and a false sense of isolation — the §7.8 concern verbatim. **Reconsideration triggers (any one reopens the decision):** (1) the Slice-4 catalogue/listing tables land (more provider-owned rows and query surface; the natural point to introduce transaction-local org context with the new tables rather than retrofit); (2) any second database principal or direct-SQL/reporting access path to provider tables; (3) before provider-portal production GA. No partial or decorative policies were added.
+
+**Operational dependencies still PENDING (unchanged, none block Slice 4):** production Cognito pool/region + real-pool SOFTWARE_TOKEN_MFA smoke (docs/26 §15/§14.E′ — gates production admin AND provider surfaces, which stay fail-closed) · the VerificationCase/document-review capability (admin workstream; `verificationEvidenceCapabilityReady` stays false and production verify/go-live stay fail-closed, §10/D-S3-3) · production email delivery (D2; MailSender capture remains dev/test) · production distributed rate-limit store (docs/23 §10.7). The customer app continues to run on mock providers/catalogue until its later integration milestone; the provider portal (W2) and admin portal (W3) frontends are NOT built. English-only launch is unblocked: `_ar` columns are nullable, no lifecycle edge or storefront read requires Arabic content.
+
+**Slice 4 entry criteria:** explicit owner approval of the S3-5 closeout · an owner-approved Slice-4 (catalogue/listings) specification following the docs/26/27 planning pattern, honoring the §12.8-proven spine (`Program.organization_id` + same-org `program_branch` composite FKs) and the §15 mock→production mapping · the RLS reconsideration recorded above as a Slice-4 planning input · phase gates per docs/23 §16.
+
+*The original plan text above is preserved unchanged; this section records outcome only.*
