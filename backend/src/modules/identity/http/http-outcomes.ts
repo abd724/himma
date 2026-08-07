@@ -169,6 +169,11 @@ export const HTTP_OUTCOMES = {
     code: 'invalidOffer',
     message: 'The offer shape is invalid for its kind or effective period.',
   },
+  invalidCursor: {
+    statusCode: 422,
+    code: 'invalidCursor',
+    message: 'The pagination cursor is not valid. Restart from the first page.',
+  },
   verificationEvidenceUnavailable: {
     statusCode: 503,
     code: 'verificationEvidenceUnavailable',

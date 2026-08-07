@@ -489,7 +489,7 @@ describe('audit/outbox and route boundary', () => {
     expect(Number(after.rows[0]?.n)).toBe(2);
   });
 
-  it('the inventory gains exactly the nine taxonomy-admin routes and still no public/search surface', () => {
+  it('the inventory gains exactly the nine taxonomy-admin routes and still no search surface', () => {
     const taxonomyRoutes = app.routePolicyInventory.filter(
       (route) => route.url.startsWith('/admin/taxonomy') && route.method !== 'HEAD',
     );
@@ -509,11 +509,12 @@ describe('audit/outbox and route boundary', () => {
     for (const route of taxonomyRoutes) {
       expect(route.policy).toBe('admin');
     }
-    const forbidden = app.routePolicyInventory.filter(
-      (route) =>
-        /^\/(listings|programs|search|catalogue|sessions|bookings|payments)([/?]|$)/.test(
-          route.url,
-        ) || /^\/providers\/.+\/listings/.test(route.url),
+    // The customer-public /listings, /catalogue/*, and /providers/:id/
+    // listings reads arrived legitimately with the Slice-4 public-read task
+    // and are locked by catalogue-public.test.ts; search and the
+    // session/booking/payment domains still must not exist.
+    const forbidden = app.routePolicyInventory.filter((route) =>
+      /^\/(programs|search|sessions|bookings|payments)([/?]|$)/.test(route.url),
     );
     expect(forbidden).toEqual([]);
   });

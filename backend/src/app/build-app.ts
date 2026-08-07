@@ -27,6 +27,7 @@ import type { StaffInvitationConfig } from '../modules/provider/staff-invitation
 import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-moderation-routes';
 import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-taxonomy-routes';
 import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
+import { registerPublicCatalogueRoutes } from '../modules/catalogue/http/public-catalogue-routes';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
@@ -276,6 +277,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // public, served from the structurally separate public projection; no
     // MFA/activation dependency, so it registers with the identity surface.
     registerStorefrontRoutes(app, { db: identity.db });
+
+    // Customer-public catalogue reads (Slice 4, docs/28 §16.1/§19): same
+    // posture as the storefront read — explicitly public projections over
+    // live authoritative state, registered unconditionally with the
+    // identity surface. Reads only; no search surface exists yet.
+    registerPublicCatalogueRoutes(app, { db: identity.db });
 
     // Provider-private management surface (S3-3). D-S3-5 makes the MFA
     // baseline mandatory on every provider route, and production TOTP
