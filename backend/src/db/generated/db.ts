@@ -377,6 +377,9 @@ export interface Program {
   description_ar: string | null;
   description_en: string | null;
   eligibility_notes: string | null;
+  /**
+   * Owner-corrected five-value vocabulary (2026-08-07): women|men|girls|boys|mixed. `women` is the canonical stored code ("Ladies only" is presentation wording only). Independent of min_age/max_age — girls/boys are explicit provider-declared eligibility, never age-inferred. Adults are never gender-filtered automatically (docs/24 §2.5.2).
+   */
   gender_eligibility: string;
   id: string;
   /**

@@ -206,6 +206,58 @@ describe('program eligibility (docs/24 §2.5 — catalogue metadata, never booki
                   VALUES (${newId()}, ${orgA}, ${activityType}, 'Bad', 'indoor', 'mixed', true, 6)`);
   });
 
+  it('stores the five-value gender eligibility vocabulary exactly (owner correction, 2026-08-07)', async () => {
+    // women|men|girls|boys|mixed — women is the canonical stored code
+    // ("Ladies only" is later presentation wording, never database semantics).
+    for (const gender of ['women', 'men', 'girls', 'boys', 'mixed']) {
+      await sql`INSERT INTO program (id, organization_id, activity_type_id, title_en, setting, gender_eligibility)
+                VALUES (${newId()}, ${orgA}, ${activityType}, ${`Gender ${gender}`}, 'indoor', ${gender})`.execute(
+        testDb.db,
+      );
+    }
+    // The legacy three-value code and arbitrary values are rejected.
+    for (const gender of ['ladies', 'everyone', 'female', 'adults']) {
+      await expect(
+        sql`INSERT INTO program (id, organization_id, activity_type_id, title_en, setting, gender_eligibility)
+            VALUES (${newId()}, ${orgA}, ${activityType}, 'Bad gender', 'indoor', ${gender})`.execute(
+          testDb.db,
+        ),
+      ).rejects.toThrow();
+    }
+    // The revision change-set carries the same five-value vocabulary.
+    const published = await makeProgram({ state: 'published', publishedAt: new Date() });
+    await sql`INSERT INTO program_revision (id, program_id, organization_id, submitted_by, gender_eligibility)
+              VALUES (${newId()}, ${published}, ${orgA}, ${newId()}, 'girls')`.execute(testDb.db);
+    const other = await makeProgram({ state: 'published', publishedAt: new Date() });
+    await expect(
+      sql`INSERT INTO program_revision (id, program_id, organization_id, submitted_by, gender_eligibility)
+          VALUES (${newId()}, ${other}, ${orgA}, ${newId()}, 'ladies')`.execute(testDb.db),
+    ).rejects.toThrow();
+  });
+
+  it('never infers or rewrites girls/boys from age ranges — age and gender are independent', async () => {
+    // A child-aged mixed program stays mixed.
+    const childMixed = newId();
+    await sql`INSERT INTO program (id, organization_id, activity_type_id, title_en, setting,
+                                   gender_eligibility, min_age, max_age)
+              VALUES (${childMixed}, ${orgA}, ${activityType}, 'Junior Mixed', 'indoor', 'mixed', 6, 12)`.execute(
+      testDb.db,
+    );
+    // girls/boys are storable regardless of (even adult) age bounds.
+    const adultGirls = newId();
+    await sql`INSERT INTO program (id, organization_id, activity_type_id, title_en, setting,
+                                   gender_eligibility, min_age)
+              VALUES (${adultGirls}, ${orgA}, ${activityType}, 'Teen Girls 13+', 'indoor', 'girls', 13)`.execute(
+      testDb.db,
+    );
+    // Editing ages never rewrites the stored gender code.
+    await sql`UPDATE program SET min_age = 4, max_age = 10 WHERE id = ${childMixed}`.execute(testDb.db);
+    const rows = await sql<{ id: string; gender_eligibility: string }>`
+      SELECT id, gender_eligibility FROM program
+      WHERE id IN (${childMixed}, ${adultGirls}) ORDER BY gender_eligibility`.execute(testDb.db);
+    expect(rows.rows.map((r) => r.gender_eligibility)).toEqual(['girls', 'mixed']);
+  });
+
   it('introduces no session/date/time availability columns at program level', async () => {
     const columns = await sql<{ column_name: string }>`
       SELECT column_name FROM information_schema.columns
@@ -534,7 +586,7 @@ describe('application-role permissions (catalogue)', () => {
       await sql`SET LOCAL ROLE himma_app`.execute(trx);
       const own = newId();
       await sql`INSERT INTO program (id, organization_id, activity_type_id, title_en, setting, gender_eligibility)
-                VALUES (${own}, ${orgA}, ${activityType}, 'App-created', 'outdoor', 'ladies')`.execute(
+                VALUES (${own}, ${orgA}, ${activityType}, 'App-created', 'outdoor', 'women')`.execute(
         trx,
       );
       await sql`UPDATE program SET title_en = 'App-edited' WHERE id = ${own}`.execute(trx);
