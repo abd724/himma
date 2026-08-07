@@ -39,7 +39,7 @@ export interface PriceOptionInput {
 
 /** The S4-1 CHECK ties, prechecked for typed outcomes: free ⇔ NULL amount,
  *  paid ⇒ positive integer fils, package ⇔ positive sessions_count. */
-function optionShapeValid(input: {
+export function optionShapeValid(input: {
   kind: PriceOptionKind;
   amountFils?: number | null;
   sessionsCount?: number | null;

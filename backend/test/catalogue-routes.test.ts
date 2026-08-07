@@ -133,22 +133,26 @@ async function versionOf(programId: string): Promise<number> {
 
 describe('route inventory and structural deny-by-default', () => {
   it('registers the §16.2 catalogue routes, all provider-policy-declared, and no revision-decision route', () => {
-    // Fastify auto-registers HEAD alongside GET; the declared surface is 19.
+    // Fastify auto-registers HEAD alongside GET; the declared PROVIDER
+    // surface is 19 (the internal-admin moderation routes under
+    // /admin/listings are locked by their own suite).
     const catalogueRoutes = app.routePolicyInventory.filter(
-      (route) => route.url.includes('/listings') && route.method !== 'HEAD',
+      (route) =>
+        route.url.startsWith('/provider/organizations/:organizationId/listings') &&
+        route.method !== 'HEAD',
     );
     expect(catalogueRoutes).toHaveLength(19);
     for (const route of catalogueRoutes) {
       expect(route.policy).toBe('provider');
       expect(route.url.startsWith('/provider/organizations/:organizationId/listings')).toBe(true);
     }
-    // Moderation stays out of S4-2: no listing/revision review or decision
-    // surface exists — not on the provider side, not under /admin.
+    // Amended by the moderation task: internal-admin review/revision routes
+    // now legitimately exist under /admin (their own suite locks them). The
+    // PROVIDER surface still carries no decision path, and taxonomy admin
+    // remains future.
     const decisionish = app.routePolicyInventory.filter(
       (route) =>
-        /revision/i.test(route.url) ||
-        (route.url.includes('/listings') && /review|approve|moderat/i.test(route.url)) ||
-        route.url.startsWith('/admin/listings') ||
+        (route.policy !== 'admin' && /revision|review|approve|moderat/i.test(route.url)) ||
         route.url.startsWith('/admin/taxonomy'),
     );
     expect(decisionish).toEqual([]);

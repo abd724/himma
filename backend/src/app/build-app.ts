@@ -24,6 +24,7 @@ import type { ProviderSessionRevoker } from '../modules/identity/providers/revoc
 import type { MfaProviderPort } from '../modules/identity/providers/mfa';
 import type { MfaConfig } from '../modules/identity/services/mfa-config';
 import type { StaffInvitationConfig } from '../modules/provider/staff-invitation-config';
+import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-moderation-routes';
 import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
@@ -253,12 +254,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }
       if (ready && identity.enableAdminRoutes !== false) {
         registerAdminRoutes(app, { db: identity.db });
+        // Internal catalogue moderation (Slice 4) shares the admin surface's
+        // production capability gate — same MFA enforcement, no bypass.
+        registerAdminModerationRoutes(app, { db: identity.db });
         if (organizationAdminDeps !== undefined) {
           registerOrganizationAdminRoutes(app, organizationAdminDeps);
         }
       }
     } else if (identity.enableAdminRoutes !== false) {
       registerAdminRoutes(app, { db: identity.db });
+      registerAdminModerationRoutes(app, { db: identity.db });
       if (organizationAdminDeps !== undefined) {
         registerOrganizationAdminRoutes(app, organizationAdminDeps);
       }

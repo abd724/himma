@@ -186,7 +186,7 @@ async function activityTypeIsActive(trx: Trx, activityTypeId: string): Promise<b
   return row !== undefined;
 }
 
-function eligibilityValid(input: {
+export function eligibilityValid(input: {
   minAge?: number | null;
   maxAge?: number | null;
   allAges?: boolean;
@@ -275,7 +275,26 @@ export async function getProviderProgram(
   input: { programId: string },
 ): Promise<GetProgramResult> {
   return withTransaction(deps.db, async (trx) => {
-    const program = await trx
+    const program = await loadProgramDetailInTrx(trx, {
+      programId: input.programId,
+      organizationId: scope.organizationId,
+    });
+    if (program === undefined) return { kind: 'programNotFound' as const };
+    return { kind: 'programView' as const, program };
+  });
+}
+
+/**
+ * Shared provider/moderation projection loader. Provider reads pass the
+ * scope's organization (a cross-org id resolves to nothing); the
+ * internal-admin moderation surface legitimately loads across
+ * organizations and omits the filter.
+ */
+export async function loadProgramDetailInTrx(
+  trx: Trx,
+  input: { programId: string; organizationId?: string },
+): Promise<ProgramDetailView | undefined> {
+    let programQuery = trx
       .selectFrom('program')
       .innerJoin('activity_type', 'activity_type.id', 'program.activity_type_id')
       .select([
@@ -305,10 +324,12 @@ export async function getProviderProgram(
         'activity_type.active as activity_type_active',
         'activity_type.category_id as activity_type_category_id',
       ])
-      .where('program.id', '=', input.programId)
-      .where('program.organization_id', '=', scope.organizationId)
-      .executeTakeFirst();
-    if (program === undefined) return { kind: 'programNotFound' as const };
+      .where('program.id', '=', input.programId);
+    if (input.organizationId !== undefined) {
+      programQuery = programQuery.where('program.organization_id', '=', input.organizationId);
+    }
+    const program = await programQuery.executeTakeFirst();
+    if (program === undefined) return undefined;
 
     const options = await trx
       .selectFrom('program_price_option')
@@ -361,8 +382,6 @@ export async function getProviderProgram(
       .executeTakeFirst();
 
     return {
-      kind: 'programView' as const,
-      program: {
         id: program.id,
         organizationId: program.organization_id,
         activityType: {
@@ -427,9 +446,7 @@ export async function getProviderProgram(
                 createdAt: openRevision.created_at.toISOString(),
                 version: openRevision.version,
               },
-      },
     };
-  });
 }
 
 export async function listProviderPrograms(

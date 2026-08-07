@@ -125,7 +125,9 @@ const OfferView = Type.Object({
   version: Type.Integer(),
 });
 
-const ProgramDetailView = Type.Object({
+/** Shared with the internal-admin moderation projection (same explicit
+ *  contract — no Type.Any surfaces anywhere on the catalogue). */
+export const ProgramDetailViewSchema = Type.Object({
   id: Uuid,
   organizationId: Uuid,
   activityType: Type.Object({
@@ -345,7 +347,7 @@ export function registerCatalogueRoutes(
       schema: {
         params: Type.Object({ organizationId: Uuid, programId: Uuid }),
         response: {
-          200: Type.Object({ program: ProgramDetailView }),
+          200: Type.Object({ program: ProgramDetailViewSchema }),
           ...CATALOGUE_ERRORS,
         },
       },
