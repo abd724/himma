@@ -96,7 +96,9 @@ describe('capability registry shape (docs/27 §6)', () => {
 
 describe('structural deny-by-default for provider routes', () => {
   it('every registered /provider route declares a provider policy or authenticatedCustomer (me/accept only)', () => {
-    const providerRoutes = app.routePolicyInventory.filter((r) => r.url.startsWith('/provider'));
+    // '/provider/' — the S3-4 customer-public storefront lives at
+    // '/providers/…' and is a deliberately separate public surface.
+    const providerRoutes = app.routePolicyInventory.filter((r) => r.url.startsWith('/provider/'));
     expect(providerRoutes.length).toBeGreaterThanOrEqual(12);
     for (const route of providerRoutes) {
       if (route.url === '/provider/me' || route.url === '/provider/invitations/accept') {
@@ -321,7 +323,10 @@ describe('production fail-closed provider gate (D-S3-5; docs/26 §14.E′)', () 
       },
     });
     await production.ready();
-    const routes = production.routePolicyInventory.filter((r) => r.url.startsWith('/provider'));
+    // The provider-PRIVATE surface ('/provider/…') is absent; the S3-4
+    // customer-public storefront ('/providers/…') is deliberately public
+    // and stays registered — it needs no MFA activation.
+    const routes = production.routePolicyInventory.filter((r) => r.url.startsWith('/provider/'));
     expect(routes).toEqual([]);
     const probe = await production.inject({ method: 'GET', url: '/provider/me' });
     expect(probe.statusCode).toBe(404);

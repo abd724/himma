@@ -134,6 +134,12 @@ export const HTTP_OUTCOMES = {
     code: 'lifecycleConflict',
     message: "This action is not available in the resource's current state.",
   },
+  verificationEvidenceUnavailable: {
+    statusCode: 503,
+    code: 'verificationEvidenceUnavailable',
+    message:
+      'Provider verification decisions are unavailable until the verification evidence capability is active.',
+  },
   rateLimited: {
     statusCode: 429,
     code: 'rateLimited',

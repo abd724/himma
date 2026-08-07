@@ -28,7 +28,9 @@ import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
 import { registerMfaRoutes } from '../modules/identity/http/mfa-routes';
+import { registerOrganizationAdminRoutes } from '../modules/provider/http/organization-admin-routes';
 import { registerProviderRoutes } from '../modules/provider/http/provider-routes';
+import { registerStorefrontRoutes } from '../modules/provider/http/storefront-routes';
 import { installRoutePolicyGuard } from '../modules/identity/http/policies';
 import {
   createRateLimiterStore,
@@ -73,6 +75,16 @@ export interface IdentityHttpOptions {
   mfaConfig?: MfaConfig;
   /** Provider-private management surface (S3-3) registers when supplied. */
   staffInvitationConfig?: StaffInvitationConfig;
+  /**
+   * D-S3-3 verification-evidence capability (S3-4). Defaults FALSE with no
+   * environment shortcut. Slice 3 contains NO VerificationCase/document-
+   * review implementation, so no production build can truthfully report
+   * ready — a production start that claims it refuses loudly, and while it
+   * is false every production `verify`/`go-live` transition fail-closes
+   * with a typed, audited refusal. Development/test exercise the complete
+   * lifecycle deterministically.
+   */
+  verificationEvidenceCapabilityReady?: boolean;
   /** Defaults via createRateLimiterStore — which FAILS CLOSED in production. */
   rateLimiterStore?: RateLimiterStore;
   nodeEnv?: NodeEnv;
@@ -206,6 +218,31 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // the full surface behind the same admin MFA enforcement, exercised
     // through deterministic adapters.
     const nodeEnv = identity.nodeEnv ?? 'development';
+
+    // D-S3-3 (binding): Slice 3 ships NO VerificationCase/document-review
+    // capability, so a production build claiming evidence readiness is
+    // lying by construction — refuse startup instead of weakening the
+    // verify/go-live fail-close. The flag becomes honestly settable only
+    // when the admin workstream lands the real capability.
+    if (nodeEnv === 'production' && identity.verificationEvidenceCapabilityReady === true) {
+      throw new Error(
+        'verificationEvidenceCapabilityReady cannot be true: this build contains no VerificationCase/document-review capability, and production verified/live transitions stay fail-closed until it exists (docs/27 D-S3-3).',
+      );
+    }
+    const organizationAdminDeps =
+      identity.staffInvitationConfig !== undefined
+        ? {
+            db: identity.db,
+            mailSender: identity.mailSender,
+            invitationConfig: identity.staffInvitationConfig,
+            lifecycle: {
+              nodeEnv,
+              verificationEvidenceCapabilityReady:
+                identity.verificationEvidenceCapabilityReady ?? false,
+            },
+          }
+        : undefined;
+
     if (nodeEnv === 'production') {
       const ready = adminProductionReady(identity.adminReadiness);
       if (identity.enableAdminRoutes === true && !ready) {
@@ -215,10 +252,21 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }
       if (ready && identity.enableAdminRoutes !== false) {
         registerAdminRoutes(app, { db: identity.db });
+        if (organizationAdminDeps !== undefined) {
+          registerOrganizationAdminRoutes(app, organizationAdminDeps);
+        }
       }
     } else if (identity.enableAdminRoutes !== false) {
       registerAdminRoutes(app, { db: identity.db });
+      if (organizationAdminDeps !== undefined) {
+        registerOrganizationAdminRoutes(app, organizationAdminDeps);
+      }
     }
+
+    // Customer-public storefront read (S3-4, docs/27 §13.1): explicitly
+    // public, served from the structurally separate public projection; no
+    // MFA/activation dependency, so it registers with the identity surface.
+    registerStorefrontRoutes(app, { db: identity.db });
 
     // Provider-private management surface (S3-3). D-S3-5 makes the MFA
     // baseline mandatory on every provider route, and production TOTP

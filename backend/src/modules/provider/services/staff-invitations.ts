@@ -100,6 +100,111 @@ function activePepper(config: StaffInvitationConfig): { version: number; pepper:
   return { version, pepper };
 }
 
+/** One-time token material, prepared in memory before any transaction —
+ *  the raw token never reaches a return value or the database. */
+export interface PreparedInvitationToken {
+  rawToken: string;
+  tokenDigest: string;
+  pepperVersion: number;
+}
+
+export function prepareInvitationToken(config: StaffInvitationConfig): PreparedInvitationToken {
+  const { version, pepper } = activePepper(config);
+  const rawToken = randomBytes(32).toString('base64url');
+  return { rawToken, tokenDigest: digestStaffInvitationToken(pepper, rawToken), pepperVersion: version };
+}
+
+/**
+ * Persists one invitation inside the caller's transaction: supersedes any
+ * still-`sent` invitation for the same organization + address (the approved
+ * resend policy), inserts the new row, and writes the audit/outbox events —
+ * all atomic with whatever else the caller's transaction creates (the S3-4
+ * admin org-creation flow composes this with the organization itself).
+ */
+export async function persistInvitationInTrx(
+  trx: Trx,
+  input: {
+    organizationId: string;
+    email: string;
+    role: ProviderRole;
+    branchScopeKind: 'all' | 'branches';
+    branchScopeIds: string[];
+    invitedBy: string;
+    token: PreparedInvitationToken;
+    expiresAt: Date;
+  },
+): Promise<string> {
+  const supersededIds = await revokeSentInvitationsForEmail(trx, {
+    organizationId: input.organizationId,
+    email: input.email,
+    revokedBy: input.invitedBy,
+  });
+  for (const supersededId of supersededIds) {
+    await appendAuditEvent(trx, {
+      actorType: 'user',
+      actorId: input.invitedBy,
+      action: 'org.invitation_revoked',
+      entityType: 'staff_invitation',
+      entityId: supersededId,
+    });
+    await appendOutboxEvent(trx, {
+      aggregateType: 'organization',
+      aggregateId: input.organizationId,
+      eventType: 'staff.invitation_revoked',
+      payload: { invitationId: supersededId, reason: 'superseded' },
+    });
+  }
+  const invitationId = await insertInvitation(trx, {
+    organizationId: input.organizationId,
+    email: input.email,
+    role: input.role,
+    branchScopeKind: input.branchScopeKind,
+    branchScopeIds: input.branchScopeIds,
+    invitedBy: input.invitedBy,
+    tokenDigest: input.token.tokenDigest,
+    pepperVersion: input.token.pepperVersion,
+    expiresAt: input.expiresAt,
+  });
+  await appendAuditEvent(trx, {
+    actorType: 'user',
+    actorId: input.invitedBy,
+    action: 'org.staff_invited',
+    entityType: 'staff_invitation',
+    entityId: invitationId,
+  });
+  // Ids-only payload: the target email is PII and NEVER enters
+  // audit/outbox (docs/27 §12.7).
+  await appendOutboxEvent(trx, {
+    aggregateType: 'organization',
+    aggregateId: input.organizationId,
+    eventType: 'staff.invited',
+    payload: {
+      invitationId,
+      role: input.role,
+      branchScopeKind: input.branchScopeKind,
+    },
+  });
+  return invitationId;
+}
+
+/** The one sanctioned carrier of the raw token: the outgoing mail payload. */
+export function composeInvitationMail(input: {
+  email: string;
+  displayName: string | undefined;
+  rawToken: string;
+  expiresAt: Date;
+}): MailMessage {
+  return {
+    to: input.email,
+    template: 'staff_invitation',
+    subject: 'Invitation to join a provider team on Himma',
+    body:
+      `You have been invited to join ${input.displayName ?? 'a provider team'} on Himma.\n` +
+      `Use this one-time invitation code to accept: ${input.rawToken}\n` +
+      `This invitation expires on ${input.expiresAt.toISOString()}.`,
+  };
+}
+
 /** Mail delivery outcome recorded on the issuance result: the invitation is
  *  already committed either way (docs/24 §7 — network I/O after commit). */
 export type MailDeliveryStatus = 'delivered' | 'failed';
@@ -162,7 +267,6 @@ export async function issueStaffInvitation(
   },
 ): Promise<IssueInvitationResult> {
   const email = normalizeInvitationEmail(input.email);
-  const { version, pepper } = activePepper(deps.invitationConfig);
 
   // Org-wide-only roles can never be branch-scoped (docs/27 §5; the schema
   // CHECK backs this — the pre-check yields a typed outcome, not a throw).
@@ -175,8 +279,7 @@ export async function issueStaffInvitation(
 
   // Generated before the transaction: pure in-memory CSPRNG work. The raw
   // token never touches the database or the return value — only the mail.
-  const rawToken = randomBytes(32).toString('base64url');
-  const tokenDigest = digestStaffInvitationToken(pepper, rawToken);
+  const token = prepareInvitationToken(deps.invitationConfig);
 
   const run = (): Promise<
     | { outcome: Exclude<IssueInvitationResult, { kind: 'invitationIssued' }> }
@@ -202,61 +305,20 @@ export async function issueStaffInvitation(
         branchScopeIds = branchIds;
       }
 
-      // Approved resend policy (docs/27 §9): a live invitation for the same
-      // organization + address is revoked and replaced — never mutated.
-      const supersededIds = await revokeSentInvitationsForEmail(trx, {
-        organizationId: input.organizationId,
-        email,
-        revokedBy: issuer.userId,
-      });
-      for (const supersededId of supersededIds) {
-        await appendAuditEvent(trx, {
-          actorType: 'user',
-          actorId: issuer.userId,
-          action: 'org.invitation_revoked',
-          entityType: 'staff_invitation',
-          entityId: supersededId,
-        });
-        await appendOutboxEvent(trx, {
-          aggregateType: 'organization',
-          aggregateId: input.organizationId,
-          eventType: 'staff.invitation_revoked',
-          payload: { invitationId: supersededId, reason: 'superseded' },
-        });
-      }
-
       const expiresAt = new Date(
         Date.now() + deps.invitationConfig.invitationTtlSeconds * 1000,
       );
-      const invitationId = await insertInvitation(trx, {
+      // Approved resend policy (docs/27 §9) + insert + events, one path
+      // shared with the S3-4 admin founding-invitation flow.
+      const invitationId = await persistInvitationInTrx(trx, {
         organizationId: input.organizationId,
         email,
         role: input.role,
         branchScopeKind: input.branchScope.kind,
         branchScopeIds,
         invitedBy: issuer.userId,
-        tokenDigest,
-        pepperVersion: version,
+        token,
         expiresAt,
-      });
-      await appendAuditEvent(trx, {
-        actorType: 'user',
-        actorId: issuer.userId,
-        action: 'org.staff_invited',
-        entityType: 'staff_invitation',
-        entityId: invitationId,
-      });
-      // Ids-only payload: the target email is PII and NEVER enters
-      // audit/outbox (docs/27 §12.7).
-      await appendOutboxEvent(trx, {
-        aggregateType: 'organization',
-        aggregateId: input.organizationId,
-        eventType: 'staff.invited',
-        payload: {
-          invitationId,
-          role: input.role,
-          branchScopeKind: input.branchScope.kind,
-        },
       });
 
       const displayName = await trx
@@ -264,15 +326,12 @@ export async function issueStaffInvitation(
         .select('display_name')
         .where('organization_id', '=', input.organizationId)
         .executeTakeFirst();
-      const mail: MailMessage = {
-        to: email,
-        template: 'staff_invitation',
-        subject: 'Invitation to join a provider team on Himma',
-        body:
-          `You have been invited to join ${displayName?.display_name ?? 'a provider team'} on Himma.\n` +
-          `Use this one-time invitation code to accept: ${rawToken}\n` +
-          `This invitation expires on ${expiresAt.toISOString()}.`,
-      };
+      const mail = composeInvitationMail({
+        email,
+        displayName: displayName?.display_name,
+        rawToken: token.rawToken,
+        expiresAt,
+      });
       return { outcome: { kind: 'issued' as const, invitationId, expiresAt }, mail };
     });
 
