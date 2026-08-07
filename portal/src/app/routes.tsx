@@ -14,7 +14,7 @@ import { SignedOutPage } from '../pages/access/signed-out-page';
 import { StepUpPage } from '../pages/access/step-up-page';
 import { BookingsPage } from '../pages/bookings-page';
 import { BranchesPage } from '../pages/branches-page';
-import { BusinessProfilePage } from '../pages/business-profile-page';
+import { BusinessProfilePage } from '../pages/profile/business-profile-page';
 import { DashboardPage } from '../pages/dashboard-page';
 import { FinancePage } from '../pages/finance-page';
 import { ListingsPage } from '../pages/listings-page';

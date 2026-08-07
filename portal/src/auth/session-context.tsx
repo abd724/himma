@@ -54,13 +54,16 @@ export function SessionProvider({
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Bootstrap once on mount (skipped when a test provided a state).
-  const bootstrappedRef = useRef(false);
+  // Bootstrap while the machine is in its initial state (skipped when a
+  // test provided a state). Guarded by the STATE, not a ref: bootstrap is a
+  // read-only resolution, so re-running after React's dev-mode StrictMode
+  // unmount/remount cycle is safe — a once-only ref here left the first
+  // (cancelled) run as the only attempt and dev builds stuck on the
+  // bootstrap screen forever.
   useEffect(() => {
-    if (bootstrappedRef.current || stateRef.current.status !== 'bootstrapping') {
+    if (stateRef.current.status !== 'bootstrapping') {
       return;
     }
-    bootstrappedRef.current = true;
     let cancelled = false;
     void adapter.bootstrap().then((outcome) => {
       if (!cancelled) {

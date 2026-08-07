@@ -37,3 +37,13 @@
 .body {
   min-width: 0;
 }
+
+.success {
+  background: rgba(45, 186, 127, 0.08);
+  border: 1px solid rgba(45, 186, 127, 0.35);
+  color: var(--hp-color-text-primary);
+}
+
+.success .icon {
+  color: var(--hp-color-status-success);
+}

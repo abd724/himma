@@ -176,8 +176,9 @@ describe('onboarding hub (readiness orchestration over canonical states)', () =>
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();
     hub.unmount();
 
-    // Profile (W2-4), Branches (W2-5), Team (W2-6) remain honest placeholders.
-    for (const segment of ['profile', 'branches', 'team']) {
+    // Branches (W2-5) and Team (W2-6) remain honest placeholders
+    // (the Business Profile became the real W2-4 experience).
+    for (const segment of ['branches', 'team']) {
       const view = renderPortal({
         asIdentity: 'assistant@coral.demo',
         initialEntries: [`/o/${fixtureOrganizations.coral.organizationId}/${segment}`],

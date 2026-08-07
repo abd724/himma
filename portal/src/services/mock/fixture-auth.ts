@@ -46,6 +46,13 @@ import type {
   SubmitForVerificationOutcome,
 } from '../../onboarding/contract';
 import type {
+  OrganizationProfilePort,
+  OrganizationView,
+  OrganizationViewOutcome,
+  ProfilePatch,
+  UpdateProfileOutcome,
+} from '../../profile/contract';
+import type {
   BranchScope,
   ProviderAccessOutcome,
   ProviderAccessPort,
@@ -144,55 +151,162 @@ const ROLE_CAPABILITIES: Record<ProviderRole, readonly string[]> = {
   finance: ['org.read', 'org.legal.view'],
 };
 
+interface FixtureBranchState {
+  readonly id: string;
+  label: string;
+  addressLine: string | null;
+  city: string | null;
+  areaLabel: string;
+  geoPoint: { longitude: number; latitude: number } | null;
+  openingHours: unknown;
+  facilities: string[];
+  active: boolean;
+  version: number;
+}
+
+/** Mirrors organization_public_profile — the storefront record (own version). */
+interface FixtureProfileState {
+  displayName: string;
+  descriptionEn: string | null;
+  descriptionAr: string | null;
+  logoMediaRef: string | null;
+  coverMediaRef: string | null;
+  galleryMediaRefs: string[];
+  publicPhone: string | null;
+  publicEmail: string | null;
+  publicWebsite: string | null;
+  publicInstagram: string | null;
+  published: boolean;
+  version: number;
+}
+
 interface FixtureOrganizationState {
   readonly organizationId: string;
   readonly tradeName: string;
+  readonly legalName: string;
   verificationState: string;
   version: number;
-  profileDisplayName: string;
-  profilePublished: boolean;
-  branches: Array<{ id: string; label: string; active: boolean }>;
+  profile: FixtureProfileState;
+  branches: FixtureBranchState[];
   listingCount: number;
 }
 
 function organizationDirectory(): Map<string, FixtureOrganizationState> {
+  const branch = (
+    organizationId: string,
+    suffix: string,
+    label: string,
+    areaLabel: string,
+    options: Partial<Pick<FixtureBranchState, 'addressLine' | 'facilities' | 'active'>> = {},
+  ): FixtureBranchState => ({
+    id: suffix.length > 12 ? suffix : `${organizationId.slice(0, 8)}-${suffix}`,
+    label,
+    addressLine: options.addressLine ?? null,
+    city: null,
+    areaLabel,
+    geoPoint: null,
+    openingHours: null,
+    facilities: options.facilities ?? [],
+    active: options.active ?? true,
+    version: 1,
+  });
+
   const org = (
     ref: { organizationId: string; displayName: string },
     verificationState: string,
     options: {
-      profileDisplayName?: string;
-      published?: boolean;
-      branches?: Array<{ id: string; label: string; active: boolean }>;
+      legalName?: string;
+      profile?: Partial<FixtureProfileState>;
+      branches?: FixtureBranchState[];
       listingCount?: number;
     } = {},
   ): FixtureOrganizationState => ({
     organizationId: ref.organizationId,
     tradeName: ref.displayName,
+    legalName: options.legalName ?? `${ref.displayName} LLC`,
     verificationState,
     version: 3,
-    profileDisplayName: options.profileDisplayName ?? ref.displayName,
-    profilePublished: options.published ?? false,
+    profile: {
+      displayName: ref.displayName,
+      descriptionEn: null,
+      descriptionAr: null,
+      logoMediaRef: null,
+      coverMediaRef: null,
+      galleryMediaRefs: [],
+      publicPhone: null,
+      publicEmail: null,
+      publicWebsite: null,
+      publicInstagram: null,
+      published: false,
+      version: 2,
+      ...options.profile,
+    },
     branches:
       options.branches ??
-      [{ id: `${ref.organizationId.slice(0, 8)}-branch-1`, label: 'Main branch', active: true }],
+      [branch(ref.organizationId, 'branch-1', 'Main branch', 'Downtown Dubai')],
     listingCount: options.listingCount ?? 0,
   });
 
   return new Map(
     [
-      org(fixtureOrganizations.blueWave, 'live', { published: true, listingCount: 3 }),
-      org(fixtureOrganizations.noor, 'live', {
-        published: true,
-        listingCount: 2,
-        branches: [{ id: NOOR_BRANCH_ID, label: 'Al Barsha centre', active: true }],
+      org(fixtureOrganizations.blueWave, 'live', {
+        listingCount: 3,
+        profile: {
+          descriptionEn:
+            'Learn-to-swim classes, squad training, and holiday camps for children and adults, taught by certified coaches.',
+          publicPhone: '+971 4 555 0100',
+          publicEmail: 'hello@bluewave.example',
+          publicWebsite: 'https://bluewave.example',
+          publicInstagram: '@bluewaveswim',
+          published: true,
+        },
+        branches: [
+          branch(fixtureOrganizations.blueWave.organizationId, 'branch-1', 'Dubai Marina pool', 'Dubai Marina', {
+            addressLine: 'Marina Promenade, Block C',
+            facilities: ['Indoor pool', 'Changing rooms', 'Parking'],
+          }),
+          branch(fixtureOrganizations.blueWave.organizationId, 'branch-2', 'Business Bay pool', 'Business Bay', {
+            addressLine: 'Bay Avenue, Tower 2',
+            facilities: ['Outdoor pool', 'Café'],
+          }),
+        ],
       }),
-      org(fixtureOrganizations.falcon, 'suspended', { published: true, listingCount: 1 }),
+      org(fixtureOrganizations.noor, 'live', {
+        listingCount: 2,
+        profile: {
+          descriptionEn: 'After-school learning support and enrichment programs.',
+          publicEmail: 'contact@noorlearning.example',
+          published: true,
+        },
+        branches: [
+          branch(fixtureOrganizations.noor.organizationId, NOOR_BRANCH_ID, 'Al Barsha centre', 'Al Barsha'),
+        ],
+      }),
+      org(fixtureOrganizations.falcon, 'suspended', {
+        listingCount: 1,
+        profile: {
+          descriptionEn: 'Combat sports classes for teens and adults.',
+          published: true,
+        },
+      }),
       // Fresh admin-created draft: profile shell empty, no branch yet.
-      org(fixtureOrganizations.coral, 'draft', { profileDisplayName: '', branches: [] }),
+      org(fixtureOrganizations.coral, 'draft', {
+        profile: { displayName: '' },
+        branches: [],
+      }),
       org(fixtureOrganizations.sunrise, 'submitted'),
       org(fixtureOrganizations.marina, 'in_review'),
-      org(fixtureOrganizations.desertBloom, 'rejected'),
-      org(fixtureOrganizations.pearl, 'verified'),
+      org(fixtureOrganizations.desertBloom, 'rejected', {
+        profile: { descriptionEn: 'Yoga and mindfulness studio for all levels.' },
+      }),
+      // Verified + published storefront, NOT yet live: publication alone
+      // never makes a provider publicly visible (live AND published).
+      org(fixtureOrganizations.pearl, 'verified', {
+        profile: {
+          descriptionEn: 'Freediving courses and guided open-water sessions.',
+          published: true,
+        },
+      }),
     ].map((entry) => [entry.organizationId, entry]),
   );
 }
@@ -346,6 +460,8 @@ interface FixtureSessionStore {
   revokedAccess: boolean;
   flakyFailuresRemaining: number;
   usedRecoveryCodes: Set<string>;
+  profileLoadFailures: Set<string>;
+  profileSaveFailures: Set<string>;
   listeners: Set<(interrupt: SessionInterrupt) => void>;
 }
 
@@ -354,6 +470,16 @@ export interface FixtureAccessControls {
   expireSession(): void;
   /** Simulate every membership being revoked while signed in. */
   revokeAccess(): void;
+  /**
+   * Simulate ANOTHER staff member saving the storefront profile while this
+   * one is open (bumps the profile row's version): the next save carrying
+   * the old `expectedVersion` receives the canonical `staleVersion`.
+   */
+  simulateConcurrentProfileEdit(organizationId: string): void;
+  /** Make the next organization-view load fail transiently. */
+  failNextProfileLoad(organizationId: string): void;
+  /** Make the next profile save fail transiently. */
+  failNextProfileSave(organizationId: string): void;
 }
 
 export interface FixtureAuthRuntime {
@@ -361,6 +487,7 @@ export interface FixtureAuthRuntime {
   accessPort: ProviderAccessPort;
   invitationPort: InvitationPort;
   onboardingPort: OnboardingPort;
+  profilePort: OrganizationProfilePort;
   controls: FixtureAccessControls;
   /**
    * Test-harness seeding: aligns the fixture store with a prepared session
@@ -390,6 +517,8 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     revokedAccess: false,
     flakyFailuresRemaining: 0,
     usedRecoveryCodes: new Set(),
+    profileLoadFailures: new Set(),
+    profileSaveFailures: new Set(),
     listeners: new Set(),
   };
 
@@ -416,7 +545,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         }
         return {
           organizationId: organization.organizationId,
-          displayName: organization.profileDisplayName || organization.tradeName,
+          displayName: organization.profile.displayName || organization.tradeName,
           role: seatEntry.role,
           branchScope: seatEntry.branchScope,
           organizationState: organization.verificationState,
@@ -598,10 +727,14 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         version: organization.version,
       },
       profile: {
-        displayName: organization.profileDisplayName,
-        published: organization.profilePublished,
+        displayName: organization.profile.displayName,
+        published: organization.profile.published,
       },
-      branches: organization.branches.map((branch) => ({ ...branch })),
+      branches: organization.branches.map((branch) => ({
+        id: branch.id,
+        label: branch.label,
+        active: branch.active,
+      })),
       membership: { role: seatEntry.role, capabilities },
       listingCount: capabilities.includes('catalogue.read') ? organization.listingCount : null,
     };
@@ -645,7 +778,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         return { kind: 'staleVersion' };
       }
       const complete =
-        organization.profileDisplayName.trim().length > 0 &&
+        organization.profile.displayName.trim().length > 0 &&
         organization.branches.some((branch) => branch.active);
       if (!complete) {
         return { kind: 'organizationIncomplete' };
@@ -654,6 +787,127 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       organization.version += 1;
       emit({ kind: 'accessChanged' });
       return { kind: 'organizationSubmitted', version: organization.version };
+    },
+  };
+
+  /**
+   * Mirrors the PATCH .../profile TypeBox constraints so the server-side
+   * `validationError` (422) seam is real in fixture mode too. The client
+   * form validates first; this is the backend-authoritative backstop.
+   */
+  const patchViolatesConstraints = (patch: ProfilePatch): boolean => {
+    const tooLong = (value: string | null | undefined, max: number) =>
+      typeof value === 'string' && value.length > max;
+    if (patch.displayName !== undefined && (patch.displayName.length < 1 || patch.displayName.length > 120)) {
+      return true;
+    }
+    if (tooLong(patch.descriptionEn, 2000) || tooLong(patch.descriptionAr, 2000)) {
+      return true;
+    }
+    if (typeof patch.publicEmail === 'string' && (patch.publicEmail.length > 320 || !patch.publicEmail.includes('@'))) {
+      return true;
+    }
+    return (
+      tooLong(patch.publicPhone, 32) ||
+      tooLong(patch.publicWebsite, 300) ||
+      tooLong(patch.publicInstagram, 64)
+    );
+  };
+
+  const profilePort: OrganizationProfilePort = {
+    /** Mirrors GET /provider/organizations/:organizationId (capability-shaped). */
+    async loadOrganizationView(organizationId): Promise<OrganizationViewOutcome> {
+      const caller = store.current;
+      if (!caller) {
+        return { kind: 'unavailable' };
+      }
+      if (store.profileLoadFailures.delete(organizationId)) {
+        return { kind: 'unavailable' };
+      }
+      const organization = organizations.get(organizationId);
+      const seatEntry = caller.memberships.find(
+        (candidate) => candidate.organizationId === organizationId,
+      );
+      if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+        return { kind: 'notFound' };
+      }
+      const capabilities = ROLE_CAPABILITIES[seatEntry.role];
+      const view: OrganizationView = {
+        organization: {
+          id: organization.organizationId,
+          tradeName: organization.tradeName,
+          ...(capabilities.includes('org.legal.view') ? { legalName: organization.legalName } : {}),
+          orgKind: 'provider',
+          verificationState: organization.verificationState,
+          ...(capabilities.includes('commercial_terms.view') ? { commercialTermsRef: null } : {}),
+          version: organization.version,
+        },
+        profile: { ...organization.profile, galleryMediaRefs: [...organization.profile.galleryMediaRefs] },
+        branches: organization.branches.map((branch) => ({ ...branch, facilities: [...branch.facilities] })),
+        membership: {
+          id: `${organization.organizationId.slice(0, 8)}-membership-demo`,
+          role: seatEntry.role,
+          branchScope: seatEntry.branchScope,
+          capabilities,
+        },
+      };
+      return { kind: 'loaded', view };
+    },
+
+    /**
+     * Mirrors PATCH /provider/organizations/:organizationId/profile,
+     * including the policy-pipeline refusal order (not-found shaping →
+     * capability `forbidden` → suspended-org mutation refusal) and the
+     * version CAS. `published` is a field of this same PATCH (canon).
+     */
+    async updateProfile(organizationId, expectedVersion, patch): Promise<UpdateProfileOutcome> {
+      const caller = store.current;
+      if (!caller) {
+        return { kind: 'unavailable' };
+      }
+      const organization = organizations.get(organizationId);
+      const seatEntry = caller.memberships.find(
+        (candidate) => candidate.organizationId === organizationId,
+      );
+      if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+        return { kind: 'notFound' };
+      }
+      if (!ROLE_CAPABILITIES[seatEntry.role].includes('profile.edit')) {
+        return { kind: 'forbidden' };
+      }
+      if (organization.verificationState === 'suspended') {
+        return { kind: 'organizationSuspended' };
+      }
+      if (store.profileSaveFailures.delete(organizationId)) {
+        return { kind: 'unavailable' };
+      }
+      if (patchViolatesConstraints(patch)) {
+        return { kind: 'validationError' };
+      }
+      if (organization.profile.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      const previousDisplayName = organization.profile.displayName;
+      const apply = <K extends keyof FixtureProfileState>(key: K, value: FixtureProfileState[K] | undefined) => {
+        if (value !== undefined) {
+          organization.profile[key] = value;
+        }
+      };
+      apply('displayName', patch.displayName);
+      apply('descriptionEn', patch.descriptionEn);
+      apply('descriptionAr', patch.descriptionAr);
+      apply('publicPhone', patch.publicPhone);
+      apply('publicEmail', patch.publicEmail);
+      apply('publicWebsite', patch.publicWebsite);
+      apply('publicInstagram', patch.publicInstagram);
+      apply('published', patch.published);
+      organization.profile.version += 1;
+      if (organization.profile.displayName !== previousDisplayName) {
+        // Membership display identity derives from the profile — the shell
+        // (org switcher, nav context) re-resolves it like a real /provider/me.
+        emit({ kind: 'accessChanged' });
+      }
+      return { kind: 'profileUpdated', version: organization.profile.version };
     },
   };
 
@@ -666,6 +920,18 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     revokeAccess() {
       store.revokedAccess = true;
       emit({ kind: 'accessChanged' });
+    },
+    simulateConcurrentProfileEdit(organizationId) {
+      const organization = organizations.get(organizationId);
+      if (organization) {
+        organization.profile.version += 1;
+      }
+    },
+    failNextProfileLoad(organizationId) {
+      store.profileLoadFailures.add(organizationId);
+    },
+    failNextProfileSave(organizationId) {
+      store.profileSaveFailures.add(organizationId);
     },
   };
 
@@ -690,6 +956,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     accessPort,
     invitationPort,
     onboardingPort,
+    profilePort,
     controls,
     seedSession,
     sessionStateFor,

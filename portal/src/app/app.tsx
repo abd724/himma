@@ -7,6 +7,7 @@ import {
   createUnconfiguredAuthAdapter,
   createUnconfiguredInvitationPort,
   createUnconfiguredOnboardingPort,
+  createUnconfiguredProfilePort,
 } from '../auth/unconfigured-adapter';
 import { AppErrorBoundary } from './app-error-boundary';
 import type { AuthRuntime } from './auth-runtime';
@@ -40,6 +41,7 @@ export function AppProviders({
         accessPort: createUnconfiguredAccessPort(),
         invitationPort: createUnconfiguredInvitationPort(),
         onboardingPort: createUnconfiguredOnboardingPort(),
+        profilePort: createUnconfiguredProfilePort(),
       },
   );
 
@@ -52,7 +54,11 @@ export function AppProviders({
           {...(initialSessionState ? { initialState: initialSessionState } : {})}
         >
           <PortsProvider
-            ports={{ invitationPort: runtime.invitationPort, onboardingPort: runtime.onboardingPort }}
+            ports={{
+              invitationPort: runtime.invitationPort,
+              onboardingPort: runtime.onboardingPort,
+              profilePort: runtime.profilePort,
+            }}
           >
             {children}
           </PortsProvider>

@@ -1,0 +1,195 @@
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+  min-width: 0;
+}
+
+.previewHeading {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+}
+
+.caption {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.card {
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  box-shadow: var(--hp-shadow-card);
+  overflow: hidden;
+}
+
+.cover {
+  height: 96px;
+  background: linear-gradient(
+    135deg,
+    var(--hp-color-brand-primary-soft),
+    var(--hp-color-brand-primary)
+  );
+  display: grid;
+  place-items: center;
+}
+
+.monogram {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--hp-radius-avatar);
+  background: var(--hp-color-background-elevated);
+  color: var(--hp-color-brand-primary);
+  font: var(--hp-type-section-title);
+}
+
+.cardBody {
+  padding: var(--hp-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.name {
+  font: var(--hp-type-section-title);
+  color: var(--hp-color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  flex-wrap: wrap;
+}
+
+.namePlaceholder {
+  color: var(--hp-color-text-secondary);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--hp-type-caption);
+  color: var(--hp-color-status-success);
+  background: rgba(45, 186, 127, 0.1);
+  border-radius: var(--hp-radius-chip);
+  padding: 2px 10px;
+}
+
+.verified svg {
+  width: 14px;
+  height: 14px;
+}
+
+.description {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.contacts {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+  padding: 0;
+  margin: 0;
+}
+
+.contact {
+  display: flex;
+  align-items: baseline;
+  gap: var(--hp-space-sm);
+  font: var(--hp-type-supporting);
+  min-width: 0;
+}
+
+.contactIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--hp-color-brand-primary);
+}
+
+.contactLabel {
+  color: var(--hp-color-text-secondary);
+  min-width: 64px;
+}
+
+.contactValue {
+  color: var(--hp-color-text-primary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.branches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+}
+
+.branchesHeading {
+  font: var(--hp-type-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--hp-color-text-secondary);
+}
+
+.branchList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  padding: 0;
+  margin: 0;
+}
+
+.branch {
+  display: flex;
+  gap: var(--hp-space-sm);
+}
+
+.branchIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-block-start: 2px;
+  color: var(--hp-color-brand-primary);
+}
+
+.branchLabel {
+  font: var(--hp-type-body);
+  font-weight: 700;
+  color: var(--hp-color-text-primary);
+}
+
+.branchMeta {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.facilities {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hp-space-xs);
+  padding: 0;
+  margin: var(--hp-space-xs) 0 0;
+}
+
+.facility {
+  font: var(--hp-type-caption);
+  color: var(--hp-color-text-secondary);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-chip);
+  padding: 2px 10px;
+}
+
+.noBranches {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}

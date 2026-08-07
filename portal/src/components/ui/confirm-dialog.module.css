@@ -1,0 +1,47 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--hp-space-lg);
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--hp-color-overlay-backdrop);
+}
+
+.dialog {
+  position: relative;
+  width: min(440px, 100%);
+  background: var(--hp-color-background-elevated);
+  border-radius: var(--hp-radius-panel);
+  box-shadow: var(--hp-shadow-drawer);
+  padding: var(--hp-space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.title {
+  font: var(--hp-type-section-title);
+  color: var(--hp-color-text-primary);
+}
+
+.body {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--hp-space-sm);
+  flex-wrap: wrap;
+}
+
+.destructive {
+  background: var(--hp-color-status-error);
+}

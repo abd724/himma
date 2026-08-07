@@ -28,7 +28,6 @@ describe('honest placeholder pages', () => {
     ['/listings', 'Listings'],
     ['/branches', 'Branches'],
     ['/team', 'Team'],
-    ['/profile', 'Business Profile'],
     ['/settings', 'Settings & Support'],
     ['/support', 'Support'],
   ])('the %s placeholder names its later portal arrival without fake data', async (segment, heading) => {

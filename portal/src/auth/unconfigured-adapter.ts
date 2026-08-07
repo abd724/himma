@@ -1,6 +1,7 @@
 import type { PortalAuthAdapter } from './adapter';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
+import type { OrganizationProfilePort } from '../profile/contract';
 import type { ProviderAccessPort } from '../provider-access/contract';
 
 /**
@@ -37,5 +38,12 @@ export function createUnconfiguredOnboardingPort(): OnboardingPort {
   return {
     loadSnapshot: async () => ({ kind: 'unavailable' }),
     submitForVerification: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredProfilePort(): OrganizationProfilePort {
+  return {
+    loadOrganizationView: async () => ({ kind: 'unavailable' }),
+    updateProfile: async () => ({ kind: 'unavailable' }),
   };
 }

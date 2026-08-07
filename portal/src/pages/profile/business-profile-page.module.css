@@ -1,0 +1,223 @@
+.loading {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+.unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  max-width: 480px;
+}
+
+.tabsWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+}
+
+.tabList {
+  display: flex;
+  gap: var(--hp-space-xs);
+  border-block-end: 1px solid var(--hp-color-border-default);
+  flex-wrap: wrap;
+}
+
+.tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: var(--hp-type-nav-label);
+  color: var(--hp-color-text-secondary);
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  min-height: 44px;
+  border-block-end: 2px solid transparent;
+  margin-block-end: -1px;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: -2px;
+  border-radius: var(--hp-radius-control);
+}
+
+.tabActive {
+  color: var(--hp-color-brand-primary);
+  border-block-end-color: var(--hp-color-brand-primary);
+}
+
+.tabPanel {
+  min-width: 0;
+}
+
+.panelSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+  max-width: 720px;
+}
+
+.panelIntro {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+  max-width: 62ch;
+}
+
+.recordList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+}
+
+.recordRow {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) 1fr;
+  gap: var(--hp-space-md);
+  padding: var(--hp-space-md) var(--hp-space-lg);
+}
+
+.recordRow + .recordRow {
+  border-block-start: 1px solid var(--hp-color-border-default);
+}
+
+.recordTerm {
+  font: var(--hp-type-caption);
+  color: var(--hp-color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  flex-wrap: wrap;
+}
+
+.recordValue {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  flex-wrap: wrap;
+}
+
+.recordAction {
+  font: var(--hp-type-supporting);
+}
+
+.recordHint {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.privateBadge {
+  font: var(--hp-type-micro-label);
+  color: var(--hp-color-text-secondary);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-chip);
+  padding: 1px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stateChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--hp-type-caption);
+  color: var(--hp-color-text-primary);
+  background: var(--hp-color-brand-primary-soft);
+  border-radius: var(--hp-radius-chip);
+  padding: 4px 12px;
+}
+
+.chipIcon {
+  width: 14px;
+  height: 14px;
+  color: var(--hp-color-brand-primary);
+}
+
+.notProvided {
+  color: var(--hp-color-text-secondary);
+  font-style: italic;
+}
+
+.storefrontLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--hp-space-section);
+  align-items: start;
+}
+
+@media (min-width: 1120px) {
+  .storefrontLayout {
+    grid-template-columns: minmax(0, 7fr) minmax(300px, 5fr);
+  }
+}
+
+.editorColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+  min-width: 0;
+}
+
+.previewColumn {
+  min-width: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xl);
+}
+
+.formSection {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.formLegend {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+  padding: 0;
+  margin-block-end: var(--hp-space-xs);
+}
+
+.formNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.saveArea {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+.saveNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.alertFocus {
+  outline: none;
+}
+
+.alertFocus:empty {
+  display: none;
+}
+
+.alertActions {
+  margin-block-start: var(--hp-space-sm);
+}
