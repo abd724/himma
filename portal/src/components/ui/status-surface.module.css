@@ -1,0 +1,35 @@
+.wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--hp-space-xxl);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-lg);
+  width: min(440px, 100%);
+  padding: var(--hp-space-section);
+  background: var(--hp-color-background-elevated);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-panel);
+  box-shadow: var(--hp-shadow-card);
+}
+
+.title {
+  font: var(--hp-type-page-title);
+  letter-spacing: -0.3px;
+}
+
+.body {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hp-space-md);
+}

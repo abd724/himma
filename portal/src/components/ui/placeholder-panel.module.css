@@ -1,0 +1,62 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  padding: var(--hp-space-section);
+  background: var(--hp-color-background-elevated);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-panel);
+  box-shadow: var(--hp-shadow-card);
+  max-width: 560px;
+}
+
+.iconWrap {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-brand-primary-soft);
+  color: var(--hp-color-brand-primary);
+}
+
+.icon {
+  width: 22px;
+  height: 22px;
+}
+
+.title {
+  font: var(--hp-type-section-title);
+}
+
+.body {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+.body ul {
+  margin: var(--hp-space-sm) 0 0;
+  padding-inline-start: var(--hp-space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.milestone {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  margin-block-start: var(--hp-space-xs);
+  padding: var(--hp-space-xs) var(--hp-space-md);
+  border-radius: var(--hp-radius-chip);
+  border: 1px solid var(--hp-color-border-default);
+  background: var(--hp-color-background-main);
+  font: var(--hp-type-caption);
+  color: var(--hp-color-text-secondary);
+}
+
+.milestoneIcon {
+  width: 14px;
+  height: 14px;
+}

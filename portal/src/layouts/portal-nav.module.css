@@ -1,0 +1,117 @@
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xl);
+  flex: 1;
+}
+
+.group:last-child {
+  margin-block-start: auto;
+  padding-block-start: var(--hp-space-lg);
+  border-block-start: 1px solid var(--hp-color-border-default);
+}
+
+.groupLabel {
+  font: var(--hp-type-micro-label);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--hp-color-text-secondary);
+  padding-inline: var(--hp-space-md);
+  margin-block-end: var(--hp-space-sm);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-md);
+  min-height: 44px;
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  border-radius: var(--hp-radius-control);
+  font: var(--hp-type-nav-label);
+  color: var(--hp-color-text-secondary);
+  text-decoration: none;
+  transition: background-color var(--hp-motion-fast) ease, color var(--hp-motion-fast) ease;
+}
+
+.link:hover {
+  background: var(--hp-color-background-main);
+  color: var(--hp-color-text-primary);
+}
+
+.linkActive,
+.linkActive:hover {
+  background: var(--hp-color-brand-primary-soft);
+  color: var(--hp-color-brand-primary);
+}
+
+.linkActive::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 10px;
+  width: 3px;
+  border-radius: var(--hp-radius-chip);
+  background: var(--hp-color-brand-primary);
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+}
+
+.soonTag {
+  font: var(--hp-type-micro-label);
+  letter-spacing: 0.4px;
+  color: var(--hp-color-text-secondary);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-chip);
+  padding: 1px var(--hp-space-sm);
+  background: var(--hp-color-background-elevated);
+}
+
+/*
+ * Tablet rail (docs/29 §5): between the tablet and desktop breakpoints the
+ * sidebar compacts to an icon rail with tiny labels — group labels and tags
+ * drop, every item keeps its accessible name. The drawer variant only exists
+ * below the tablet breakpoint, so these rules affect the sidebar alone.
+ */
+@media (min-width: 768px) and (max-width: 1119.98px) {
+  .groupLabel,
+  .soonTag {
+    display: none;
+  }
+
+  .link {
+    flex-direction: column;
+    gap: var(--hp-space-xs);
+    padding: var(--hp-space-sm) var(--hp-space-xs);
+    text-align: center;
+  }
+
+  .link .label {
+    font: var(--hp-type-rail-label);
+    flex: none;
+    width: 100%;
+    overflow-wrap: break-word;
+  }
+
+  .linkActive::before {
+    inset-block: 6px;
+  }
+}

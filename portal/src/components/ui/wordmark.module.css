@@ -1,0 +1,18 @@
+.wordmark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  font: 800 20px/24px var(--hp-font-family);
+  letter-spacing: -0.2px;
+  color: var(--hp-color-brand-primary);
+}
+
+.product {
+  font: var(--hp-type-micro-label);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--hp-color-text-secondary);
+}

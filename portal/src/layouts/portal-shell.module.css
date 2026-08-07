@@ -1,0 +1,76 @@
+.shell {
+  min-height: 100vh;
+}
+
+.shellInner {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  inset-block-start: 0;
+  height: 100vh;
+  width: var(--hp-sidebar-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-section);
+  padding: var(--hp-space-xxl) var(--hp-space-lg);
+  background: var(--hp-color-background-elevated);
+  border-inline-end: 1px solid var(--hp-color-border-default);
+  overflow-y: auto;
+}
+
+.brand {
+  padding-inline: var(--hp-space-md);
+}
+
+.contentColumn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  flex: 1;
+  padding: var(--hp-space-section) var(--hp-space-xxl) var(--hp-space-huge);
+}
+
+.main:focus {
+  outline: none;
+}
+
+.content {
+  max-width: var(--hp-content-max-width);
+}
+
+@media (min-width: 768px) and (max-width: 1119.98px) {
+  .sidebar {
+    width: var(--hp-rail-width);
+    padding-inline: var(--hp-space-sm);
+  }
+
+  .brand {
+    padding-inline: 0;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* The rail keeps only the brand name; the product designation line
+     returns on desktop and in the drawer. */
+  .brand > * > :last-child {
+    display: none;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .sidebar {
+    display: none;
+  }
+
+  .main {
+    padding: var(--hp-space-xxl) var(--hp-space-lg) var(--hp-space-section);
+  }
+}

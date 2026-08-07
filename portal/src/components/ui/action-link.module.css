@@ -1,0 +1,17 @@
+.actionLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--hp-space-sm) var(--hp-space-xl);
+  border-radius: var(--hp-radius-button);
+  background: var(--hp-color-brand-primary);
+  color: var(--hp-color-text-inverse);
+  font: var(--hp-type-nav-label);
+  text-decoration: none;
+  transition: background-color var(--hp-motion-fast) ease;
+}
+
+.actionLink:hover {
+  background: var(--hp-color-brand-primary-pressed);
+}

@@ -1,0 +1,44 @@
+.topBar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-md);
+  height: var(--hp-top-bar-height);
+  padding-inline: var(--hp-space-xxl);
+  background: var(--hp-color-background-main);
+  border-block-end: 1px solid var(--hp-color-border-default);
+}
+
+.menuButton {
+  display: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-button);
+  background: var(--hp-color-background-elevated);
+  color: var(--hp-color-text-primary);
+  cursor: pointer;
+}
+
+.menuButton svg {
+  width: 20px;
+  height: 20px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+@media (max-width: 767.98px) {
+  .topBar {
+    padding-inline: var(--hp-space-lg);
+  }
+
+  .menuButton {
+    display: grid;
+  }
+}

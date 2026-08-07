@@ -1,6 +1,6 @@
 # W2-0 — Provider Portal Frontend Implementation Plan and Information Architecture
 
-**Status: DRAFT for owner review (2026-08-07). Planning/specification only — no application code, routes, components, schema, API, authentication, or infrastructure changes accompany this document. Implementation begins only task-by-task per §16 after owner approval, within the docs/23 §16 phase gates.**
+**Status: OWNER-APPROVED and binding (2026-08-07, closed at `7fbb4ba`), with rulings D-W2-1 (separate `portal/` Vite + React SPA — option (a) ratified) and D-W2-2 (self-registration deferred — option (a) ratified). Implementation proceeds task-by-task per §16 within the docs/23 §16 phase gates; see §22 for implementation status.**
 
 This is the docs/23 §8 (W2) planning artifact on the docs/20–22/26–28 pattern: it turns the approved PP-01…PP-17 surface inventory into a concrete information architecture, route plan, role matrix, backend-capability mapping, and a small-step sequential implementation decomposition — grounded in the backend that actually exists today (Slices 1–4 closed at `a1e782d`; migration head `0010_search`).
 
@@ -246,6 +246,13 @@ Consequences: (a) outreach cadence is bounded by Himma's invitation operations (
 
 No other owner decisions are raised: remaining open items (§18.3 region, §18.6 brand/domain, §18.16 partner terms, §18.7 commercial model) are ALREADY registered in docs/23 §18 and are referenced, not duplicated; all other choices in this plan are derivable from canon and are decided herein.
 
+## 22. Implementation status
+
+| Task | Status |
+|---|---|
+| **W2-1** Portal foundation & app shell | **Implemented 2026-08-07** — `portal/` package (D-W2-1 stack), token baseline, responsive sidebar/rail/drawer shell, §6 route skeleton with honest placeholders, org-switcher shell over an isolated fixture, API/auth boundary seams, Jest 86/86 + jest-axe, Playwright 15-pass at 1440/1024/390, production build green; evidence in `artifacts/portal-w2-1/`. Awaiting owner visual/technical review. |
+| W2-2 … W2-13 | Not started — sequential, each gated on owner review of its predecessor. |
+
 ---
 
-*This plan writes no code and provisions nothing. Implementation begins only with owner approval of this document (and D-W2-1/D-W2-2), task-by-task per §16, within the docs/23 §16 phase gates. The customer application remains mock-driven; Slices 1–4 backend remains the sole production backend truth.*
+*Implementation follows this plan task-by-task per §16, within the docs/23 §16 phase gates. The customer application remains mock-driven; Slices 1–4 backend remains the sole production backend truth.*
