@@ -1,0 +1,30 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.title {
+  font: var(--hp-type-page-title);
+  letter-spacing: -0.3px;
+}
+
+.subtitle {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+}
+
+.alertFocus:focus {
+  outline: none;
+}
+
+.invitationNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}

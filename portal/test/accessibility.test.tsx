@@ -32,14 +32,14 @@ describe('accessibility (jest-axe)', () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  test('the not-found and organization-missing surfaces have no violations', async () => {
+  test('the not-found and workspace-unavailable surfaces have no violations', async () => {
     const unknownRoute = renderPortal({ initialEntries: ['/completely/unknown'] });
     await screen.findByRole('heading', { level: 1, name: 'Page not found' });
     expect(await axe(unknownRoute.container)).toHaveNoViolations();
     unknownRoute.unmount();
 
     const unknownOrg = renderPortal({ initialEntries: ['/o/not-a-real-organization'] });
-    await screen.findByRole('heading', { level: 1, name: "We can't find that organization" });
+    await screen.findByRole('heading', { level: 1, name: "This workspace isn't available" });
     expect(await axe(unknownOrg.container)).toHaveNoViolations();
   });
 });

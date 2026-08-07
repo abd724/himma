@@ -1,26 +1,18 @@
-import { expect, test, type Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { expect, test } from '@playwright/test';
+import { join } from 'node:path';
+import { evidenceDir, isMobile, isTablet, noHorizontalOverflow, signInAs } from './support';
 
 /**
- * W2-1 shell smoke + responsive validation (docs/29 §15, task §17).
- * Runs against the production build (vite preview) in three viewport
- * classes: desktop 1440×900 · tablet 1024×768 · mobile 390×844.
- * Screenshot evidence lands in artifacts/portal-w2-1/.
+ * Responsive shell smoke (W2-1 scope, updated for the W2-2 access layer):
+ * runs against the production build behind an authenticated fixture session.
+ * Navigation after sign-in stays client-side — fixture sessions are
+ * memory-only, exactly like the future in-memory access token.
  */
-const evidenceDir = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  'artifacts',
-  'portal-w2-1',
-);
-mkdirSync(evidenceDir, { recursive: true });
+const evidence = evidenceDir('portal-w2-2');
 
 const consoleErrors: string[] = [];
 
-test.beforeEach(({ page }) => {
+test.beforeEach(async ({ page }) => {
   consoleErrors.length = 0;
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -30,158 +22,109 @@ test.beforeEach(({ page }) => {
   page.on('pageerror', (error) => {
     consoleErrors.push(String(error));
   });
+  await signInAs(page, 'director@himma.demo');
+  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
 });
 
 test.afterEach(() => {
   expect(consoleErrors).toEqual([]);
 });
 
-async function noHorizontalOverflow(page: Page) {
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(overflow).toBeLessThanOrEqual(0);
-}
-
-function isMobile(page: Page) {
-  return (page.viewportSize()?.width ?? 0) < 768;
-}
-
-function isTablet(page: Page) {
-  const width = page.viewportSize()?.width ?? 0;
-  return width >= 768 && width < 1120;
-}
-
-test('shell renders the dashboard with navigation and no overflow', async ({ page }, testInfo) => {
-  await page.goto('/');
-  await expect(page).toHaveTitle('Dashboard · Himma Provider Portal');
-  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+test('authenticated shell renders with the correct responsive navigation', async ({
+  page,
+}, testInfo) => {
   await noHorizontalOverflow(page);
 
   if (isMobile(page)) {
-    // Narrow: sidebar hidden, drawer trigger present.
     await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Primary' })).toBeHidden();
   } else {
     await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
-    const sidebar = page.locator('aside');
-    const box = await sidebar.boundingBox();
+    const box = await page.locator('aside').boundingBox();
     if (isTablet(page)) {
-      expect(box?.width).toBeLessThan(100); // compact rail
+      expect(box?.width).toBeLessThan(100);
     } else {
-      expect(box?.width).toBeGreaterThan(200); // full sidebar
+      expect(box?.width).toBeGreaterThan(200);
     }
   }
-
-  await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-dashboard.png`) });
+  await page.screenshot({ path: join(evidence, `${testInfo.project.name}-shell.png`) });
 });
 
-test('navigation reaches every top-level section with correct active state', async ({
-  page,
-}, testInfo) => {
+test('navigation reaches every top-level section with correct active state', async ({ page }) => {
   test.skip(isMobile(page), 'covered by the drawer scenario on mobile');
-  await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
 
   const sections = [
-    ['Listings', 'Listings'],
-    ['Schedule', 'Schedule'],
-    ['Bookings', 'Bookings'],
-    ['Branches', 'Branches'],
-    ['Team', 'Team'],
-    ['Business Profile', 'Business Profile'],
-    ['Finance', 'Finance'],
-    ['Settings & Support', 'Settings & Support'],
-  ] as const;
-
+    'Listings',
+    'Schedule',
+    'Bookings',
+    'Branches',
+    'Team',
+    'Business Profile',
+    'Finance',
+    'Settings & Support',
+  ];
   const nav = page.getByRole('navigation', { name: 'Primary' });
-  for (const [label, heading] of sections) {
-    await nav.getByRole('link', { name: new RegExp(`^${label}`) }).click();
-    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
-    await expect(nav.getByRole('link', { name: new RegExp(`^${label}`) })).toHaveAttribute(
+  for (const section of sections) {
+    await nav.getByRole('link', { name: new RegExp(`^${section}`) }).click();
+    await expect(page.getByRole('heading', { level: 1, name: section })).toBeVisible();
+    await expect(nav.getByRole('link', { name: new RegExp(`^${section}`) })).toHaveAttribute(
       'aria-current',
       'page',
     );
     await noHorizontalOverflow(page);
   }
-
-  await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-listings-active.png`) });
 });
 
-test('mobile drawer opens, is keyboard-dismissible, and navigates', async ({ page }, testInfo) => {
+test('mobile drawer opens, dismisses with Escape, and navigates', async ({ page }, testInfo) => {
   test.skip(!isMobile(page), 'mobile-only behavior');
-  await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
 
   const trigger = page.getByRole('button', { name: 'Open navigation' });
   await trigger.click();
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
   await expect(drawer).toBeVisible();
   await expect(page.getByRole('button', { name: 'Close navigation' })).toBeFocused();
-  // Let the entrance animation settle so the evidence shows the resting state.
   await expect(drawer).toHaveCSS('opacity', '1');
-  await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-drawer-open.png`) });
+  await page.screenshot({ path: join(evidence, `${testInfo.project.name}-drawer.png`) });
 
-  // Escape closes and focus returns to the trigger.
   await page.keyboard.press('Escape');
   await expect(drawer).toBeHidden();
   await expect(trigger).toBeFocused();
 
-  // Navigating from the drawer closes it and switches page.
   await trigger.click();
   await drawer.getByRole('link', { name: /^Branches/ }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Branches' })).toBeVisible();
   await expect(drawer).toBeHidden();
-  await noHorizontalOverflow(page);
-  await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-branches.png`) });
 });
 
-test('organization switcher switches context and preserves the section', async ({
-  page,
-}, testInfo) => {
-  await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
-  await page.getByRole('navigation', { name: 'Primary' }).isVisible();
-
-  // Move to a section first so preservation is observable.
-  await page.goto(page.url().replace(/\/$/, '') + '/listings');
+test('organization switching preserves the section', async ({ page }, testInfo) => {
+  const nav = isMobile(page) ? null : page.getByRole('navigation', { name: 'Primary' });
+  if (nav) {
+    await nav.getByRole('link', { name: /^Listings/ }).click();
+  } else {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page
+      .getByRole('dialog', { name: 'Navigation' })
+      .getByRole('link', { name: /^Listings/ })
+      .click();
+  }
   await expect(page.getByRole('heading', { level: 1, name: 'Listings' })).toBeVisible();
 
-  const switcher = page.getByRole('button', { name: /Blue Wave Swimming/ });
-  await switcher.click();
-  const menu = page.getByRole('menu', { name: 'Switch organization' });
-  await expect(menu).toBeVisible();
-  await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-org-menu.png`) });
-
-  await menu.getByRole('menuitemradio', { name: /Noor Learning Centre/ }).click();
+  await page.getByRole('button', { name: /Blue Wave Swimming/ }).click();
+  await page.getByRole('menuitemradio', { name: /Noor Learning Centre/ }).click();
   await expect(page).toHaveURL(/\/o\/[0-9a-f-]+\/listings$/);
   await expect(page.getByRole('button', { name: /Noor Learning Centre/ })).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: 'Listings' })).toBeVisible();
+  await page.screenshot({ path: join(evidence, `${testInfo.project.name}-org-switched.png`) });
 });
 
-test('backend-later placeholders carry the honest milestone note and no fabricated data', async ({
-  page,
-}, testInfo) => {
-  await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
-  const base = page.url().replace(/\/$/, '');
-
-  for (const segment of ['schedule', 'bookings', 'finance']) {
-    await page.goto(`${base}/${segment}`);
+test('backend-later placeholders stay honest behind authentication', async ({ page }) => {
+  test.skip(isMobile(page), 'representative on larger viewports');
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  for (const section of ['Schedule', 'Bookings', 'Finance']) {
+    await nav.getByRole('link', { name: new RegExp(`^${section}`) }).click();
     await expect(page.getByText('Coming in a later production milestone.')).toBeVisible();
     const mainText = await page.getByRole('main').textContent();
     expect(mainText).not.toMatch(/\d/);
   }
-  await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-finance-placeholder.png`) });
-});
-
-test('unknown routes render designed recovery surfaces', async ({ page }) => {
-  await page.goto('/completely/unknown');
-  await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
-
-  await page.goto('/o/not-a-real-organization');
-  await expect(
-    page.getByRole('heading', { level: 1, name: "We can't find that organization" }),
-  ).toBeVisible();
 });

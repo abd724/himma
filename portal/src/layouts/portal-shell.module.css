@@ -33,6 +33,10 @@
   flex-direction: column;
 }
 
+.suspendedBanner {
+  padding: var(--hp-space-lg) var(--hp-space-xxl) 0;
+}
+
 .main {
   flex: 1;
   padding: var(--hp-space-section) var(--hp-space-xxl) var(--hp-space-huge);

@@ -19,9 +19,12 @@ export default defineConfig({
     { name: 'mobile', use: { viewport: { width: 390, height: 844 } } },
   ],
   webServer: {
-    command: 'npm run build && npm run preview',
+    // The production build is FAIL-CLOSED (unconfigured) by default; e2e
+    // exercises the documented explicit fixture opt-in (task §25). The
+    // unconfigured default itself is proven by the fixture-safety Jest suite.
+    command: 'VITE_PORTAL_AUTH_MODE=fixture npm run build && npm run preview',
     url: 'http://localhost:4318',
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 180_000,
   },
 });

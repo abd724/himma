@@ -24,12 +24,14 @@ describe('route foundation', () => {
     expect(router.state.location.pathname).toBe(`/o/${org2.id}/team`);
   });
 
-  test('an unknown organization id renders the organization-missing surface', async () => {
+  test('an organization id outside the resolved access renders the safe workspace-unavailable surface', async () => {
     renderPortal({ initialEntries: ['/o/not-a-real-organization'] });
     expect(
-      await screen.findByRole('heading', { level: 1, name: "We can't find that organization" }),
+      await screen.findByRole('heading', { level: 1, name: "This workspace isn't available" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to the portal' })).toBeInTheDocument();
+    // No details about the requested organization; safe ways forward only.
+    expect(screen.getByRole('link', { name: 'Go to your workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
   });
 
   test('an unknown section inside a valid organization renders the in-shell not-found surface', async () => {
@@ -53,10 +55,11 @@ describe('route foundation', () => {
     expect(screen.queryByRole('navigation', { name: 'Primary' })).not.toBeInTheDocument();
   });
 
-  test('with no accessible organizations the entry route renders the missing surface instead of a blank screen', async () => {
+  test('an authenticated session with no memberships lands on the no-membership surface', async () => {
     renderPortal({ organizations: [] });
     expect(
-      await screen.findByRole('heading', { level: 1, name: "We can't find that organization" }),
+      await screen.findByRole('heading', { level: 1, name: 'No provider workspace available' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
   });
 });

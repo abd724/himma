@@ -13,6 +13,8 @@ import { useParams } from 'react-router-dom';
 export interface ShellOrganization {
   readonly id: string;
   readonly displayName: string;
+  /** organization.verification_state as carried by the access model. */
+  readonly organizationState: string;
 }
 
 const AccessibleOrganizationsContext = createContext<readonly ShellOrganization[] | null>(null);

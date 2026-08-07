@@ -250,8 +250,9 @@ No other owner decisions are raised: remaining open items (§18.3 region, §18.6
 
 | Task | Status |
 |---|---|
-| **W2-1** Portal foundation & app shell | **Implemented 2026-08-07** — `portal/` package (D-W2-1 stack), token baseline, responsive sidebar/rail/drawer shell, §6 route skeleton with honest placeholders, org-switcher shell over an isolated fixture, API/auth boundary seams, Jest 86/86 + jest-axe, Playwright 15-pass at 1440/1024/390, production build green; evidence in `artifacts/portal-w2-1/`. Awaiting owner visual/technical review. |
-| W2-2 … W2-13 | Not started — sequential, each gated on owner review of its predecessor. |
+| **W2-1** Portal foundation & app shell | **Owner-approved and CLOSED at `11bab0d` (2026-08-07).** |
+| **W2-2** Access & session UX | **Implemented 2026-08-07** — sign-in + login TOTP challenge + enrollment gate + step-up interstitial + signed-out/expired/no-membership/unavailable surfaces; one session state machine; layered guards with safe `returnTo`; access-aware org switching (suspended banner); auth-adapter + `/provider/me`-shaped contracts for W2-12; fixtures semantic-only (no token strings); production build FAIL-CLOSED unconfigured. Jest 155/155 incl. jest-axe; Playwright 36-pass at 1440/1024/390; evidence in `artifacts/portal-w2-2/`. Invitation ACCEPTANCE deferred to W2-3 (owner task boundary; `/invitation/:token` is a structural placeholder). Real Cognito/backend integration NOT started (W2-12). Awaiting owner review. |
+| W2-3 … W2-13 | Not started — sequential, each gated on owner review of its predecessor. |
 
 ---
 

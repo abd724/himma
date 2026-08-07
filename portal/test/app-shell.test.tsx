@@ -10,7 +10,7 @@ describe('application shell', () => {
     ).toBeInTheDocument();
   });
 
-  test('desktop shell structure: landmarks, branding, navigation, content, account placeholder', async () => {
+  test('desktop shell structure: landmarks, branding, navigation, content, account menu', async () => {
     renderPortal({ initialEntries: [`/o/${org1.id}`] });
 
     // Landmarks.
@@ -35,12 +35,9 @@ describe('application shell', () => {
       within(screen.getByRole('banner')).getByText(org1.displayName),
     ).toBeInTheDocument();
 
-    // Account/access affordance is an honest placeholder, not fake identity.
-    const account = screen.getByRole('button', { name: 'Account' });
-    expect(account).toHaveAttribute('aria-disabled', 'true');
-    expect(account).toHaveAccessibleDescription(
-      'Sign-in and account controls arrive in an upcoming portal update.',
-    );
+    // Account affordance shows the session identity and owns sign-out.
+    const account = screen.getByRole('button', { name: /Account — Rana Haddad/ });
+    expect(account).toHaveAttribute('aria-haspopup', 'menu');
   });
 
   test('exactly one h1 per page', async () => {

@@ -1,7 +1,7 @@
 import { Menu } from 'lucide-react';
 import type { RefObject } from 'react';
 import { MOBILE_DRAWER_ID } from './mobile-drawer';
-import { AccountPlaceholder } from './account-placeholder';
+import { AccountMenu } from './account-menu';
 import { OrgSwitcher } from './org-switcher';
 import styles from './top-bar.module.css';
 
@@ -33,7 +33,7 @@ export function TopBar({
       </button>
       <OrgSwitcher />
       <div className={styles.spacer} />
-      <AccountPlaceholder />
+      <AccountMenu />
     </header>
   );
 }

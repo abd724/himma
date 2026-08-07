@@ -7,13 +7,26 @@
 export interface PortalEnv {
   /** Base URL of the Himma backend API; null until an environment provides it. */
   readonly apiBaseUrl: string | null;
+  /** Raw auth-mode configuration; resolved fail-closed by resolveAuthMode. */
+  readonly authModeSetting: string | undefined;
+  readonly isProduction: boolean;
 }
 
-export function readPortalEnv(raw: Record<string, string | undefined>): PortalEnv {
+export function readPortalEnv(
+  raw: Record<string, string | undefined>,
+  isProduction: boolean,
+): PortalEnv {
   const apiBaseUrl = raw['VITE_API_BASE_URL']?.trim();
-  return { apiBaseUrl: apiBaseUrl ? apiBaseUrl : null };
+  return {
+    apiBaseUrl: apiBaseUrl ? apiBaseUrl : null,
+    authModeSetting: raw['VITE_PORTAL_AUTH_MODE'],
+    isProduction,
+  };
 }
 
 export function portalEnv(): PortalEnv {
-  return readPortalEnv(import.meta.env as Record<string, string | undefined>);
+  return readPortalEnv(
+    import.meta.env as unknown as Record<string, string | undefined>,
+    import.meta.env.PROD,
+  );
 }

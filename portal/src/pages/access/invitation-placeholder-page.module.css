@@ -1,0 +1,15 @@
+.lead {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  margin-block-end: var(--hp-space-sm);
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  color: var(--hp-color-brand-primary);
+  flex-shrink: 0;
+}

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
+import { InlineAlert } from '../components/ui/inline-alert';
 import { SkipLink } from '../components/ui/skip-link';
 import { Wordmark } from '../components/ui/wordmark';
+import { useActiveOrganization } from '../organization/organization-context';
 import { MobileDrawer } from './mobile-drawer';
 import { PortalNav } from './portal-nav';
 import { TopBar } from './top-bar';
@@ -19,6 +21,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
+  const organization = useActiveOrganization();
 
   // Safety net: any route change closes the drawer (nav links also close it
   // directly so the intent is explicit).
@@ -57,6 +60,13 @@ export function PortalShell({ children }: { children: ReactNode }) {
             onOpenNav={() => setNavOpen(true)}
             navTriggerRef={navTriggerRef}
           />
+          {organization.organizationState === 'suspended' ? (
+            <div className={styles.suspendedBanner}>
+              <InlineAlert tone="info">
+                This organization is currently suspended. Changes are unavailable.
+              </InlineAlert>
+            </div>
+          ) : null}
           <main id={MAIN_CONTENT_ID} className={styles.main} tabIndex={-1}>
             <div className={styles.content}>{children}</div>
           </main>

@@ -1,11 +1,17 @@
-import { Navigate, Outlet, type RouteObject } from 'react-router-dom';
+import { Outlet, type RouteObject } from 'react-router-dom';
 import { ErrorSurface } from '../components/error-surface';
 import { PortalShell } from '../layouts/portal-shell';
 import {
   ActiveOrganizationProvider,
-  useAccessibleOrganizations,
   useRouteOrganization,
 } from '../organization/organization-context';
+import { InvitationPlaceholderPage } from '../pages/access/invitation-placeholder-page';
+import { MfaChallengePage } from '../pages/access/mfa-challenge-page';
+import { MfaEnrollPage } from '../pages/access/mfa-enroll-page';
+import { WorkspaceUnavailablePage } from '../pages/access/session-surfaces';
+import { SignInPage } from '../pages/access/sign-in-page';
+import { SignedOutPage } from '../pages/access/signed-out-page';
+import { StepUpPage } from '../pages/access/step-up-page';
 import { BookingsPage } from '../pages/bookings-page';
 import { BranchesPage } from '../pages/branches-page';
 import { BusinessProfilePage } from '../pages/business-profile-page';
@@ -13,31 +19,22 @@ import { DashboardPage } from '../pages/dashboard-page';
 import { FinancePage } from '../pages/finance-page';
 import { ListingsPage } from '../pages/listings-page';
 import { NotFoundPage, OrganizationSectionNotFoundPage } from '../pages/not-found-page';
-import { OrganizationMissingPage } from '../pages/organization-missing-page';
 import { SchedulePage } from '../pages/schedule-page';
 import { SettingsPage } from '../pages/settings-page';
 import { SupportPage } from '../pages/support-page';
 import { TeamPage } from '../pages/team-page';
+import { RequireProviderAccess, WorkspaceRedirect } from './require-provider-access';
 
 /**
- * Entry routing: the portal's home is the first accessible organization's
- * dashboard. W2-2 replaces this with real session/membership resolution
- * (sign-in, org selection); the shell only needs a deterministic landing.
+ * Resolves `/o/:organizationId` against the caller's RESOLVED access and
+ * mounts the org-scoped shell. An id outside the resolved access renders the
+ * safe workspace-unavailable surface — never another organization's shell,
+ * never details about the requested id.
  */
-function RootRedirect() {
-  const organizations = useAccessibleOrganizations();
-  const first = organizations[0];
-  if (!first) {
-    return <OrganizationMissingPage />;
-  }
-  return <Navigate to={`/o/${first.id}`} replace />;
-}
-
-/** Resolves `/o/:organizationId` and mounts the org-scoped shell. */
 function OrganizationScope() {
   const organization = useRouteOrganization();
   if (!organization) {
-    return <OrganizationMissingPage />;
+    return <WorkspaceUnavailablePage />;
   }
   return (
     <ActiveOrganizationProvider organization={organization}>
@@ -49,32 +46,42 @@ function OrganizationScope() {
 }
 
 /**
- * Route architecture (docs/29 §6): organization-scoped sections under
- * `/o/:organizationId/...` plus minimal application-level entry/not-found
- * routes. Access/auth routes (sign-in, invitation, MFA, step-up) are W2-2.
+ * Route architecture (docs/29 §6): the pre-authenticated access zone plus
+ * the guarded organization-scoped sections. Frontend guards shape UX only.
  */
 export const portalRoutes: RouteObject[] = [
   {
     path: '/',
     errorElement: <ErrorSurface />,
     children: [
-      { index: true, element: <RootRedirect /> },
-      { path: 'o', element: <RootRedirect /> },
+      { path: 'sign-in', element: <SignInPage /> },
+      { path: 'mfa', element: <MfaChallengePage /> },
+      { path: 'mfa/enroll', element: <MfaEnrollPage /> },
+      { path: 'step-up', element: <StepUpPage /> },
+      { path: 'signed-out', element: <SignedOutPage /> },
+      { path: 'invitation/:token', element: <InvitationPlaceholderPage /> },
       {
-        path: 'o/:organizationId',
-        element: <OrganizationScope />,
+        element: <RequireProviderAccess />,
         children: [
-          { index: true, element: <DashboardPage /> },
-          { path: 'listings', element: <ListingsPage /> },
-          { path: 'schedule', element: <SchedulePage /> },
-          { path: 'bookings', element: <BookingsPage /> },
-          { path: 'branches', element: <BranchesPage /> },
-          { path: 'team', element: <TeamPage /> },
-          { path: 'profile', element: <BusinessProfilePage /> },
-          { path: 'finance', element: <FinancePage /> },
-          { path: 'settings', element: <SettingsPage /> },
-          { path: 'support', element: <SupportPage /> },
-          { path: '*', element: <OrganizationSectionNotFoundPage /> },
+          { index: true, element: <WorkspaceRedirect /> },
+          { path: 'o', element: <WorkspaceRedirect /> },
+          {
+            path: 'o/:organizationId',
+            element: <OrganizationScope />,
+            children: [
+              { index: true, element: <DashboardPage /> },
+              { path: 'listings', element: <ListingsPage /> },
+              { path: 'schedule', element: <SchedulePage /> },
+              { path: 'bookings', element: <BookingsPage /> },
+              { path: 'branches', element: <BranchesPage /> },
+              { path: 'team', element: <TeamPage /> },
+              { path: 'profile', element: <BusinessProfilePage /> },
+              { path: 'finance', element: <FinancePage /> },
+              { path: 'settings', element: <SettingsPage /> },
+              { path: 'support', element: <SupportPage /> },
+              { path: '*', element: <OrganizationSectionNotFoundPage /> },
+            ],
+          },
         ],
       },
       { path: '*', element: <NotFoundPage /> },

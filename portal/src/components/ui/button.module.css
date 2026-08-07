@@ -1,0 +1,71 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hp-space-sm);
+  min-height: 44px;
+  padding: var(--hp-space-sm) var(--hp-space-xl);
+  border-radius: var(--hp-radius-button);
+  border: 1px solid transparent;
+  font: var(--hp-type-nav-label);
+  cursor: pointer;
+  transition: background-color var(--hp-motion-fast) ease, border-color var(--hp-motion-fast) ease;
+}
+
+.primary {
+  background: var(--hp-color-brand-primary);
+  color: var(--hp-color-text-inverse);
+}
+
+.primary:hover {
+  background: var(--hp-color-brand-primary-pressed);
+}
+
+.secondary {
+  background: var(--hp-color-background-elevated);
+  color: var(--hp-color-text-primary);
+  border-color: var(--hp-color-border-default);
+}
+
+.secondary:hover {
+  border-color: var(--hp-color-text-secondary);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--hp-color-brand-primary);
+}
+
+.ghost:hover {
+  background: var(--hp-color-brand-primary-soft);
+}
+
+.busy {
+  cursor: default;
+}
+
+.busy.primary {
+  background: var(--hp-color-brand-primary-pressed);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: var(--hp-radius-chip);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-block-start-color: currentcolor;
+  animation: hp-spin 800ms linear infinite;
+}
+
+.secondary .spinner,
+.ghost .spinner {
+  border-color: var(--hp-color-border-default);
+  border-block-start-color: var(--hp-color-brand-primary);
+}
+
+@keyframes hp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

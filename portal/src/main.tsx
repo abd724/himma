@@ -9,7 +9,9 @@ import './theme/global.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { portalEnv } from './api/env';
 import { AppProviders } from './app/app';
+import { createAuthRuntime } from './app/auth-runtime';
 import { portalRoutes } from './app/routes';
 
 const container = document.getElementById('root');
@@ -18,10 +20,13 @@ if (!container) {
 }
 
 const router = createBrowserRouter(portalRoutes);
+// Fail-closed composition: production resolves to the unconfigured runtime
+// unless fixture mode is explicitly opted in (task §25).
+const authRuntime = createAuthRuntime(portalEnv());
 
 createRoot(container).render(
   <StrictMode>
-    <AppProviders>
+    <AppProviders authRuntime={authRuntime}>
       <RouterProvider router={router} />
     </AppProviders>
   </StrictMode>,
