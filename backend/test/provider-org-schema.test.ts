@@ -396,14 +396,22 @@ describe('future listing compatibility (structural proof — no listing schema i
     }
   });
 
-  it('S3-1 introduced no listing/category/membership/package table', async () => {
+  it('the S3-1 spine tables exist and no later-slice booking/session table was smuggled in', async () => {
+    // Amended by S4-1: the original S3-1 assertion ("no listing/program/
+    // category table exists") described the slice-3 close state; the approved
+    // Slice-4 schema commit legitimately ships the catalogue tables, so this
+    // guard now covers only the entities that remain future slices.
     const tables = await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`.execute(
       testDb.db,
     );
     const names = tables.rows.map((r) => r.table_name);
     expect(
-      names.filter((n) => /(listing|program|category|package|catalog|session_)/i.test(n)),
+      names.filter((n) =>
+        /^(session|camp_week|enrolment_cohort|recurring_schedule|capacity_hold|booking|enrolment|payment_intent|payment_attempt|payment_transaction|price_quote|refund)$/.test(
+          n,
+        ),
+      ),
     ).toEqual([]);
     for (const required of ['organization', 'organization_public_profile', 'branch']) {
       expect(names).toContain(required);

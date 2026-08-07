@@ -30,6 +30,20 @@ export type Point = {
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface ActivityType {
+  active: Generated<boolean>;
+  category_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  label_ar: string | null;
+  label_en: string;
+  slug: string;
+  synonyms_ar: Generated<string[]>;
+  synonyms_en: Generated<string[]>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface AdminRoleAssignment {
   approved_by: string | null;
   created_at: Generated<Timestamp>;
@@ -52,6 +66,19 @@ export interface AppUser {
   locked_reason: string | null;
   mfa_enrolled: Generated<boolean>;
   status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface Area {
+  active: Generated<boolean>;
+  city: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  label_ar: string | null;
+  label_en: string;
+  slug: string;
+  sort_hint: Generated<number>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }
@@ -119,6 +146,43 @@ export interface Branch {
   label: string;
   opening_hours: Json | null;
   organization_id: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface Category {
+  active: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  id: string;
+  image_ref: string | null;
+  label_ar: string | null;
+  label_en: string;
+  slug: string;
+  sort_hint: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface Collection {
+  audience: Generated<string>;
+  child_focused: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  featured: Generated<boolean>;
+  id: string;
+  image_ref: string | null;
+  preset_after_school: Generated<boolean>;
+  preset_available_today: Generated<boolean>;
+  preset_camps: Generated<boolean>;
+  preset_child_relevant: Generated<boolean>;
+  preset_indoor: Generated<boolean>;
+  preset_ladies_only: Generated<boolean>;
+  preset_offers: Generated<boolean>;
+  seasonal_label: string | null;
+  state: Generated<string>;
+  subtitle_ar: string | null;
+  subtitle_en: string | null;
+  title_ar: string | null;
+  title_en: string;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }
@@ -227,6 +291,23 @@ export interface MfaRecoveryCodeBatch {
   version: Generated<number>;
 }
 
+export interface Offer {
+  created_at: Generated<Timestamp>;
+  currency: Generated<string>;
+  effective_end: Timestamp | null;
+  effective_start: Timestamp | null;
+  id: string;
+  kind: string;
+  label_ar: string | null;
+  label_en: string;
+  organization_id: string;
+  program_id: string;
+  state: Generated<string>;
+  trial_amount_fils: Int8 | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface Organization {
   commercial_terms_ref: string | null;
   created_at: Generated<Timestamp>;
@@ -284,6 +365,108 @@ export interface Participant {
   id: string;
   kind: string;
   status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface Program {
+  activity_type_id: string;
+  all_ages: Generated<boolean>;
+  archived_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  description_ar: string | null;
+  description_en: string | null;
+  eligibility_notes: string | null;
+  gender_eligibility: string;
+  id: string;
+  /**
+   * docs/24 §5.3 machine, DB-trigger-enforced. D-S4-2: approval and publication are DISTINCT — approved never auto-advances; publish/unpublish authority (Owner + Organization Manager only) is service-layer, arriving with the catalogue-management commit.
+   */
+  listing_state: Generated<string>;
+  max_age: number | null;
+  min_age: number | null;
+  organization_id: string;
+  policy_ref: string | null;
+  published_at: Timestamp | null;
+  /**
+   * Bumped when an approved sensitive-field revision (docs/28 §7) is applied; monotonic, trigger-enforced.
+   */
+  sensitive_fields_version: Generated<number>;
+  setting: string;
+  skill_level: string | null;
+  title_ar: string | null;
+  title_en: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface ProgramBranch {
+  active: Generated<boolean>;
+  branch_id: string;
+  created_at: Generated<Timestamp>;
+  organization_id: string;
+  program_id: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface ProgramMedia {
+  active: Generated<boolean>;
+  alt_text_ar: string | null;
+  alt_text_en: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  media_ref: string;
+  organization_id: string;
+  program_id: string;
+  sort_hint: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface ProgramPriceOption {
+  amount_fils: Int8 | null;
+  created_at: Generated<Timestamp>;
+  currency: Generated<string>;
+  id: string;
+  kind: string;
+  label_ar: string | null;
+  label_en: string | null;
+  organization_id: string;
+  program_id: string;
+  sessions_count: number | null;
+  sort_hint: Generated<number>;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface ProgramRevision {
+  all_ages: boolean | null;
+  created_at: Generated<Timestamp>;
+  currency: Generated<string>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  description_ar: string | null;
+  description_en: string | null;
+  eligibility_notes: string | null;
+  gender_eligibility: string | null;
+  id: string;
+  max_age: number | null;
+  min_age: number | null;
+  option_amount_fils: Int8 | null;
+  option_id: string | null;
+  option_kind: string | null;
+  option_label_ar: string | null;
+  option_label_en: string | null;
+  option_sessions_count: number | null;
+  option_sort_hint: number | null;
+  option_state: string | null;
+  organization_id: string;
+  program_id: string;
+  skill_level: string | null;
+  state: Generated<string>;
+  submitted_by: string;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }
@@ -355,13 +538,17 @@ export interface StepUpGrant {
 }
 
 export interface DB {
+  activity_type: ActivityType;
   admin_role_assignment: AdminRoleAssignment;
   app_user: AppUser;
+  area: Area;
   audit_event: AuditEvent;
   auth_challenge: AuthChallenge;
   auth_identity: AuthIdentity;
   bootstrap_seal: BootstrapSeal;
   branch: Branch;
+  category: Category;
+  collection: Collection;
   customer_account: CustomerAccount;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
@@ -370,10 +557,16 @@ export interface DB {
   mfa_method: MfaMethod;
   mfa_recovery_code: MfaRecoveryCode;
   mfa_recovery_code_batch: MfaRecoveryCodeBatch;
+  offer: Offer;
   organization: Organization;
   organization_public_profile: OrganizationPublicProfile;
   outbox_event: OutboxEvent;
   participant: Participant;
+  program: Program;
+  program_branch: ProgramBranch;
+  program_media: ProgramMedia;
+  program_price_option: ProgramPriceOption;
+  program_revision: ProgramRevision;
   staff_invitation: StaffInvitation;
   staff_membership: StaffMembership;
   staff_membership_branch: StaffMembershipBranch;
