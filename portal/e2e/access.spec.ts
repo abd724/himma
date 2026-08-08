@@ -161,8 +161,13 @@ test('mobile access flow works end-to-end', async ({ page }) => {
   await signInAs(page, 'director@himma.demo');
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
   await page.getByRole('button', { name: 'Open navigation' }).click();
-  await page.getByRole('dialog', { name: 'Navigation' }).getByRole('link', { name: /^Team/ }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Team' })).toBeVisible();
+  // Team is hidden for this Organization Manager (staff.read is owner-only
+  // since W2-6); Branches is the equivalent org-section navigation proof.
+  await page
+    .getByRole('dialog', { name: 'Navigation' })
+    .getByRole('link', { name: /^Branches/ })
+    .click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Branches' })).toBeVisible();
   await noHorizontalOverflow(page);
-  await page.screenshot({ path: join(evidence, `mobile-team-authenticated.png`) });
+  await page.screenshot({ path: join(evidence, `mobile-branches-authenticated.png`) });
 });

@@ -10,6 +10,7 @@ import {
   createUnconfiguredInvitationPort,
   createUnconfiguredOnboardingPort,
   createUnconfiguredProfilePort,
+  createUnconfiguredTeamPort,
 } from '../auth/unconfigured-adapter';
 import { AppErrorBoundary } from './app-error-boundary';
 import type { AuthRuntime } from './auth-runtime';
@@ -46,6 +47,7 @@ export function AppProviders({
         profilePort: createUnconfiguredProfilePort(),
         branchPort: createUnconfiguredBranchPort(),
         areaPort: createUnconfiguredAreaPort(),
+        teamPort: createUnconfiguredTeamPort(),
       },
   );
 
@@ -64,6 +66,7 @@ export function AppProviders({
               profilePort: runtime.profilePort,
               branchPort: runtime.branchPort,
               areaPort: runtime.areaPort,
+              teamPort: runtime.teamPort,
             }}
           >
             {children}

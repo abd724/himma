@@ -71,7 +71,20 @@ import type {
   ProviderMembership,
   ProviderRole,
 } from '../../provider-access/contract';
+import { ORG_WIDE_ONLY_ROLES } from '../../provider-access/contract';
 import type { AreaReadPort, AreaRecord } from '../../taxonomy/contract';
+import type {
+  IssueInvitationOutcome,
+  RevokeInvitationOutcome,
+  RevokeMembershipOutcome,
+  StaffInvitationRecord,
+  StaffInvitationState,
+  StaffLoadOutcome,
+  StaffMembershipRecord,
+  StaffMembershipState,
+  TeamPort,
+} from '../../team/contract';
+import { INVITATION_FIELD_LIMITS } from '../../team/contract';
 
 export const fixtureOrganizations = {
   blueWave: {
@@ -196,6 +209,64 @@ const ROLE_CAPABILITIES: Record<ProviderRole, readonly string[]> = {
   finance: ['org.read', 'org.legal.view'],
 };
 
+/**
+ * Stable fictional Himma user ids — the ONLY member identity the real staff
+ * read returns (`StaffMembershipView.userId`). Shared between the identity
+ * directory (sign-in personas) and each organization's staff rows so the
+ * caller's own membership is recognizable ("You") and W2-6 mutations stay
+ * coherent with W2-2 provider-access truth.
+ */
+const fixtureUsers = {
+  ranaOwner: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c01',
+  omarDirector: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c02',
+  hudaStages: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c03',
+  amalNewOwner: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c04',
+  yaraNewCoach: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c05',
+  ramiAssistant: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c06',
+  salemManager: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c07',
+  danaFrontDesk: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c08',
+  tariqFinance: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c09',
+  linaCoach: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c10',
+  samiFormer: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c11',
+  nadiaListings: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c12',
+  karimSuspended: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c13',
+  // Members with no sign-in persona (real teams outnumber demo identities).
+  faisalCoOwner: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c14',
+  aquaCoach: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c15',
+  formerFrontDesk: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c16',
+  falconFrontDesk: '0198a2f0-5b7a-7000-8000-4d8e5f0a9c17',
+} as const;
+
+/** Mirrors the real `StaffMembershipView` row (mutable state/version). */
+interface FixtureStaffMembership {
+  readonly id: string;
+  readonly userId: string;
+  readonly role: ProviderRole;
+  branchScopeKind: 'all' | 'branches';
+  branchIds: string[];
+  state: StaffMembershipState;
+  readonly createdAt: string;
+  version: number;
+}
+
+/**
+ * Mirrors the real `StaffInvitationView` row. `token` is INTERNAL fixture
+ * state modelling the digest-matched one-time code the target types on
+ * `/invitation/:token` — it is never projected into any staff read
+ * (the real response carries no token either).
+ */
+interface FixtureStaffInvitation {
+  readonly id: string;
+  readonly email: string;
+  readonly role: ProviderRole;
+  readonly branchScopeKind: 'all' | 'branches';
+  readonly branchIds: string[];
+  state: StaffInvitationState;
+  expiresAt: string;
+  version: number;
+  readonly token?: string;
+}
+
 interface FixtureBranchState {
   readonly id: string;
   label: string;
@@ -234,6 +305,12 @@ interface FixtureOrganizationState {
   profile: FixtureProfileState;
   branches: FixtureBranchState[];
   listingCount: number;
+  /** The org's staff truth — memberships incl. revoked history plus every
+   *  invitation lifecycle state, exactly like the real staff read. */
+  staff: {
+    memberships: FixtureStaffMembership[];
+    invitations: FixtureStaffInvitation[];
+  };
 }
 
 function organizationDirectory(): Map<string, FixtureOrganizationState> {
@@ -256,6 +333,57 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
     version: 1,
   });
 
+  const daysFromNow = (days: number): string =>
+    new Date(Date.now() + days * 86_400_000).toISOString();
+
+  const membershipRow = (
+    suffix: string,
+    userId: string,
+    role: ProviderRole,
+    createdAt: string,
+    options: Partial<
+      Pick<FixtureStaffMembership, 'branchScopeKind' | 'branchIds' | 'state' | 'version'>
+    > = {},
+  ): FixtureStaffMembership => ({
+    id: `0198a2f0-5b7a-7000-8000-5e9f6a1b8d${suffix}`,
+    userId,
+    role,
+    branchScopeKind: options.branchScopeKind ?? 'all',
+    branchIds: options.branchIds ?? [],
+    state: options.state ?? 'active',
+    createdAt,
+    version: options.version ?? 1,
+  });
+
+  const invitationRow = (
+    suffix: string,
+    email: string,
+    role: ProviderRole,
+    state: StaffInvitationState,
+    expiresAt: string,
+    options: Partial<
+      Pick<FixtureStaffInvitation, 'branchScopeKind' | 'branchIds' | 'token' | 'version'>
+    > = {},
+  ): FixtureStaffInvitation => ({
+    id: `0198a2f0-5b7a-7000-8000-6f0a7b2c9e${suffix}`,
+    email,
+    role,
+    branchScopeKind: options.branchScopeKind ?? 'all',
+    branchIds: options.branchIds ?? [],
+    state,
+    expiresAt,
+    version: options.version ?? 1,
+    ...(options.token !== undefined ? { token: options.token } : {}),
+  });
+
+  const soleOwnerStaff = (
+    suffix: string,
+    userId: string,
+  ): FixtureOrganizationState['staff'] => ({
+    memberships: [membershipRow(suffix, userId, 'owner', '2026-02-01T08:00:00.000Z')],
+    invitations: [],
+  });
+
   const org = (
     ref: { organizationId: string; displayName: string },
     verificationState: string,
@@ -264,6 +392,7 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
       profile?: Partial<FixtureProfileState>;
       branches?: FixtureBranchState[];
       listingCount?: number;
+      staff?: FixtureOrganizationState['staff'];
     } = {},
   ): FixtureOrganizationState => ({
     organizationId: ref.organizationId,
@@ -271,6 +400,7 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
     legalName: options.legalName ?? `${ref.displayName} LLC`,
     verificationState,
     version: 3,
+    staff: options.staff ?? { memberships: [], invitations: [] },
     profile: {
       displayName: ref.displayName,
       descriptionEn: null,
@@ -296,6 +426,56 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
     [
       org(fixtureOrganizations.blueWave, 'live', {
         listingCount: 3,
+        staff: {
+          memberships: [
+            membershipRow('01', fixtureUsers.ranaOwner, 'owner', '2026-03-02T08:00:00.000Z'),
+            // Second ACTIVE owner: proves multiple-owner truth and that
+            // revoking a NON-last owner is permitted by the invariant.
+            membershipRow('02', fixtureUsers.faisalCoOwner, 'owner', '2026-03-05T08:00:00.000Z'),
+            membershipRow('03', fixtureUsers.omarDirector, 'org_manager', '2026-03-10T08:00:00.000Z'),
+            membershipRow('04', fixtureUsers.salemManager, 'branch_manager', '2026-04-01T08:00:00.000Z', {
+              branchScopeKind: 'branches',
+              branchIds: [fixtureBranches.blueWaveMarina],
+              version: 2,
+            }),
+            // Revoked row BETWEEN active ones: history stays in the read.
+            membershipRow('05', fixtureUsers.formerFrontDesk, 'front_desk', '2026-04-03T08:00:00.000Z', {
+              state: 'revoked',
+              version: 2,
+            }),
+            membershipRow('06', fixtureUsers.nadiaListings, 'listings_editor', '2026-04-12T08:00:00.000Z'),
+            membershipRow('07', fixtureUsers.aquaCoach, 'coach', '2026-05-06T08:00:00.000Z', {
+              branchScopeKind: 'branches',
+              branchIds: [fixtureBranches.blueWaveBay],
+            }),
+            membershipRow('08', fixtureUsers.danaFrontDesk, 'front_desk', '2026-05-20T08:00:00.000Z'),
+            membershipRow('09', fixtureUsers.tariqFinance, 'finance', '2026-06-01T08:00:00.000Z'),
+          ],
+          invitations: [
+            // Accepted long ago (the aqua coach's origin); finalized rows
+            // are permanently immutable in the backend.
+            invitationRow('01', 'aqua.coach@bluewave.example', 'coach', 'accepted', '2026-05-08T08:00:00.000Z', {
+              branchScopeKind: 'branches',
+              branchIds: [fixtureBranches.blueWaveBay],
+            }),
+            invitationRow('02', 'newcoach@bluewave.demo', 'coach', 'revoked', daysFromNow(4), {
+              token: FIXTURE_INVITATIONS.revoked,
+            }),
+            // Live pending invitation — the same one the W2-3 acceptance
+            // flow consumes (HIMMA-INVITE-STAFF-BLUEWAVE).
+            invitationRow('03', 'newcoach@bluewave.demo', 'coach', 'sent', daysFromNow(5), {
+              token: FIXTURE_INVITATIONS.staff,
+            }),
+            // Overdue but still `sent`: expiry is TIME truth before the
+            // sweep finalizes it — not acceptable, still revocable.
+            invitationRow('04', 'weekend.coach@bluewave.example', 'coach', 'sent', daysFromNow(-2), {
+              branchScopeKind: 'branches',
+              branchIds: [fixtureBranches.blueWaveMarina],
+            }),
+            // Sweep-finalized `expired` row.
+            invitationRow('05', 'holiday.helper@bluewave.example', 'front_desk', 'expired', daysFromNow(-30)),
+          ],
+        },
         profile: {
           descriptionEn:
             'Learn-to-swim classes, squad training, and holiday camps for children and adults, taught by certified coaches.',
@@ -325,6 +505,18 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
       }),
       org(fixtureOrganizations.noor, 'live', {
         listingCount: 2,
+        // Exactly ONE active owner: the last-active-owner invariant makes
+        // this owner's own removal impossible until another owner exists.
+        staff: {
+          memberships: [
+            membershipRow('0a', fixtureUsers.omarDirector, 'owner', '2026-02-10T08:00:00.000Z'),
+            membershipRow('0b', fixtureUsers.linaCoach, 'coach', '2026-03-15T08:00:00.000Z', {
+              branchScopeKind: 'branches',
+              branchIds: [NOOR_BRANCH_ID],
+            }),
+          ],
+          invitations: [],
+        },
         profile: {
           descriptionEn: 'After-school learning support and enrichment programs.',
           publicEmail: 'contact@noorlearning.example',
@@ -336,20 +528,51 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
       }),
       org(fixtureOrganizations.falcon, 'suspended', {
         listingCount: 1,
+        // Suspended: the staff READ still works; every staff mutation is
+        // refused with the canonical organizationSuspended outcome.
+        staff: {
+          memberships: [
+            membershipRow('0c', fixtureUsers.omarDirector, 'owner', '2026-01-20T08:00:00.000Z'),
+            membershipRow('0d', fixtureUsers.falconFrontDesk, 'front_desk', '2026-02-14T08:00:00.000Z'),
+          ],
+          invitations: [
+            invitationRow('06', 'coach@falcon.example', 'coach', 'sent', daysFromNow(5)),
+          ],
+        },
         profile: {
           descriptionEn: 'Combat sports classes for teens and adults.',
           published: true,
         },
       }),
-      // Fresh admin-created draft: profile shell empty, no branch yet.
+      // Fresh admin-created draft: profile shell empty, no branch yet, and
+      // NO active owner membership until the founding invitation is
+      // accepted (a pending owner invitation never counts as an owner).
       org(fixtureOrganizations.coral, 'draft', {
         profile: { displayName: '' },
         branches: [],
+        staff: {
+          memberships: [
+            membershipRow('0e', fixtureUsers.ramiAssistant, 'coach', '2026-07-01T08:00:00.000Z'),
+          ],
+          invitations: [
+            invitationRow('07', 'newowner@coral.demo', 'owner', 'sent', daysFromNow(6), {
+              token: FIXTURE_INVITATIONS.foundingOwner,
+            }),
+            invitationRow('08', 'newowner@coral.demo', 'owner', 'expired', daysFromNow(-30), {
+              token: FIXTURE_INVITATIONS.expired,
+            }),
+          ],
+        },
       }),
-      org(fixtureOrganizations.sunrise, 'submitted'),
-      org(fixtureOrganizations.marina, 'in_review'),
+      org(fixtureOrganizations.sunrise, 'submitted', {
+        staff: soleOwnerStaff('0f', fixtureUsers.hudaStages),
+      }),
+      org(fixtureOrganizations.marina, 'in_review', {
+        staff: soleOwnerStaff('10', fixtureUsers.hudaStages),
+      }),
       org(fixtureOrganizations.desertBloom, 'rejected', {
         profile: { descriptionEn: 'Yoga and mindfulness studio for all levels.' },
+        staff: soleOwnerStaff('11', fixtureUsers.hudaStages),
       }),
       // Verified + published storefront, NOT yet live: publication alone
       // never makes a provider publicly visible (live AND published).
@@ -358,6 +581,7 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
           descriptionEn: 'Freediving courses and guided open-water sessions.',
           published: true,
         },
+        staff: soleOwnerStaff('12', fixtureUsers.hudaStages),
       }),
     ].map((entry) => [entry.organizationId, entry]),
   );
@@ -370,6 +594,7 @@ interface FixtureMembershipSeat {
 }
 
 interface FixtureIdentity {
+  readonly userId: string;
   readonly email: string;
   readonly displayName: string;
   readonly mfaEnrolled: boolean;
@@ -387,12 +612,14 @@ function identityDirectory(): FixtureIdentity[] {
 
   return [
     {
+      userId: fixtureUsers.ranaOwner,
       email: 'owner@bluewave.demo',
       displayName: 'Rana Haddad',
       mfaEnrolled: true,
       memberships: [seat(fixtureOrganizations.blueWave, 'owner')],
     },
     {
+      userId: fixtureUsers.omarDirector,
       email: 'director@himma.demo',
       displayName: 'Omar Farouk',
       mfaEnrolled: true,
@@ -403,6 +630,7 @@ function identityDirectory(): FixtureIdentity[] {
       ],
     },
     {
+      userId: fixtureUsers.hudaStages,
       email: 'stages@himma.demo',
       displayName: 'Huda Saleh',
       mfaEnrolled: true,
@@ -414,18 +642,21 @@ function identityDirectory(): FixtureIdentity[] {
       ],
     },
     {
+      userId: fixtureUsers.amalNewOwner,
       email: 'newowner@coral.demo',
       displayName: 'Amal Kassem',
       mfaEnrolled: true,
       memberships: [],
     },
     {
+      userId: fixtureUsers.yaraNewCoach,
       email: 'newcoach@bluewave.demo',
       displayName: 'Yara Habib',
       mfaEnrolled: true,
       memberships: [],
     },
     {
+      userId: fixtureUsers.ramiAssistant,
       email: 'assistant@coral.demo',
       displayName: 'Rami Odeh',
       mfaEnrolled: true,
@@ -435,6 +666,7 @@ function identityDirectory(): FixtureIdentity[] {
       // Branch-scoped Branch Manager: edit reach = Dubai Marina pool ONLY
       // (the real org view still lists every branch — scope limits
       // MUTATION, never the org.read projection).
+      userId: fixtureUsers.salemManager,
       email: 'manager@bluewave.demo',
       displayName: 'Salem Qassim',
       mfaEnrolled: true,
@@ -443,30 +675,35 @@ function identityDirectory(): FixtureIdentity[] {
       ],
     },
     {
+      userId: fixtureUsers.danaFrontDesk,
       email: 'frontdesk@bluewave.demo',
       displayName: 'Dana Mansour',
       mfaEnrolled: true,
       memberships: [seat(fixtureOrganizations.blueWave, 'front_desk')],
     },
     {
+      userId: fixtureUsers.tariqFinance,
       email: 'finance@bluewave.demo',
       displayName: 'Tariq Aswad',
       mfaEnrolled: true,
       memberships: [seat(fixtureOrganizations.blueWave, 'finance')],
     },
     {
+      userId: fixtureUsers.linaCoach,
       email: 'coach@noor.demo',
       displayName: 'Lina Aziz',
       mfaEnrolled: false,
       memberships: [seat(fixtureOrganizations.noor, 'coach', [NOOR_BRANCH_ID])],
     },
     {
+      userId: fixtureUsers.samiFormer,
       email: 'former@himma.demo',
       displayName: 'Sami Idris',
       mfaEnrolled: true,
       memberships: [],
     },
     {
+      userId: fixtureUsers.nadiaListings,
       email: 'flaky@bluewave.demo',
       displayName: 'Nadia Rahman',
       mfaEnrolled: true,
@@ -474,57 +711,12 @@ function identityDirectory(): FixtureIdentity[] {
       memberships: [seat(fixtureOrganizations.blueWave, 'listings_editor')],
     },
     {
+      userId: fixtureUsers.karimSuspended,
       email: 'suspended@himma.demo',
       displayName: 'Karim Nassar',
       mfaEnrolled: true,
       accountSuspended: true,
       memberships: [],
-    },
-  ];
-}
-
-interface FixtureInvitation {
-  readonly token: string;
-  readonly email: string;
-  readonly organizationId: string;
-  readonly role: ProviderRole;
-  readonly branchScope: BranchScope;
-  state: 'sent' | 'accepted' | 'revoked' | 'expired';
-}
-
-function invitationDirectory(): FixtureInvitation[] {
-  return [
-    {
-      token: FIXTURE_INVITATIONS.foundingOwner,
-      email: 'newowner@coral.demo',
-      organizationId: fixtureOrganizations.coral.organizationId,
-      role: 'owner',
-      branchScope: 'all',
-      state: 'sent',
-    },
-    {
-      token: FIXTURE_INVITATIONS.staff,
-      email: 'newcoach@bluewave.demo',
-      organizationId: fixtureOrganizations.blueWave.organizationId,
-      role: 'coach',
-      branchScope: 'all',
-      state: 'sent',
-    },
-    {
-      token: FIXTURE_INVITATIONS.expired,
-      email: 'newowner@coral.demo',
-      organizationId: fixtureOrganizations.coral.organizationId,
-      role: 'owner',
-      branchScope: 'all',
-      state: 'expired',
-    },
-    {
-      token: FIXTURE_INVITATIONS.revoked,
-      email: 'newcoach@bluewave.demo',
-      organizationId: fixtureOrganizations.blueWave.organizationId,
-      role: 'coach',
-      branchScope: 'all',
-      state: 'revoked',
     },
   ];
 }
@@ -538,8 +730,19 @@ interface FixtureSessionStore {
   profileLoadFailures: Set<string>;
   profileSaveFailures: Set<string>;
   branchMutationFailures: Set<string>;
+  staffLoadFailures: Set<string>;
+  staffMutationFailures: Set<string>;
+  invitationMailFailures: Set<string>;
   areaLoadFailurePending: boolean;
   createdBranchCount: number;
+  createdStaffRowCount: number;
+  /**
+   * The Slice-2 recent-step-up window the `providerStepUp` policy checks:
+   * a fresh MFA sign-in or a completed `/step-up` grant opens it (the real
+   * HIMMA_MFA_STEP_UP_TTL default, 900 s); `providerStepUp` mutations refuse
+   * with `stepUpRequired` once it has lapsed. Milliseconds epoch or null.
+   */
+  stepUpValidUntil: number | null;
   listeners: Set<(interrupt: SessionInterrupt) => void>;
 }
 
@@ -568,6 +771,33 @@ export interface FixtureAccessControls {
   failNextBranchMutation(organizationId: string): void;
   /** Make the next area taxonomy read fail transiently. */
   failNextAreaLoad(): void;
+  /**
+   * Simulate the Slice-2 recent-step-up window lapsing (time passing since
+   * the last MFA verification): the next `providerStepUp` staff mutation
+   * receives the canonical `stepUpRequired` and the UI must route through
+   * `/step-up` before retrying.
+   */
+  expireStepUpWindow(): void;
+  /**
+   * Simulate ANOTHER owner changing this membership row first (bumps its
+   * version): the next revoke carrying the old `expectedVersion` receives
+   * the canonical `staleVersion`.
+   */
+  simulateConcurrentStaffChange(organizationId: string, membershipId: string): void;
+  /**
+   * Simulate ANOTHER owner's session REVOKING a membership while this list
+   * stays stale (row revoked + the person's access seat removed) — the way
+   * a second-to-last owner disappears and the next owner revocation hits
+   * the backend's last-active-owner refusal.
+   */
+  simulateConcurrentStaffRevocation(organizationId: string, membershipId: string): void;
+  /** Make the next staff read fail transiently. */
+  failNextStaffLoad(organizationId: string): void;
+  /** Make the next staff/invitation mutation fail transiently. */
+  failNextStaffMutation(organizationId: string): void;
+  /** Make the next issued invitation report `mailDelivery: 'failed'`
+   *  (the invitation is still created — exactly the real semantics). */
+  failNextInvitationMail(organizationId: string): void;
 }
 
 export interface FixtureAuthRuntime {
@@ -578,6 +808,7 @@ export interface FixtureAuthRuntime {
   profilePort: OrganizationProfilePort;
   branchPort: BranchPort;
   areaPort: AreaReadPort;
+  teamPort: TeamPort;
   controls: FixtureAccessControls;
   /**
    * Test-harness seeding: aligns the fixture store with a prepared session
@@ -599,7 +830,6 @@ export interface FixtureAuthRuntime {
 export function createFixtureAuthRuntime(): FixtureAuthRuntime {
   const organizations = organizationDirectory();
   const identities = identityDirectory();
-  const invitations = invitationDirectory();
 
   const store: FixtureSessionStore = {
     current: null,
@@ -610,8 +840,13 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     profileLoadFailures: new Set(),
     profileSaveFailures: new Set(),
     branchMutationFailures: new Set(),
+    staffLoadFailures: new Set(),
+    staffMutationFailures: new Set(),
+    invitationMailFailures: new Set(),
     areaLoadFailurePending: false,
     createdBranchCount: 0,
+    createdStaffRowCount: 0,
+    stepUpValidUntil: null,
     listeners: new Set(),
   };
   const areas = areaDirectory();
@@ -647,6 +882,16 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       })
       .filter((entry): entry is ProviderMembership => entry !== null);
 
+  /** Mirrors HIMMA_MFA_STEP_UP_TTL_SECONDS default (900 s). */
+  const STEP_UP_WINDOW_MS = 900_000;
+
+  const openStepUpWindow = () => {
+    store.stepUpValidUntil = Date.now() + STEP_UP_WINDOW_MS;
+  };
+
+  const hasRecentStepUp = (): boolean =>
+    store.stepUpValidUntil !== null && store.stepUpValidUntil > Date.now();
+
   const stepUp = (valid: boolean): StepUpOutcome => {
     if (!store.current) {
       return { kind: 'failure' };
@@ -654,8 +899,8 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     if (!valid) {
       return { kind: 'invalidCode' };
     }
-    // Mirrors HIMMA_MFA_STEP_UP_TTL_SECONDS default (900 s).
-    return { kind: 'completed', expiresAt: new Date(Date.now() + 900_000).toISOString() };
+    openStepUpWindow();
+    return { kind: 'completed', expiresAt: new Date(store.stepUpValidUntil ?? 0).toISOString() };
   };
 
   const adapter: PortalAuthAdapter = {
@@ -679,6 +924,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       }
       store.revokedAccess = false;
       store.flakyFailuresRemaining = identity.flakyAccess ? 1 : 0;
+      store.stepUpValidUntil = null;
       if (identity.mfaEnrolled) {
         store.pendingChallenge = identity;
         return { kind: 'mfaChallenge' };
@@ -701,6 +947,9 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       }
       store.pendingChallenge = null;
       store.current = identity;
+      // A fresh MFA verification also satisfies the recent-step-up window
+      // (exactly how the real providerStepUp policy composes).
+      openStepUpWindow();
       return { kind: 'signedIn', assurance: 'mfa', identity: identityView(identity) };
     },
 
@@ -728,6 +977,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       store.current = null;
       store.pendingChallenge = null;
       store.revokedAccess = false;
+      store.stepUpValidUntil = null;
     },
 
     subscribe(listener) {
@@ -766,13 +1016,25 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       if (!caller) {
         return { kind: 'failure' };
       }
-      const invitation = invitations.find((candidate) => candidate.token === token);
-      if (!invitation || invitation.state !== 'sent') {
+      // The invitation rows live on their organizations (the same rows the
+      // owner's Team surface manages) — acceptance is the digest lookup.
+      let organization: FixtureOrganizationState | undefined;
+      let invitation: FixtureStaffInvitation | undefined;
+      for (const candidate of organizations.values()) {
+        invitation = candidate.staff.invitations.find((row) => row.token === token);
+        if (invitation) {
+          organization = candidate;
+          break;
+        }
+      }
+      if (!organization || !invitation || invitation.state !== 'sent') {
         return { kind: 'invitationInvalid' };
       }
-      const organization = organizations.get(invitation.organizationId);
+      // Time truth: an overdue `sent` row refuses acceptance pre-sweep.
+      if (new Date(invitation.expiresAt).getTime() <= Date.now()) {
+        return { kind: 'invitationInvalid' };
+      }
       if (
-        !organization ||
         organization.verificationState === 'suspended' ||
         organization.verificationState === 'offboarded'
       ) {
@@ -782,23 +1044,37 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       if (invitation.email !== caller.email) {
         return { kind: 'invitationInvalid' };
       }
-      if (caller.memberships.some((seatEntry) => seatEntry.organizationId === invitation.organizationId)) {
+      if (caller.memberships.some((seatEntry) => seatEntry.organizationId === organization.organizationId)) {
         return { kind: 'invitationInvalid' };
       }
       invitation.state = 'accepted';
+      invitation.version += 1;
+      store.createdStaffRowCount += 1;
+      const membershipRow: FixtureStaffMembership = {
+        id: `${organization.organizationId.slice(0, 8)}-staff-${store.createdStaffRowCount}`,
+        userId: caller.userId,
+        role: invitation.role,
+        branchScopeKind: invitation.branchScopeKind,
+        branchIds: [...invitation.branchIds],
+        state: 'active',
+        createdAt: new Date().toISOString(),
+        version: 1,
+      };
+      organization.staff.memberships.push(membershipRow);
       caller.memberships = [
         ...caller.memberships,
         {
-          organizationId: invitation.organizationId,
+          organizationId: organization.organizationId,
           role: invitation.role,
-          branchScope: invitation.branchScope,
+          branchScope:
+            invitation.branchScopeKind === 'all' ? 'all' : [...invitation.branchIds],
         },
       ];
       emit({ kind: 'accessChanged' });
       return {
         kind: 'invitationAccepted',
-        organizationId: invitation.organizationId,
-        membershipId: `${invitation.organizationId.slice(0, 8)}-membership-demo`,
+        organizationId: organization.organizationId,
+        membershipId: membershipRow.id,
       };
     },
   };
@@ -939,7 +1215,12 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         profile: { ...organization.profile, galleryMediaRefs: [...organization.profile.galleryMediaRefs] },
         branches: organization.branches.map((branch) => ({ ...branch, facilities: [...branch.facilities] })),
         membership: {
-          id: `${organization.organizationId.slice(0, 8)}-membership-demo`,
+          // The caller's own ACTIVE staff row — the same id the staff read
+          // returns, so the Team surface can recognize "You".
+          id:
+            organization.staff.memberships.find(
+              (row) => row.userId === caller.userId && row.state === 'active',
+            )?.id ?? `${organization.organizationId.slice(0, 8)}-membership-demo`,
           role: seatEntry.role,
           branchScope: seatEntry.branchScope,
           capabilities,
@@ -1211,6 +1492,274 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
+  const projectMembership = (row: FixtureStaffMembership): StaffMembershipRecord => ({
+    id: row.id,
+    userId: row.userId,
+    role: row.role,
+    branchScopeKind: row.branchScopeKind,
+    branchIds: [...row.branchIds],
+    state: row.state,
+    createdAt: row.createdAt,
+    version: row.version,
+  });
+
+  /** The staff read carries NO token — enforced by construction here. */
+  const projectInvitation = (row: FixtureStaffInvitation): StaffInvitationRecord => ({
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    branchScopeKind: row.branchScopeKind,
+    branchIds: [...row.branchIds],
+    state: row.state,
+    expiresAt: row.expiresAt,
+    version: row.version,
+  });
+
+  /**
+   * Shared staff-mutation gate mirroring the real `providerStepUp` pipeline
+   * ORDER (identity/http/auth-plugin.ts): live session → org-scope
+   * resolution (not-found shaping) → recent step-up → declared capability →
+   * suspended-organization mutation refusal. The fixture's transient-failure
+   * seam runs last, like a network fault on an authorized call.
+   */
+  const resolveStaffMutation = (
+    organizationId: string,
+  ):
+    | {
+        refusal:
+          | 'unavailable'
+          | 'notFound'
+          | 'stepUpRequired'
+          | 'forbidden'
+          | 'organizationSuspended';
+      }
+    | { refusal: null; organization: FixtureOrganizationState; caller: FixtureIdentity } => {
+    const caller = store.current;
+    if (!caller) {
+      return { refusal: 'unavailable' };
+    }
+    const organization = organizations.get(organizationId);
+    const seatEntry = caller.memberships.find(
+      (candidate) => candidate.organizationId === organizationId,
+    );
+    if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+      return { refusal: 'notFound' };
+    }
+    if (!hasRecentStepUp()) {
+      return { refusal: 'stepUpRequired' };
+    }
+    if (!ROLE_CAPABILITIES[seatEntry.role].includes('staff.manage')) {
+      return { refusal: 'forbidden' };
+    }
+    if (organization.verificationState === 'suspended') {
+      return { refusal: 'organizationSuspended' };
+    }
+    if (store.staffMutationFailures.delete(organizationId)) {
+      return { refusal: 'unavailable' };
+    }
+    return { refusal: null, organization, caller };
+  };
+
+  const removeSeatFor = (membershipRow: FixtureStaffMembership, organizationId: string) => {
+    const identity = identities.find((candidate) => candidate.userId === membershipRow.userId);
+    if (!identity) {
+      return;
+    }
+    identity.memberships = identity.memberships.filter(
+      (seatEntry) => seatEntry.organizationId !== organizationId,
+    );
+    if (store.current?.userId === identity.userId) {
+      // The caller changed their OWN access — the portal must re-resolve
+      // rather than continue on stale authority (task §19).
+      emit({ kind: 'accessChanged' });
+    }
+  };
+
+  const teamPort: TeamPort = {
+    /**
+     * Mirrors GET /provider/organizations/:organizationId/staff (policy
+     * `provider`, capability `staff.read` — owner only). Reads still work
+     * for a suspended organization; every row and every lifecycle state is
+     * returned, exactly like the real composed read.
+     */
+    async loadStaff(organizationId): Promise<StaffLoadOutcome> {
+      const caller = store.current;
+      if (!caller) {
+        return { kind: 'unavailable' };
+      }
+      if (store.staffLoadFailures.delete(organizationId)) {
+        return { kind: 'unavailable' };
+      }
+      const organization = organizations.get(organizationId);
+      const seatEntry = caller.memberships.find(
+        (candidate) => candidate.organizationId === organizationId,
+      );
+      if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+        return { kind: 'notFound' };
+      }
+      if (!ROLE_CAPABILITIES[seatEntry.role].includes('staff.read')) {
+        return { kind: 'forbidden' };
+      }
+      return {
+        kind: 'loaded',
+        staff: {
+          memberships: organization.staff.memberships.map(projectMembership),
+          invitations: organization.staff.invitations.map(projectInvitation),
+        },
+      };
+    },
+
+    /**
+     * Mirrors POST .../staff/invitations (policy `providerStepUp`,
+     * capability `staff.manage`), including the service semantics: TypeBox
+     * body validation → org-wide-only role scope rule → branch existence +
+     * active check against THIS organization → supersede any still-`sent`
+     * invitation for the same normalized address → insert → mail delivery
+     * reported without rolling back. No token in the response, ever.
+     */
+    async issueInvitation(organizationId, input): Promise<IssueInvitationOutcome> {
+      const context = resolveStaffMutation(organizationId);
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const email = input.email.trim().toLowerCase();
+      if (
+        email.length === 0 ||
+        email.length > INVITATION_FIELD_LIMITS.email ||
+        email.indexOf('@') < 1 ||
+        email.includes(' ')
+      ) {
+        return { kind: 'validationError' };
+      }
+      if (ORG_WIDE_ONLY_ROLES.includes(input.role) && input.branchScope !== 'all') {
+        return { kind: 'invalidBranchScope' };
+      }
+      let branchScopeKind: 'all' | 'branches' = 'all';
+      let branchIds: string[] = [];
+      if (input.branchScope !== 'all') {
+        const uniqueIds = [...new Set(input.branchScope)];
+        if (uniqueIds.length === 0 || uniqueIds.length > INVITATION_FIELD_LIMITS.branchScopeMax) {
+          return { kind: 'invalidBranchScope' };
+        }
+        const rows = uniqueIds.map((branchId) =>
+          context.organization.branches.find((candidate) => candidate.id === branchId),
+        );
+        // Every scoped branch must belong to THIS organization and be
+        // active at issue time — foreign ids are indistinguishable from
+        // unknown ones (no enumeration oracle).
+        if (rows.some((row) => row === undefined || !row.active)) {
+          return { kind: 'invalidBranchScope' };
+        }
+        branchScopeKind = 'branches';
+        branchIds = uniqueIds;
+      }
+      // Approved resend policy: a still-`sent` invitation for the same
+      // address is revoked in the same transaction (superseded).
+      for (const row of context.organization.staff.invitations) {
+        if (row.email === email && row.state === 'sent') {
+          row.state = 'revoked';
+          row.version += 1;
+        }
+      }
+      store.createdStaffRowCount += 1;
+      const invitation: FixtureStaffInvitation = {
+        id: `${organizationId.slice(0, 8)}-invite-${store.createdStaffRowCount}`,
+        email,
+        role: input.role,
+        branchScopeKind,
+        branchIds,
+        state: 'sent',
+        expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        version: 1,
+      };
+      context.organization.staff.invitations.push(invitation);
+      const mailDelivery = store.invitationMailFailures.delete(organizationId)
+        ? ('failed' as const)
+        : ('delivered' as const);
+      return {
+        kind: 'invitationIssued',
+        invitationId: invitation.id,
+        expiresAt: invitation.expiresAt,
+        mailDelivery,
+      };
+    },
+
+    /**
+     * Mirrors POST .../staff/invitations/:invitationId/revoke — idempotent
+     * on an already-revoked row; accepted/expired rows are finalized
+     * (`lifecycleConflict`); org-scoped lookup keeps foreign ids
+     * not-found-shaped.
+     */
+    async revokeInvitation(organizationId, invitationId): Promise<RevokeInvitationOutcome> {
+      const context = resolveStaffMutation(organizationId);
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const invitation = context.organization.staff.invitations.find(
+        (candidate) => candidate.id === invitationId,
+      );
+      if (!invitation) {
+        return { kind: 'notFound' };
+      }
+      if (invitation.state === 'revoked') {
+        return { kind: 'invitationRevoked' };
+      }
+      if (invitation.state !== 'sent') {
+        return { kind: 'lifecycleConflict' };
+      }
+      invitation.state = 'revoked';
+      invitation.version += 1;
+      return { kind: 'invitationRevoked' };
+    },
+
+    /**
+     * Mirrors POST .../staff/memberships/:membershipId/revoke — version CAS
+     * (`staleVersion`), idempotent on an already-revoked row, and the
+     * database-level last-active-owner refusal (`lastOwnerProtected`).
+     * Self-revocation is permitted exactly like the backend (the invariant
+     * is the only blocker); a revoked identity's access seat disappears and
+     * the portal re-resolves if it was the caller's own.
+     */
+    async revokeMembership(
+      organizationId,
+      membershipId,
+      expectedVersion,
+    ): Promise<RevokeMembershipOutcome> {
+      const context = resolveStaffMutation(organizationId);
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const membership = context.organization.staff.memberships.find(
+        (candidate) => candidate.id === membershipId,
+      );
+      if (!membership) {
+        return { kind: 'notFound' };
+      }
+      if (membership.state === 'revoked') {
+        return { kind: 'membershipRevoked' };
+      }
+      if (membership.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      if (membership.role === 'owner') {
+        const otherActiveOwner = context.organization.staff.memberships.some(
+          (candidate) =>
+            candidate.id !== membership.id &&
+            candidate.role === 'owner' &&
+            candidate.state === 'active',
+        );
+        // Pending owner INVITATIONS never count toward the invariant.
+        if (!otherActiveOwner) {
+          return { kind: 'lastOwnerProtected' };
+        }
+      }
+      membership.state = 'revoked';
+      membership.version += 1;
+      removeSeatFor(membership, organizationId);
+      return { kind: 'membershipRevoked' };
+    },
+  };
+
   const areaPort: AreaReadPort = {
     /** Mirrors GET /catalogue/areas — active areas in deterministic order. */
     async listAreas() {
@@ -1226,6 +1775,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     expireSession() {
       store.current = null;
       store.pendingChallenge = null;
+      store.stepUpValidUntil = null;
       emit({ kind: 'sessionExpired' });
     },
     revokeAccess() {
@@ -1257,10 +1807,51 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     failNextAreaLoad() {
       store.areaLoadFailurePending = true;
     },
+    expireStepUpWindow() {
+      store.stepUpValidUntil = null;
+    },
+    simulateConcurrentStaffChange(organizationId, membershipId) {
+      const membership = organizations
+        .get(organizationId)
+        ?.staff.memberships.find((candidate) => candidate.id === membershipId);
+      if (membership) {
+        membership.version += 1;
+      }
+    },
+    simulateConcurrentStaffRevocation(organizationId, membershipId) {
+      const organization = organizations.get(organizationId);
+      const membership = organization?.staff.memberships.find(
+        (candidate) => candidate.id === membershipId,
+      );
+      if (!organization || !membership || membership.state !== 'active') {
+        return;
+      }
+      membership.state = 'revoked';
+      membership.version += 1;
+      const identity = identities.find((candidate) => candidate.userId === membership.userId);
+      if (identity) {
+        identity.memberships = identity.memberships.filter(
+          (seatEntry) => seatEntry.organizationId !== organizationId,
+        );
+      }
+    },
+    failNextStaffLoad(organizationId) {
+      store.staffLoadFailures.add(organizationId);
+    },
+    failNextStaffMutation(organizationId) {
+      store.staffMutationFailures.add(organizationId);
+    },
+    failNextInvitationMail(organizationId) {
+      store.invitationMailFailures.add(organizationId);
+    },
   };
 
   const seedSession = (email: string) => {
     store.current = identities.find((identity) => identity.email === email) ?? null;
+    // A seeded session models a FRESH MFA sign-in (the render harness's
+    // authenticated seam); tests exercising the lapsed-window choreography
+    // call controls.expireStepUpWindow() explicitly.
+    store.stepUpValidUntil = store.current?.mfaEnrolled ? Date.now() + STEP_UP_WINDOW_MS : null;
   };
 
   const sessionStateFor = (email: string) => {
@@ -1283,6 +1874,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     profilePort,
     branchPort,
     areaPort,
+    teamPort,
     controls,
     seedSession,
     sessionStateFor,

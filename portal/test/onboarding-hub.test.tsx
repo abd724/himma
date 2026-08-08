@@ -176,14 +176,17 @@ describe('onboarding hub (readiness orchestration over canonical states)', () =>
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();
     hub.unmount();
 
-    // Team (W2-6) remains an honest placeholder (Business Profile became the
-    // real W2-4 experience, Branches the real W2-5 experience).
+    // The real W2-6 Team surface stays equally honest for a role WITHOUT
+    // staff.read (coach): no staff data, no form controls, no invite
+    // affordance — the truthful owner-managed explanation only.
     for (const segment of ['team']) {
       const view = renderPortal({
         asIdentity: 'assistant@coral.demo',
         initialEntries: [`/o/${fixtureOrganizations.coral.organizationId}/${segment}`],
       });
-      expect(await screen.findByText('Arriving in an upcoming portal update.')).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { level: 2, name: 'Team is managed by the Owner' }),
+      ).toBeInTheDocument();
       expect(view.container.querySelector('input, textarea, select')).toBeNull();
       expect(screen.queryByRole('button', { name: /invite/i })).not.toBeInTheDocument();
       view.unmount();

@@ -26,7 +26,6 @@ describe('honest placeholder pages', () => {
   test.each([
     ['', 'Dashboard'],
     ['/listings', 'Listings'],
-    ['/team', 'Team'],
     ['/settings', 'Settings & Support'],
     ['/support', 'Support'],
   ])('the %s placeholder names its later portal arrival without fake data', async (segment, heading) => {

@@ -17,15 +17,43 @@ export type ProviderRole =
   | 'front_desk'
   | 'finance';
 
+/**
+ * Normalized code → the approved display vocabulary, byte-identical to the
+ * backend's `PROVIDER_ROLE_LABELS` (backend/src/modules/provider/
+ * provider-roles.ts; docs/27 §6). docs/29 §16 requires the seven-role
+ * vocabulary EXACT — no shortened variants.
+ */
 export const PROVIDER_ROLE_LABELS: Record<ProviderRole, string> = {
   owner: 'Owner',
   org_manager: 'Organization Manager',
   branch_manager: 'Branch Manager',
-  listings_editor: 'Listings Editor',
-  coach: 'Coach',
-  front_desk: 'Front Desk',
+  listings_editor: 'Listings Editor / Scheduler',
+  coach: 'Coach / Instructor',
+  front_desk: 'Front Desk / Booking Employee',
   finance: 'Finance',
 };
+
+/**
+ * Roles whose reach is organization-wide by definition (docs/27 §5): they
+ * always carry branch scope `'all'`; a branch-scoped variant is
+ * CHECK-unrepresentable in the backend schema. Mirrored here so scope
+ * editors never offer meaningless branch selection for these roles.
+ */
+export const ORG_WIDE_ONLY_ROLES: readonly ProviderRole[] = [
+  'owner',
+  'org_manager',
+  'finance',
+];
+
+export const PROVIDER_ROLES: readonly ProviderRole[] = [
+  'owner',
+  'org_manager',
+  'branch_manager',
+  'listings_editor',
+  'coach',
+  'front_desk',
+  'finance',
+];
 
 /** `'all'` or an explicit branch-id list — BranchScopeView in the backend. */
 export type BranchScope = 'all' | readonly string[];

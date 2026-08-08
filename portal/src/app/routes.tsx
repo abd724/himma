@@ -25,7 +25,9 @@ import { OnboardingPage } from '../pages/onboarding/onboarding-page';
 import { SchedulePage } from '../pages/schedule-page';
 import { SettingsPage } from '../pages/settings-page';
 import { SupportPage } from '../pages/support-page';
-import { TeamPage } from '../pages/team-page';
+import { TeamPage } from '../pages/team/team-list-page';
+import { TeamInvitePage } from '../pages/team/team-invite-page';
+import { TeamMemberPage } from '../pages/team/team-member-page';
 import { RequireProviderAccess, WorkspaceRedirect } from './require-provider-access';
 
 /**
@@ -81,6 +83,8 @@ export const portalRoutes: RouteObject[] = [
               { path: 'branches/new', element: <BranchCreatePage /> },
               { path: 'branches/:branchId', element: <BranchDetailPage /> },
               { path: 'team', element: <TeamPage /> },
+              { path: 'team/invite', element: <TeamInvitePage /> },
+              { path: 'team/:membershipId', element: <TeamMemberPage /> },
               { path: 'profile', element: <BusinessProfilePage /> },
               { path: 'finance', element: <FinancePage /> },
               { path: 'settings', element: <SettingsPage /> },

@@ -7,6 +7,9 @@ describe('primary navigation', () => {
   test('renders the docs/29 §5 sidebar order with organization-scoped targets', async () => {
     renderPortal({ initialEntries: [`/o/${org1.id}`] });
     const nav = await screen.findByRole('navigation', { name: 'Primary' });
+    // Team is capability-gated (staff.read, owner-only) and appears once
+    // the membership capabilities resolve — the default identity is Owner.
+    await within(nav).findByRole('link', { name: 'Team' });
     const links = within(nav).getAllByRole('link');
 
     expect(links.map((link) => link.textContent?.replace(/Soon|Coming soon/g, ''))).toEqual([
@@ -49,6 +52,7 @@ describe('primary navigation', () => {
     const user = userEvent.setup();
     renderPortal({ initialEntries: [`/o/${org1.id}`] });
     const nav = await screen.findByRole('navigation', { name: 'Primary' });
+    await within(nav).findByRole('link', { name: 'Team' });
 
     for (const item of portalNavItems.filter((navItem) => navItem.segment !== '')) {
       const link = within(nav).getByRole('link', {
@@ -65,6 +69,7 @@ describe('primary navigation', () => {
   test('sections without a backend yet carry an honest coming-soon marker', async () => {
     renderPortal({ initialEntries: [`/o/${org1.id}`] });
     const nav = await screen.findByRole('navigation', { name: 'Primary' });
+    await within(nav).findByRole('link', { name: 'Team' });
 
     for (const item of portalNavItems) {
       const link = within(nav).getByRole('link', {
@@ -78,10 +83,12 @@ describe('primary navigation', () => {
     }
   });
 
-  test('navigation metadata can carry future permission requirements without acting on them', () => {
-    // W2-1 must not encode role guesses: every capability seat exists and is empty.
+  test('navigation metadata carries EXACTLY the known capability truth (W2-6)', () => {
+    // Only Team is capability-gated today: staff.read is owner-only in the
+    // shipped registry. No other item may encode a permission guess —
+    // future domain permissions stay unknown until their backends land.
     for (const item of portalNavItems) {
-      expect(item.requiredCapability).toBeNull();
+      expect(item.requiredCapability).toBe(item.id === 'team' ? 'staff.read' : null);
     }
   });
 });

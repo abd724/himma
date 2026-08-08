@@ -104,6 +104,7 @@ export function renderPortal({
     profilePort: fixture.profilePort,
     branchPort: fixture.branchPort,
     areaPort: fixture.areaPort,
+    teamPort: fixture.teamPort,
   };
   const router = createMemoryRouter(portalRoutes, { initialEntries });
   const initialSessionState =

@@ -4,6 +4,7 @@ import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
 import type { AreaReadPort } from '../taxonomy/contract';
+import type { TeamPort } from '../team/contract';
 
 /** Domain-port access for pages — composed by AppProviders from the runtime. */
 export interface PortalPorts {
@@ -12,6 +13,7 @@ export interface PortalPorts {
   readonly profilePort: OrganizationProfilePort;
   readonly branchPort: BranchPort;
   readonly areaPort: AreaReadPort;
+  readonly teamPort: TeamPort;
 }
 
 const PortsContext = createContext<PortalPorts | null>(null);

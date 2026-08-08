@@ -54,17 +54,22 @@ test('authenticated shell renders with the correct responsive navigation', async
 test('navigation reaches every top-level section with correct active state', async ({ page }) => {
   test.skip(isMobile(page), 'covered by the drawer scenario on mobile');
 
+  // Team is deliberately ABSENT here: this identity is Organization
+  // Manager at the active org, and staff.read is owner-only (W2-6) — the
+  // Team item renders only for memberships that hold it. The owner's Team
+  // navigation is covered in e2e/team.spec.ts.
   const sections = [
     'Listings',
     'Schedule',
     'Bookings',
     'Branches',
-    'Team',
     'Business Profile',
     'Finance',
     'Settings & Support',
   ];
   const nav = page.getByRole('navigation', { name: 'Primary' });
+  await expect(nav.getByRole('link', { name: /^Branches/ })).toBeVisible();
+  await expect(nav.getByRole('link', { name: /^Team/ })).toHaveCount(0);
   for (const section of sections) {
     await nav.getByRole('link', { name: new RegExp(`^${section}`) }).click();
     await expect(page.getByRole('heading', { level: 1, name: section })).toBeVisible();

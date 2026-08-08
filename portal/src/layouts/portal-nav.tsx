@@ -1,4 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import { NavLink } from 'react-router-dom';
+import { usePortalPorts } from '../app/ports-context';
 import { VisuallyHidden } from '../components/ui/visually-hidden';
 import { organizationPath, portalNavItems, type PortalNavItem } from '../navigation/nav-items';
 import { useActiveOrganization } from '../organization/organization-context';
@@ -15,14 +17,35 @@ const groups: ReadonlyArray<{ id: PortalNavItem['group']; label: string | null }
  * tablet rail (CSS-compacted), and mobile drawer. Active state comes from the
  * router (`aria-current="page"`); visibility metadata comes from
  * navigation/nav-items.ts and is never an authorization decision.
+ *
+ * Capability-gated items (today: Team, `staff.read`, owner-only) render
+ * only once the active organization's membership capabilities are KNOWN to
+ * include the capability — the same backend-returned capability list every
+ * page reads (shared `organizationView` cache; no extra request in steady
+ * state). This is usability-only visibility: the backend refuses the read
+ * either way, and direct navigation renders the truthful no-access surface.
  */
 export function PortalNav({ onNavigate }: { onNavigate?: () => void }) {
   const organization = useActiveOrganization();
+  const { profilePort } = usePortalPorts();
+
+  const viewQuery = useQuery({
+    queryKey: ['organizationView', organization.id],
+    queryFn: () => profilePort.loadOrganizationView(organization.id),
+  });
+  const capabilities =
+    viewQuery.data?.kind === 'loaded' ? viewQuery.data.view.membership.capabilities : null;
+
+  const itemVisible = (item: PortalNavItem): boolean =>
+    item.requiredCapability === null ||
+    (capabilities !== null && capabilities.includes(item.requiredCapability));
 
   return (
     <nav className={styles.nav} aria-label="Primary">
       {groups.map((group) => {
-        const items = portalNavItems.filter((item) => item.group === group.id);
+        const items = portalNavItems.filter(
+          (item) => item.group === group.id && itemVisible(item),
+        );
         return (
           <div key={group.id} className={styles.group}>
             {group.label ? (

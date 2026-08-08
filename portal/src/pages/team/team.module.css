@@ -1,0 +1,409 @@
+.loading {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+.unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  max-width: 520px;
+}
+
+.contentWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xl);
+  max-width: 880px;
+}
+
+/* -- sections ---------------------------------------------------------- */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+.sectionTitle {
+  font: var(--hp-type-section-title);
+  color: var(--hp-color-text-primary);
+}
+
+.summary {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.emptyNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+/* -- member / invitation rows ------------------------------------------ */
+
+.memberList,
+.invitationList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  overflow: hidden;
+}
+
+.memberRow + .memberRow,
+.invitationRow + .invitationRow {
+  border-block-start: 1px solid var(--hp-color-border-default);
+}
+
+.memberLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hp-space-md);
+  padding: var(--hp-space-md) var(--hp-space-lg);
+  min-height: 64px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.memberLink:hover {
+  background: var(--hp-color-background-main);
+}
+
+.memberLink:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: -2px;
+}
+
+.invitationRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hp-space-md);
+  padding: var(--hp-space-md) var(--hp-space-lg);
+  min-height: 64px;
+}
+
+.memberMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.memberName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.memberMeta {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.invitationActions {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .memberLink,
+  .invitationRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .invitationActions {
+    justify-content: flex-start;
+  }
+}
+
+/* -- chips --------------------------------------------------------------- */
+
+.statusChip {
+  display: inline-flex;
+  align-items: center;
+  font: var(--hp-type-caption);
+  border-radius: var(--hp-radius-chip);
+  padding: 3px 10px;
+  flex-shrink: 0;
+}
+
+.statusActive {
+  color: var(--hp-color-text-primary);
+  background: var(--hp-color-brand-primary-soft);
+}
+
+.statusInactive {
+  color: var(--hp-color-text-secondary);
+  border: 1px solid var(--hp-color-border-default);
+}
+
+.statusPending {
+  color: var(--hp-color-text-secondary);
+  border: 1px dashed var(--hp-color-border-default);
+}
+
+.youChip {
+  display: inline-flex;
+  align-items: center;
+  font: var(--hp-type-caption);
+  color: var(--hp-color-text-primary);
+  background: var(--hp-color-brand-primary-soft);
+  border-radius: var(--hp-radius-chip);
+  padding: 2px 8px;
+}
+
+/* -- history disclosure --------------------------------------------------- */
+
+.historyDetails {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.historySummary {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+  cursor: pointer;
+  width: fit-content;
+  padding: var(--hp-space-xs) 0;
+}
+
+.historySummary:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: 2px;
+}
+
+.historyDetails[open] .historySummary {
+  margin-block-end: var(--hp-space-sm);
+}
+
+/* -- empty / no-access card ------------------------------------------------ */
+
+.emptyCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  max-width: 520px;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-xl);
+}
+
+.emptyIcon {
+  width: 32px;
+  height: 32px;
+  color: var(--hp-color-brand-primary);
+}
+
+.emptyTitle {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+}
+
+.emptyBody {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+}
+
+/* -- alerts ----------------------------------------------------------------- */
+
+.alertFocus {
+  outline: none;
+}
+
+.alertFocus:empty {
+  display: none;
+}
+
+.alertActions {
+  display: flex;
+  gap: var(--hp-space-sm);
+  margin-block-start: var(--hp-space-sm);
+}
+
+/* -- invite form -------------------------------------------------------------- */
+
+.inviteForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+  max-width: 560px;
+}
+
+.scopeFieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  padding: var(--hp-space-lg);
+  margin: 0;
+}
+
+.scopeLegend {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+  padding: 0 var(--hp-space-xs);
+}
+
+.scopeNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.scopeChoice,
+.branchChoice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hp-space-sm);
+  cursor: pointer;
+  padding: var(--hp-space-xs) 0;
+}
+
+.scopeChoice input,
+.branchChoice input {
+  margin-block-start: 4px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--hp-color-brand-primary);
+  flex-shrink: 0;
+}
+
+.scopeChoiceLabel {
+  display: block;
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+}
+
+.scopeChoiceHint {
+  display: block;
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.branchChecklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+  border-block-start: 1px solid var(--hp-color-border-default);
+  padding-block-start: var(--hp-space-md);
+}
+
+.fieldError {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-status-error);
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+.successCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  max-width: 560px;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-xl);
+  outline: none;
+}
+
+.successActions {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+/* -- member detail ------------------------------------------------------------ */
+
+.detailWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+  max-width: 720px;
+  align-items: flex-start;
+}
+
+.detailCard {
+  width: 100%;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-lg);
+}
+
+.detailList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  margin: 0;
+}
+
+.detailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detailItem dt {
+  font: var(--hp-type-caption);
+  color: var(--hp-color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.detailItem dd {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.managePanel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-lg);
+}
+
+.protectNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}

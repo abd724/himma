@@ -5,6 +5,7 @@ import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
 import type { ProviderAccessPort } from '../provider-access/contract';
 import type { AreaReadPort } from '../taxonomy/contract';
+import type { TeamPort } from '../team/contract';
 
 /**
  * FAIL-CLOSED default (task §25): a production build with no configured
@@ -61,5 +62,14 @@ export function createUnconfiguredBranchPort(): BranchPort {
 export function createUnconfiguredAreaPort(): AreaReadPort {
   return {
     listAreas: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredTeamPort(): TeamPort {
+  return {
+    loadStaff: async () => ({ kind: 'unavailable' }),
+    issueInvitation: async () => ({ kind: 'unavailable' }),
+    revokeInvitation: async () => ({ kind: 'unavailable' }),
+    revokeMembership: async () => ({ kind: 'unavailable' }),
   };
 }

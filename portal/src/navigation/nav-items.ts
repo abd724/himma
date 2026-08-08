@@ -102,7 +102,12 @@ export const portalNavItems: readonly PortalNavItem[] = [
     segment: 'team',
     group: 'organization',
     comingSoon: false,
-    requiredCapability: null,
+    // `staff.read` is owner-only in the canonical registry (docs/24 §1.3):
+    // the Team section renders only for memberships that hold it (docs/29
+    // §5 — sections a role cannot access do not render). Visibility is
+    // usability only; the backend stays the boundary, and a direct URL
+    // renders the truthful no-access surface.
+    requiredCapability: 'staff.read',
   },
   {
     id: 'profile',
