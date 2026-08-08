@@ -18,6 +18,11 @@
   max-width: 880px;
 }
 
+.createActionWrap {
+  display: flex;
+  justify-content: flex-start;
+}
+
 /* -- filters ------------------------------------------------------------- */
 
 .filterBar {

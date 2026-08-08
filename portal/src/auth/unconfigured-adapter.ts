@@ -1,6 +1,7 @@
 import type { PortalAuthAdapter } from './adapter';
 import type { BranchPort } from '../branches/contract';
 import type { ListingsReadPort } from '../catalogue/contract';
+import type { ListingEditorPort } from '../catalogue/editor-contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
@@ -85,5 +86,23 @@ export function createUnconfiguredListingsPort(): ListingsReadPort {
 export function createUnconfiguredActivityTypePort(): ActivityTypeReadPort {
   return {
     listActivityTypes: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredListingEditorPort(): ListingEditorPort {
+  return {
+    createProgram: async () => ({ kind: 'unavailable' }),
+    updateProgram: async () => ({ kind: 'unavailable' }),
+    addPriceOption: async () => ({ kind: 'unavailable' }),
+    updatePriceOption: async () => ({ kind: 'unavailable' }),
+    archivePriceOption: async () => ({ kind: 'unavailable' }),
+    addBranchAssociation: async () => ({ kind: 'unavailable' }),
+    removeBranchAssociation: async () => ({ kind: 'unavailable' }),
+    addMedia: async () => ({ kind: 'unavailable' }),
+    updateMedia: async () => ({ kind: 'unavailable' }),
+    archiveMedia: async () => ({ kind: 'unavailable' }),
+    addOffer: async () => ({ kind: 'unavailable' }),
+    updateOffer: async () => ({ kind: 'unavailable' }),
+    endOffer: async () => ({ kind: 'unavailable' }),
   };
 }

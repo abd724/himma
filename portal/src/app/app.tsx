@@ -9,6 +9,7 @@ import {
   createUnconfiguredAuthAdapter,
   createUnconfiguredBranchPort,
   createUnconfiguredInvitationPort,
+  createUnconfiguredListingEditorPort,
   createUnconfiguredListingsPort,
   createUnconfiguredOnboardingPort,
   createUnconfiguredProfilePort,
@@ -51,6 +52,7 @@ export function AppProviders({
         areaPort: createUnconfiguredAreaPort(),
         teamPort: createUnconfiguredTeamPort(),
         listingsPort: createUnconfiguredListingsPort(),
+        listingEditorPort: createUnconfiguredListingEditorPort(),
         activityTypePort: createUnconfiguredActivityTypePort(),
       },
   );
@@ -72,6 +74,7 @@ export function AppProviders({
               areaPort: runtime.areaPort,
               teamPort: runtime.teamPort,
               listingsPort: runtime.listingsPort,
+              listingEditorPort: runtime.listingEditorPort,
               activityTypePort: runtime.activityTypePort,
             }}
           >

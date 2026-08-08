@@ -7,6 +7,7 @@ import {
   createUnconfiguredAuthAdapter,
   createUnconfiguredBranchPort,
   createUnconfiguredInvitationPort,
+  createUnconfiguredListingEditorPort,
   createUnconfiguredListingsPort,
   createUnconfiguredOnboardingPort,
   createUnconfiguredProfilePort,
@@ -15,6 +16,7 @@ import {
 import type { PortalEnv } from '../api/env';
 import type { BranchPort } from '../branches/contract';
 import type { ListingsReadPort } from '../catalogue/contract';
+import type { ListingEditorPort } from '../catalogue/editor-contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
@@ -34,6 +36,7 @@ export interface AuthRuntime {
   readonly areaPort: AreaReadPort;
   readonly teamPort: TeamPort;
   readonly listingsPort: ListingsReadPort;
+  readonly listingEditorPort: ListingEditorPort;
   readonly activityTypePort: ActivityTypeReadPort;
 }
 
@@ -71,6 +74,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       areaPort: fixture.areaPort,
       teamPort: fixture.teamPort,
       listingsPort: fixture.listingsPort,
+      listingEditorPort: fixture.listingEditorPort,
       activityTypePort: fixture.activityTypePort,
     };
   }
@@ -86,6 +90,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     areaPort: createUnconfiguredAreaPort(),
     teamPort: createUnconfiguredTeamPort(),
     listingsPort: createUnconfiguredListingsPort(),
+    listingEditorPort: createUnconfiguredListingEditorPort(),
     activityTypePort: createUnconfiguredActivityTypePort(),
   };
 }

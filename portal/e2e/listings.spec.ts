@@ -201,13 +201,14 @@ test('a role without catalogue.read: no navigation entry, truthful no-access sur
   });
 });
 
-test('empty catalogue: truthful empty state without a live Create control', async ({
+test('empty catalogue: truthful empty state with the real Create entry (W2-8)', async ({
   page,
 }, testInfo) => {
   await signInAs(page, 'stages@himma.demo');
   await clientGoto(page, `/o/${SUNRISE_ID}/listings`);
   await expect(page.getByRole('heading', { level: 2, name: 'No listings yet' })).toBeVisible();
-  await expect(page.getByText(/Creating listings arrives in an upcoming portal update/)).toBeVisible();
+  // W2-8: creation is real — the empty state links to the create route.
+  await expect(page.getByRole('link', { name: 'Create listing' })).toBeVisible();
   await noHorizontalOverflow(page);
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-listings-empty.png`),

@@ -165,13 +165,14 @@ describe('listings index (W2-7)', () => {
     expect(lists.length).toBeGreaterThan(0);
   });
 
-  test('an organization with no listings gets a truthful empty state without a live Create control', async () => {
+  test('an organization with no listings gets a truthful empty state with the REAL Create entry point (W2-8)', async () => {
     renderPortal({ asIdentity: 'stages@himma.demo', initialEntries: [listingsPath(sunrise)] });
     expect(await screen.findByRole('heading', { level: 2, name: 'No listings yet' })).toBeInTheDocument();
-    expect(screen.getByText(/Creating listings arrives in an upcoming portal update/)).toBeInTheDocument();
-    // W2-8 owns creation — no interactive Create affordance exists.
-    expect(screen.queryByRole('button', { name: /create/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /create/i })).not.toBeInTheDocument();
+    // W2-8: creation is real — the empty state links to the create route.
+    expect(screen.getByRole('link', { name: 'Create listing' })).toHaveAttribute(
+      'href',
+      `/o/${sunrise.organizationId}/listings/new`,
+    );
   });
 
   test('a suspended organization still reads its catalogue, prominently marked, with no mutation affordances', async () => {

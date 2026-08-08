@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { usePortalPorts } from '../../app/ports-context';
 import type { ProgramListPage, ProgramSummaryRecord } from '../../catalogue/contract';
 import { LISTING_STATES } from '../../catalogue/contract';
+import { ActionLink } from '../../components/ui/action-link';
 import { Button } from '../../components/ui/button';
 import { InlineAlert } from '../../components/ui/inline-alert';
 import { PageHeader } from '../../components/ui/page-header';
@@ -167,11 +168,16 @@ function ListingsContent({ view }: { view: OrganizationView }) {
           <ClipboardList className={styles.emptyIcon} aria-hidden="true" strokeWidth={1.5} />
           <h2 className={styles.emptyTitle}>No listings yet</h2>
           {authority.canManage && !authority.suspended ? (
-            <p className={styles.emptyBody}>
-              This is where your programs will live — each listing describes one activity or
-              service, with its own pricing options and locations. Creating listings arrives in
-              an upcoming portal update.
-            </p>
+            <>
+              <p className={styles.emptyBody}>
+                This is where your programs will live — each listing describes one activity or
+                service, with its own pricing options and locations. It starts as a private
+                draft.
+              </p>
+              <ActionLink to={organizationPath(view.organization.id, 'listings/new')}>
+                Create listing
+              </ActionLink>
+            </>
           ) : (
             <p className={styles.emptyBody}>
               This organization hasn&rsquo;t added any programs to its Himma catalogue yet.
@@ -201,6 +207,13 @@ function ListingsContent({ view }: { view: OrganizationView }) {
           You see the listings that run at your assigned branches, plus drafts that aren&rsquo;t
           placed at a branch yet.
         </InlineAlert>
+      ) : null}
+      {authority.canManage && !authority.suspended ? (
+        <div className={styles.createActionWrap}>
+          <ActionLink to={organizationPath(organizationId, 'listings/new')}>
+            Create listing
+          </ActionLink>
+        </div>
       ) : null}
 
       <div className={styles.filterBar}>

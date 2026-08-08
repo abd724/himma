@@ -61,6 +61,30 @@ import type {
   ProgramMediaRecord,
   ProgramSummaryRecord,
 } from '../../catalogue/contract';
+import type {
+  AddBranchAssociationOutcome,
+  AddMediaOutcome,
+  AddOfferOutcome,
+  AddPriceOptionOutcome,
+  ArchiveMediaOutcome,
+  ArchivePriceOptionOutcome,
+  CreateProgramOutcome,
+  EndOfferOutcome,
+  ListingEditorPort,
+  MediaInput,
+  MediaPatch,
+  OfferInput,
+  OfferPatch,
+  PriceOptionInput,
+  PriceOptionPatch,
+  ProgramCreateInput,
+  ProgramPatch,
+  RemoveBranchAssociationOutcome,
+  UpdateMediaOutcome,
+  UpdateOfferOutcome,
+  UpdatePriceOptionOutcome,
+  UpdateProgramOutcome,
+} from '../../catalogue/editor-contract';
 import type { InvitationAcceptOutcome, InvitationPort } from '../../invitations/contract';
 import type {
   OnboardingPort,
@@ -1199,10 +1223,12 @@ interface FixtureSessionStore {
   invitationMailFailures: Set<string>;
   listingsLoadFailures: Set<string>;
   listingDetailFailures: Set<string>;
+  listingMutationFailures: Set<string>;
   areaLoadFailurePending: boolean;
   activityTypesLoadFailurePending: boolean;
   createdBranchCount: number;
   createdStaffRowCount: number;
+  createdCatalogueRowCount: number;
   /**
    * The Slice-2 recent-step-up window the `providerStepUp` policy checks:
    * a fresh MFA sign-in or a completed `/step-up` grant opens it (the real
@@ -1271,6 +1297,20 @@ export interface FixtureAccessControls {
   failNextListingDetailLoad(organizationId: string): void;
   /** Make the next activity-type taxonomy read fail transiently. */
   failNextActivityTypesLoad(): void;
+  /** Make the next catalogue mutation fail transiently. */
+  failNextListingMutation(organizationId: string): void;
+  /**
+   * Simulate ANOTHER staff member saving the listing while this editor is
+   * open (bumps the program row's version): the next program mutation
+   * carrying the old `expectedVersion` receives the canonical `staleVersion`.
+   */
+  simulateConcurrentListingEdit(organizationId: string, programId: string): void;
+  /** Same concurrency simulation for one ProgramPriceOption row. */
+  simulateConcurrentPriceOptionEdit(
+    organizationId: string,
+    programId: string,
+    optionId: string,
+  ): void;
 }
 
 export interface FixtureAuthRuntime {
@@ -1283,6 +1323,7 @@ export interface FixtureAuthRuntime {
   areaPort: AreaReadPort;
   teamPort: TeamPort;
   listingsPort: ListingsReadPort;
+  listingEditorPort: ListingEditorPort;
   activityTypePort: ActivityTypeReadPort;
   controls: FixtureAccessControls;
   /**
@@ -1320,10 +1361,12 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     invitationMailFailures: new Set(),
     listingsLoadFailures: new Set(),
     listingDetailFailures: new Set(),
+    listingMutationFailures: new Set(),
     areaLoadFailurePending: false,
     activityTypesLoadFailurePending: false,
     createdBranchCount: 0,
     createdStaffRowCount: 0,
+    createdCatalogueRowCount: 0,
     stepUpValidUntil: null,
     listeners: new Set(),
   };
@@ -2492,6 +2535,863 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
+  // -- W2-8 catalogue mutations (mirrors the S4 management services) --------
+
+  /** Deterministic ids/timestamps for fixture-created catalogue rows. */
+  const nextCatalogueId = (): string => {
+    store.createdCatalogueRowCount += 1;
+    return `0198a2f0-c8e1-7000-8000-${String(store.createdCatalogueRowCount).padStart(12, '0')}`;
+  };
+  const nextCatalogueTimestamp = (): string => {
+    store.createdCatalogueRowCount += 1;
+    return new Date(Date.UTC(2026, 7, 8, 12, 0, store.createdCatalogueRowCount)).toISOString();
+  };
+
+  /** docs/24 §5.3 edit-state matrix, exactly as catalogue-shared.ts. */
+  const catalogueEditMode = (listingState: string): 'direct' | 'reviewGated' | 'locked' => {
+    if (listingState === 'draft' || listingState === 'changes_requested') return 'direct';
+    if (
+      listingState === 'approved' ||
+      listingState === 'published' ||
+      listingState === 'paused'
+    ) {
+      return 'reviewGated';
+    }
+    return 'locked';
+  };
+
+  /** The docs/28 §7 admin-designated sensitive PATCH fields (exact backend
+   *  SENSITIVE_PATCH_FIELDS order) + the non-sensitive remainder. */
+  const SENSITIVE_PATCH_FIELDS = [
+    'descriptionEn',
+    'descriptionAr',
+    'minAge',
+    'maxAge',
+    'allAges',
+    'genderEligibility',
+    'skillLevel',
+    'eligibilityNotes',
+  ] as const;
+  const NON_SENSITIVE_PATCH_FIELDS = ['titleEn', 'titleAr', 'setting', 'activityTypeId'] as const;
+
+  /** Policy-pipeline mirror for catalogue mutations, in the binding order:
+   *  session → org/membership not-found shaping → capability → suspended
+   *  mutation refusal → transient-failure control. */
+  const resolveCatalogueMutation = (
+    organizationId: string,
+    capability: 'listings.manage' | 'media.manage',
+  ):
+    | { refusal: 'unavailable' | 'notFound' | 'forbidden' | 'organizationSuspended' }
+    | {
+        refusal: null;
+        organization: FixtureOrganizationState;
+        seatEntry: FixtureMembershipSeat;
+      } => {
+    const caller = store.current;
+    if (!caller) {
+      return { refusal: 'unavailable' };
+    }
+    const organization = organizations.get(organizationId);
+    const seatEntry = caller.memberships.find(
+      (candidate) => candidate.organizationId === organizationId,
+    );
+    if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+      return { refusal: 'notFound' };
+    }
+    if (!ROLE_CAPABILITIES[seatEntry.role].includes(capability)) {
+      return { refusal: 'forbidden' };
+    }
+    if (organization.verificationState === 'suspended') {
+      return { refusal: 'organizationSuspended' };
+    }
+    if (store.listingMutationFailures.delete(organizationId)) {
+      return { refusal: 'unavailable' };
+    }
+    return { refusal: null, organization, seatEntry };
+  };
+
+  /**
+   * The MUTATION branch-scope rule (catalogue-shared.ts
+   * programInBranchScope) — deliberately STRICTER than the W2-7 read rule:
+   * a branch-scoped seat mutates a listing only while EVERY active
+   * association lies inside its assigned ACTIVE branches (vacuously true
+   * for branchless drafts). Readable never implies editable.
+   */
+  const programMutableForSeat = (
+    organization: FixtureOrganizationState,
+    seatEntry: FixtureMembershipSeat,
+    row: FixtureProgramState,
+  ): boolean => {
+    if (seatEntry.branchScope === 'all') {
+      return true;
+    }
+    const assignedActive = seatEntry.branchScope.filter((branchId) =>
+      organization.branches.some((candidate) => candidate.id === branchId && candidate.active),
+    );
+    return row.branchAssociations
+      .filter((entry) => entry.active)
+      .every((entry) => assignedActive.includes(entry.branchId));
+  };
+
+  const findProgramIndex = (
+    organization: FixtureOrganizationState,
+    programId: string,
+  ): number => organization.programs.findIndex((candidate) => candidate.id === programId);
+
+  const activityTypeIsActive = (activityTypeId: string): boolean =>
+    activityTypeDirectory().some((row) => row.id === activityTypeId && row.active);
+
+  /** Mirror of the service eligibilityValid + the route's 0–130 bounds —
+   *  validated on the SUBMITTED fields exactly like the backend precheck. */
+  const eligibilityValid = (input: {
+    minAge?: number | null;
+    maxAge?: number | null;
+    allAges?: boolean;
+  }): boolean => {
+    const minAge = input.minAge ?? null;
+    const maxAge = input.maxAge ?? null;
+    const inRange = (value: number): boolean =>
+      Number.isInteger(value) && value >= 0 && value <= 130;
+    if (minAge !== null && !inRange(minAge)) return false;
+    if (maxAge !== null && !inRange(maxAge)) return false;
+    if (minAge !== null && maxAge !== null && minAge > maxAge) return false;
+    if (input.allAges === true && (minAge !== null || maxAge !== null)) return false;
+    return true;
+  };
+
+  /** The S4-1 option CHECK ties (price-option-management.ts): free ⇔ NULL
+   *  amount, paid ⇒ positive integer fils, package ⇔ positive sessions. */
+  const optionShapeValid = (input: {
+    kind: string;
+    amountFils?: number | null;
+    sessionsCount?: number | null;
+  }): boolean => {
+    const amount = input.amountFils ?? null;
+    const sessions = input.sessionsCount ?? null;
+    if (input.kind === 'free') {
+      if (amount !== null) return false;
+    } else if (amount === null || !Number.isInteger(amount) || amount <= 0) {
+      return false;
+    }
+    if (input.kind === 'package') {
+      if (sessions === null || !Number.isInteger(sessions) || sessions <= 0) return false;
+    } else if (sessions !== null) {
+      return false;
+    }
+    return true;
+  };
+
+  /** The S4-1 offer CHECK ties: paidTrial ⇔ positive trial amount; the
+   *  effective window must END strictly after it starts. */
+  const offerShapeValid = (input: {
+    kind: string;
+    trialAmountFils?: number | null;
+    effectiveStart?: string | null;
+    effectiveEnd?: string | null;
+  }): boolean => {
+    const amount = input.trialAmountFils ?? null;
+    if (input.kind === 'paidTrial') {
+      if (amount === null || !Number.isInteger(amount) || amount <= 0) return false;
+    } else if (amount !== null) {
+      return false;
+    }
+    const start = input.effectiveStart ?? null;
+    const end = input.effectiveEnd ?? null;
+    if (start !== null && end !== null && Date.parse(end) <= Date.parse(start)) return false;
+    return true;
+  };
+
+  const replaceProgram = (
+    organization: FixtureOrganizationState,
+    index: number,
+    next: FixtureProgramState,
+  ): void => {
+    organization.programs[index] = next;
+  };
+
+  /** At most ONE open revision per listing (partial-unique-index mirror):
+   *  returns null when a revision is already pending. */
+  const createFixtureRevision = (
+    organization: FixtureOrganizationState,
+    index: number,
+  ): { id: string } | null => {
+    const row = organization.programs[index]!;
+    if (row.openRevision !== null) {
+      return null;
+    }
+    const revision = {
+      id: nextCatalogueId(),
+      state: 'submitted',
+      createdAt: nextCatalogueTimestamp(),
+      version: 1,
+    };
+    replaceProgram(organization, index, { ...row, openRevision: revision });
+    return { id: revision.id };
+  };
+
+  const listingEditorPort: ListingEditorPort = {
+    /** Mirrors POST .../listings: structural fields only — a draft may be
+     *  incomplete (no branch, no option); lifecycle starts at `draft`. */
+    async createProgram(organizationId, input: ProgramCreateInput): Promise<CreateProgramOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      if (!activityTypeIsActive(input.activityTypeId)) {
+        return { kind: 'invalidTaxonomy' };
+      }
+      if (!eligibilityValid(input)) {
+        return { kind: 'invalidEligibility' };
+      }
+      const id = nextCatalogueId();
+      const createdAt = nextCatalogueTimestamp();
+      const row: FixtureProgramState = {
+        id,
+        titleEn: input.titleEn,
+        titleAr: input.titleAr ?? null,
+        descriptionEn: input.descriptionEn ?? null,
+        descriptionAr: input.descriptionAr ?? null,
+        activityTypeId: input.activityTypeId,
+        setting: input.setting,
+        minAge: input.minAge ?? null,
+        maxAge: input.maxAge ?? null,
+        allAges: input.allAges ?? false,
+        genderEligibility: input.genderEligibility,
+        skillLevel: input.skillLevel ?? null,
+        eligibilityNotes: input.eligibilityNotes ?? null,
+        listingState: 'draft',
+        publishedAt: null,
+        archivedAt: null,
+        sensitiveFieldsVersion: 1,
+        version: 1,
+        createdAt,
+        updatedAt: createdAt,
+        priceOptions: [],
+        branchAssociations: [],
+        media: [],
+        offers: [],
+        openRevision: null,
+      };
+      context.organization.programs.push(row);
+      return { kind: 'programCreated', program: { id, listingState: 'draft', version: 1 } };
+    },
+
+    /**
+     * Mirrors PATCH .../listings/:programId including the service order
+     * (org-scoped lookup → branch-scope forbidden → locked → CAS → taxonomy
+     * → eligibility) and the §7 sensitive routing: direct states apply
+     * everything; review-gated states apply NON-sensitive fields directly
+     * and defer sensitive ones to a ProgramRevision (live values stand).
+     */
+    async updateProgram(
+      organizationId,
+      programId,
+      expectedVersion,
+      patch: ProgramPatch,
+    ): Promise<UpdateProgramOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const mode = catalogueEditMode(row.listingState);
+      if (mode === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (row.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      if (patch.activityTypeId !== undefined && !activityTypeIsActive(patch.activityTypeId)) {
+        return { kind: 'invalidTaxonomy' };
+      }
+      if (
+        (patch.minAge !== undefined || patch.maxAge !== undefined || patch.allAges !== undefined) &&
+        !eligibilityValid(patch)
+      ) {
+        return { kind: 'invalidEligibility' };
+      }
+
+      const patchRecord = patch as Record<string, unknown>;
+      const sensitiveFields = SENSITIVE_PATCH_FIELDS.filter(
+        (field) => patchRecord[field] !== undefined,
+      );
+      const nonSensitiveFields = NON_SENSITIVE_PATCH_FIELDS.filter(
+        (field) => patchRecord[field] !== undefined,
+      );
+      const directFields: string[] =
+        mode === 'direct' ? [...nonSensitiveFields, ...sensitiveFields] : [...nonSensitiveFields];
+      const deferredFields: string[] = mode === 'reviewGated' ? [...sensitiveFields] : [];
+
+      let version = row.version;
+      if (directFields.length > 0) {
+        const next: Record<string, unknown> = { ...row };
+        for (const field of directFields) {
+          next[field] = patchRecord[field];
+        }
+        version += 1;
+        next.version = version;
+        next.updatedAt = nextCatalogueTimestamp();
+        replaceProgram(context.organization, index, next as unknown as FixtureProgramState);
+      }
+      if (deferredFields.length > 0) {
+        const revision = createFixtureRevision(context.organization, index);
+        if (revision === null) {
+          return { kind: 'revisionPending' };
+        }
+        return {
+          kind: 'revisionSubmitted',
+          revisionId: revision.id,
+          appliedFields: directFields,
+          deferredFields,
+        };
+      }
+      return { kind: 'programUpdated', version };
+    },
+
+    /** Mirrors POST .../price-options: options are SENSITIVE — review-gated
+     *  listings route every option operation through a revision. */
+    async addPriceOption(
+      organizationId,
+      programId,
+      input: PriceOptionInput,
+    ): Promise<AddPriceOptionOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const mode = catalogueEditMode(row.listingState);
+      if (mode === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!optionShapeValid(input)) {
+        return { kind: 'invalidPriceOption' };
+      }
+      if (mode === 'reviewGated') {
+        const revision = createFixtureRevision(context.organization, index);
+        if (revision === null) {
+          return { kind: 'revisionPending' };
+        }
+        return { kind: 'revisionSubmitted', revisionId: revision.id };
+      }
+      const option: FixturePriceOption = {
+        id: nextCatalogueId(),
+        kind: input.kind,
+        amountFils: input.amountFils ?? null,
+        sessionsCount: input.sessionsCount ?? null,
+        labelEn: input.labelEn ?? null,
+        labelAr: input.labelAr ?? null,
+        sortHint: input.sortHint ?? 0,
+        state: 'active',
+        version: 1,
+      };
+      replaceProgram(context.organization, index, {
+        ...row,
+        priceOptions: [...row.priceOptions, option],
+      });
+      return {
+        kind: 'optionAdded',
+        option: { ...option, currency: 'AED' },
+      };
+    },
+
+    async updatePriceOption(
+      organizationId,
+      programId,
+      optionId,
+      expectedVersion,
+      patch: PriceOptionPatch,
+    ): Promise<UpdatePriceOptionOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const mode = catalogueEditMode(row.listingState);
+      if (mode === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      const option = row.priceOptions.find((candidate) => candidate.id === optionId);
+      if (option === undefined) {
+        return { kind: 'notFound' };
+      }
+      // Archive-only retirement: an archived option is immutable history.
+      if (option.state === 'archived') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (option.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      const merged = {
+        kind: patch.kind ?? option.kind,
+        amountFils: patch.amountFils !== undefined ? patch.amountFils : option.amountFils,
+        sessionsCount:
+          patch.sessionsCount !== undefined ? patch.sessionsCount : option.sessionsCount,
+      };
+      if (!optionShapeValid(merged)) {
+        return { kind: 'invalidPriceOption' };
+      }
+      if (mode === 'reviewGated') {
+        const revision = createFixtureRevision(context.organization, index);
+        if (revision === null) {
+          return { kind: 'revisionPending' };
+        }
+        return { kind: 'revisionSubmitted', revisionId: revision.id };
+      }
+      const next: FixturePriceOption = {
+        ...option,
+        kind: merged.kind,
+        amountFils: merged.amountFils,
+        sessionsCount: merged.sessionsCount,
+        labelEn: patch.labelEn !== undefined ? patch.labelEn : option.labelEn,
+        labelAr: patch.labelAr !== undefined ? patch.labelAr : option.labelAr,
+        sortHint: patch.sortHint !== undefined ? patch.sortHint : option.sortHint,
+        version: option.version + 1,
+      };
+      replaceProgram(context.organization, index, {
+        ...row,
+        priceOptions: row.priceOptions.map((candidate) =>
+          candidate.id === optionId ? next : candidate,
+        ),
+      });
+      return { kind: 'optionUpdated', option: { ...next, currency: 'AED' } };
+    },
+
+    async archivePriceOption(
+      organizationId,
+      programId,
+      optionId,
+      expectedVersion,
+    ): Promise<ArchivePriceOptionOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const mode = catalogueEditMode(row.listingState);
+      if (mode === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      const option = row.priceOptions.find((candidate) => candidate.id === optionId);
+      if (option === undefined) {
+        return { kind: 'notFound' };
+      }
+      if (option.state === 'archived') {
+        return { kind: 'optionArchived' }; // idempotent
+      }
+      if (option.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      if (mode === 'reviewGated') {
+        const revision = createFixtureRevision(context.organization, index);
+        if (revision === null) {
+          return { kind: 'revisionPending' };
+        }
+        return { kind: 'revisionSubmitted', revisionId: revision.id };
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        priceOptions: row.priceOptions.map((candidate) =>
+          candidate.id === optionId
+            ? { ...candidate, state: 'archived', version: candidate.version + 1 }
+            : candidate,
+        ),
+      });
+      return { kind: 'optionArchived' };
+    },
+
+    /** Mirrors POST .../branches (service order: lookup → locked → program
+     *  scope → target-branch scope → same-org ACTIVE branch). Associations
+     *  are NOT sensitive — they apply directly even on review-gated
+     *  listings; re-association reactivates the historical row. */
+    async addBranchAssociation(
+      organizationId,
+      programId,
+      branchId,
+    ): Promise<AddBranchAssociationOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const branchRow = context.organization.branches.find(
+        (candidate) => candidate.id === branchId,
+      );
+      // Branch-scoped staff may only associate branches they control.
+      if (
+        context.seatEntry.branchScope !== 'all' &&
+        !(branchRow !== undefined && branchInFixtureScope(context.seatEntry, branchRow))
+      ) {
+        return { kind: 'forbidden' };
+      }
+      // Same organization AND active: a deactivated branch cannot newly
+      // qualify as an offering location.
+      if (branchRow === undefined || !branchRow.active) {
+        return { kind: 'invalidBranch' };
+      }
+      const existing = row.branchAssociations.find(
+        (candidate) => candidate.branchId === branchId,
+      );
+      if (existing !== undefined && existing.active) {
+        return { kind: 'branchAssociated' }; // idempotent
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        branchAssociations:
+          existing === undefined
+            ? [...row.branchAssociations, { branchId, active: true, version: 1 }]
+            : row.branchAssociations.map((candidate) =>
+                candidate.branchId === branchId
+                  ? { ...candidate, active: true, version: candidate.version + 1 }
+                  : candidate,
+              ),
+      });
+      return { kind: 'branchAssociated' };
+    },
+
+    async removeBranchAssociation(
+      organizationId,
+      programId,
+      branchId,
+    ): Promise<RemoveBranchAssociationOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const branchRow = context.organization.branches.find(
+        (candidate) => candidate.id === branchId,
+      );
+      if (
+        context.seatEntry.branchScope !== 'all' &&
+        !(branchRow !== undefined && branchInFixtureScope(context.seatEntry, branchRow))
+      ) {
+        return { kind: 'forbidden' };
+      }
+      const association = row.branchAssociations.find(
+        (candidate) => candidate.branchId === branchId,
+      );
+      if (association === undefined) {
+        return { kind: 'notFound' };
+      }
+      if (!association.active) {
+        return { kind: 'branchAssociationRemoved' }; // idempotent
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        branchAssociations: row.branchAssociations.map((candidate) =>
+          candidate.branchId === branchId
+            ? { ...candidate, active: false, version: candidate.version + 1 }
+            : candidate,
+        ),
+      });
+      return { kind: 'branchAssociationRemoved' };
+    },
+
+    /** Media metadata is NOT sensitive (the revision schema cannot even
+     *  represent it): it hot-applies in every provider-editable state.
+     *  Gate order mirrors media-offer-management.ts gateProgram:
+     *  lookup → locked → program scope. */
+    async addMedia(organizationId, programId, input: MediaInput): Promise<AddMediaOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'media.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const media: FixtureProgramMedia = {
+        id: nextCatalogueId(),
+        mediaRef: input.mediaRef,
+        sortHint: input.sortHint ?? 0,
+        altTextEn: input.altTextEn ?? null,
+        altTextAr: input.altTextAr ?? null,
+        active: true,
+        version: 1,
+      };
+      replaceProgram(context.organization, index, { ...row, media: [...row.media, media] });
+      return { kind: 'mediaAdded', media: { ...media } };
+    },
+
+    async updateMedia(
+      organizationId,
+      programId,
+      mediaId,
+      expectedVersion,
+      patch: MediaPatch,
+    ): Promise<UpdateMediaOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'media.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const media = row.media.find((candidate) => candidate.id === mediaId);
+      if (media === undefined) {
+        return { kind: 'notFound' };
+      }
+      if (media.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      const next: FixtureProgramMedia = {
+        ...media,
+        sortHint: patch.sortHint !== undefined ? patch.sortHint : media.sortHint,
+        altTextEn: patch.altTextEn !== undefined ? patch.altTextEn : media.altTextEn,
+        altTextAr: patch.altTextAr !== undefined ? patch.altTextAr : media.altTextAr,
+        version: media.version + 1,
+      };
+      replaceProgram(context.organization, index, {
+        ...row,
+        media: row.media.map((candidate) => (candidate.id === mediaId ? next : candidate)),
+      });
+      return { kind: 'mediaUpdated', media: { ...next } };
+    },
+
+    async archiveMedia(
+      organizationId,
+      programId,
+      mediaId,
+      expectedVersion,
+    ): Promise<ArchiveMediaOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'media.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const media = row.media.find((candidate) => candidate.id === mediaId);
+      if (media === undefined) {
+        return { kind: 'notFound' };
+      }
+      if (!media.active) {
+        return { kind: 'mediaArchived' }; // idempotent
+      }
+      if (media.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        media: row.media.map((candidate) =>
+          candidate.id === mediaId
+            ? { ...candidate, active: false, version: candidate.version + 1 }
+            : candidate,
+        ),
+      });
+      return { kind: 'mediaArchived' };
+    },
+
+    /** Offers are structured catalogue metadata, never checkout math — and
+     *  not sensitive: they hot-apply in every provider-editable state. */
+    async addOffer(organizationId, programId, input: OfferInput): Promise<AddOfferOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      if (!offerShapeValid(input)) {
+        return { kind: 'invalidOffer' };
+      }
+      const offer: FixtureOffer = {
+        id: nextCatalogueId(),
+        kind: input.kind,
+        labelEn: input.labelEn,
+        labelAr: input.labelAr ?? null,
+        trialAmountFils: input.trialAmountFils ?? null,
+        effectiveStart: input.effectiveStart ?? null,
+        effectiveEnd: input.effectiveEnd ?? null,
+        state: 'active',
+        version: 1,
+      };
+      replaceProgram(context.organization, index, { ...row, offers: [...row.offers, offer] });
+      return { kind: 'offerAdded', offer: { ...offer } };
+    },
+
+    async updateOffer(
+      organizationId,
+      programId,
+      offerId,
+      expectedVersion,
+      patch: OfferPatch,
+    ): Promise<UpdateOfferOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const offer = row.offers.find((candidate) => candidate.id === offerId);
+      if (offer === undefined) {
+        return { kind: 'notFound' };
+      }
+      if (offer.state === 'ended') {
+        return { kind: 'lifecycleConflict' }; // ended offers are history
+      }
+      if (offer.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      const merged = {
+        kind: offer.kind,
+        trialAmountFils:
+          patch.trialAmountFils !== undefined ? patch.trialAmountFils : offer.trialAmountFils,
+        effectiveStart:
+          patch.effectiveStart !== undefined ? patch.effectiveStart : offer.effectiveStart,
+        effectiveEnd: patch.effectiveEnd !== undefined ? patch.effectiveEnd : offer.effectiveEnd,
+      };
+      if (!offerShapeValid(merged)) {
+        return { kind: 'invalidOffer' };
+      }
+      const next: FixtureOffer = {
+        ...offer,
+        labelEn: patch.labelEn !== undefined ? patch.labelEn : offer.labelEn,
+        labelAr: patch.labelAr !== undefined ? patch.labelAr : offer.labelAr,
+        trialAmountFils: merged.trialAmountFils,
+        effectiveStart: merged.effectiveStart,
+        effectiveEnd: merged.effectiveEnd,
+        version: offer.version + 1,
+      };
+      replaceProgram(context.organization, index, {
+        ...row,
+        offers: row.offers.map((candidate) => (candidate.id === offerId ? next : candidate)),
+      });
+      return { kind: 'offerUpdated', offer: { ...next } };
+    },
+
+    async endOffer(
+      organizationId,
+      programId,
+      offerId,
+      expectedVersion,
+    ): Promise<EndOfferOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (catalogueEditMode(row.listingState) === 'locked') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      const offer = row.offers.find((candidate) => candidate.id === offerId);
+      if (offer === undefined) {
+        return { kind: 'notFound' };
+      }
+      if (offer.state === 'ended') {
+        return { kind: 'offerEnded' }; // idempotent
+      }
+      if (offer.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        offers: row.offers.map((candidate) =>
+          candidate.id === offerId
+            ? { ...candidate, state: 'ended', version: candidate.version + 1 }
+            : candidate,
+        ),
+      });
+      return { kind: 'offerEnded' };
+    },
+  };
+
   const controls: FixtureAccessControls = {
     expireSession() {
       store.current = null;
@@ -2568,6 +3468,40 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     failNextListingsLoad(organizationId) {
       store.listingsLoadFailures.add(organizationId);
     },
+    failNextListingMutation(organizationId) {
+      store.listingMutationFailures.add(organizationId);
+    },
+    simulateConcurrentListingEdit(organizationId, programId) {
+      const organization = organizations.get(organizationId);
+      if (!organization) {
+        return;
+      }
+      const index = organization.programs.findIndex((candidate) => candidate.id === programId);
+      if (index === -1) {
+        return;
+      }
+      const row = organization.programs[index]!;
+      organization.programs[index] = { ...row, version: row.version + 1 };
+    },
+    simulateConcurrentPriceOptionEdit(organizationId, programId, optionId) {
+      const organization = organizations.get(organizationId);
+      if (!organization) {
+        return;
+      }
+      const index = organization.programs.findIndex((candidate) => candidate.id === programId);
+      if (index === -1) {
+        return;
+      }
+      const row = organization.programs[index]!;
+      organization.programs[index] = {
+        ...row,
+        priceOptions: row.priceOptions.map((candidate) =>
+          candidate.id === optionId
+            ? { ...candidate, version: candidate.version + 1 }
+            : candidate,
+        ),
+      };
+    },
     failNextListingDetailLoad(organizationId) {
       store.listingDetailFailures.add(organizationId);
     },
@@ -2606,6 +3540,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     areaPort,
     teamPort,
     listingsPort,
+    listingEditorPort,
     activityTypePort,
     controls,
     seedSession,

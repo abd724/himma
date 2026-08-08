@@ -1,0 +1,365 @@
+/* W2-8 listing editor — same visual language as the W2-5/W2-7 surfaces
+   (hp design tokens only; light theme; ≥44px touch targets). */
+
+.loading {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-secondary);
+  padding-block: var(--hp-space-xl);
+}
+
+.unavailable {
+  display: grid;
+  gap: var(--hp-space-lg);
+  justify-items: start;
+  padding-block: var(--hp-space-sm) var(--hp-space-xxl);
+}
+
+.editorWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xl);
+  max-width: 880px;
+  padding-block-end: var(--hp-space-huge);
+}
+
+.editorHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.editorHeadline {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+.editorTitle {
+  font: var(--hp-type-page-title);
+  color: var(--hp-color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.editorSubline {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.sectionTitle {
+  font: var(--hp-type-section-title);
+  color: var(--hp-color-text-primary);
+}
+
+.sectionCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-lg);
+}
+
+.sectionIntro {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-lg);
+}
+
+.formSection {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.formLegend {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+  padding: 0;
+  margin-block-end: var(--hp-space-xs);
+}
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.radioGroupLabel {
+  font: var(--hp-type-caption);
+  color: var(--hp-color-text-primary);
+}
+
+.radioOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hp-space-sm);
+}
+
+.radioOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-chip);
+  padding: 10px 14px;
+  min-height: 44px;
+  cursor: pointer;
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  background: var(--hp-color-background-elevated);
+}
+
+.radioOption:has(input:checked) {
+  border-color: var(--hp-color-brand-primary);
+  background: var(--hp-color-brand-primary-soft);
+  font-weight: 700;
+}
+
+.radioOption:has(input:focus-visible) {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: 2px;
+}
+
+.radioOption input {
+  margin: 0;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  min-height: 44px;
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+}
+
+.checkboxRow input {
+  width: 18px;
+  height: 18px;
+}
+
+.fieldWithChip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+  align-items: flex-start;
+}
+
+.fieldWithChip > div {
+  align-self: stretch;
+}
+
+.fieldError {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-status-error);
+}
+
+.ageRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: var(--hp-space-md);
+}
+
+.reviewChip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--hp-radius-chip);
+  padding: 2px 10px;
+  font: var(--hp-type-micro-label);
+  background: var(--hp-color-brand-reward);
+  color: var(--hp-color-text-primary);
+  white-space: nowrap;
+}
+
+.saveArea {
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-lg);
+  flex-wrap: wrap;
+}
+
+.saveNote {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.alertFocus {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  outline: none;
+}
+
+.alertFocus:empty {
+  display: none;
+}
+
+.alertActions {
+  display: flex;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+/* -- child rows (options, media, offers, branches) ------------------------ */
+
+.rowList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+}
+
+.childRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hp-space-md);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-control);
+  padding: var(--hp-space-md) var(--hp-space-lg);
+}
+
+.childRowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.childRowName {
+  font: var(--hp-type-body);
+  font-weight: 700;
+  color: var(--hp-color-text-primary);
+  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: var(--hp-space-sm);
+  flex-wrap: wrap;
+}
+
+.childRowMeta {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.childRowActions {
+  display: flex;
+  gap: var(--hp-space-sm);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.childRowAmount {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+  white-space: nowrap;
+}
+
+.inlineFormCard {
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-control);
+  padding: var(--hp-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  background: var(--hp-color-background-main);
+}
+
+.inlineFormTitle {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+}
+
+.optionFieldRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--hp-space-md);
+}
+
+.archivedRow {
+  opacity: 0.72;
+}
+
+/* -- readiness ------------------------------------------------------------ */
+
+.readinessList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+}
+
+.readinessRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--hp-space-sm);
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+}
+
+.readinessMet {
+  font: var(--hp-type-caption);
+  color: var(--hp-color-status-success);
+  white-space: nowrap;
+}
+
+.readinessMissing {
+  font: var(--hp-type-caption);
+  color: var(--hp-color-status-error);
+  white-space: nowrap;
+}
+
+/* -- frozen / read-only editor states ------------------------------------- */
+
+.frozenCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-xl);
+  align-items: flex-start;
+  max-width: 640px;
+}
+
+@media (max-width: 720px) {
+  .ageRow {
+    grid-template-columns: 1fr;
+  }
+
+  .childRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .childRowActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

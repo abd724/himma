@@ -19,6 +19,8 @@ import { BranchesPage } from '../pages/branches/branch-list-page';
 import { BusinessProfilePage } from '../pages/profile/business-profile-page';
 import { DashboardPage } from '../pages/dashboard-page';
 import { FinancePage } from '../pages/finance-page';
+import { ListingCreatePage } from '../pages/listings/editor/listing-create-page';
+import { ListingEditorPage } from '../pages/listings/editor/listing-editor-page';
 import { ListingDetailPage } from '../pages/listings/listing-detail-page';
 import { ListingsIndexPage } from '../pages/listings/listings-index-page';
 import { NotFoundPage, OrganizationSectionNotFoundPage } from '../pages/not-found-page';
@@ -78,10 +80,12 @@ export const portalRoutes: RouteObject[] = [
               { index: true, element: <DashboardPage /> },
               { path: 'onboarding', element: <OnboardingPage /> },
               { path: 'listings', element: <ListingsIndexPage /> },
-              // W2-7 is read-oriented: no `listings/new` route exists yet
-              // (W2-8 owns creation) — a non-listing path segment lands on
-              // the safe not-found shape via the detail port.
+              // W2-8: creation + editing live on their own routes; the
+              // W2-7 detail stays read-oriented. Lifecycle actions and the
+              // revision route stay with W2-9.
+              { path: 'listings/new', element: <ListingCreatePage /> },
               { path: 'listings/:programId', element: <ListingDetailPage /> },
+              { path: 'listings/:programId/edit', element: <ListingEditorPage /> },
               { path: 'schedule', element: <SchedulePage /> },
               { path: 'bookings', element: <BookingsPage /> },
               { path: 'branches', element: <BranchesPage /> },

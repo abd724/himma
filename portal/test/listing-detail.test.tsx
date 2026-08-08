@@ -294,12 +294,15 @@ describe('listing detail (W2-7, read-oriented)', () => {
     expect(foreignMain).not.toContain('After-School');
   });
 
-  test('a non-listing path segment (e.g. /listings/new) is safely not-found — no editor exists in W2-7', async () => {
+  test('the /listings/new segment is the REAL create route now (W2-8) — never a phantom listing id', async () => {
     renderPortal({
       asIdentity: 'owner@bluewave.demo',
       initialEntries: [`/o/${blueWave.organizationId}/listings/new`],
     });
-    expect(await screen.findByRole('heading', { level: 2, name: 'Listing not found' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Create listing' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Listing not found')).not.toBeInTheDocument();
   });
 
   test('a role without catalogue.read never fetches a listing by URL', async () => {

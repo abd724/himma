@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ImageOff, SearchX } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
+import { editorAuthority, listingMutableForScope } from './editor/editor-domain';
 import { usePortalPorts } from '../../app/ports-context';
 import type {
   OfferRecord,
@@ -154,6 +155,14 @@ function ListingNotFound({ organizationId }: { organizationId: string }) {
 
 function ListingDetail({ view, program }: { view: OrganizationView; program: ProgramDetailRecord }) {
   const authority = catalogueAuthority(view);
+  // The editor entry point appears ONLY where mutation authority truly
+  // exists: `listings.manage` plus the STRICTER branch-scope mutation rule
+  // (readable never implies editable) and no suspension. The editor route
+  // itself renders read-only truth for locked lifecycle states.
+  const canOpenEditor =
+    editorAuthority(view).canManage &&
+    !authority.suspended &&
+    listingMutableForScope(program, authority.assignedActiveBranchIds);
 
   return (
     <div className={styles.detailWrap}>
@@ -170,6 +179,16 @@ function ListingDetail({ view, program }: { view: OrganizationView; program: Pro
           {' · '}
           {SETTING_LABELS[program.setting] ?? program.setting}
         </p>
+        {canOpenEditor ? (
+          <p className={styles.detailSubline}>
+            <Link
+              className={styles.inlineLink}
+              to={`${organizationPath(view.organization.id, 'listings')}/${program.id}/edit`}
+            >
+              Edit listing
+            </Link>
+          </p>
+        ) : null}
       </header>
 
       {authority.suspended ? (
