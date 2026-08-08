@@ -19,7 +19,9 @@
  * branchless drafts), and may only add/remove associations for branches
  * they control.
  */
-import type { Db } from '../../../db/kysely';
+import type { Expression, ExpressionBuilder, SqlBool } from 'kysely';
+
+import type { Db, DB } from '../../../db/kysely';
 import type { Trx } from '../../../db/transaction';
 import { branchInScope, type OrgScope } from '../../provider/services/provider-principal';
 
@@ -89,6 +91,33 @@ export async function programInBranchScope(
     .where('active', '=', true)
     .execute();
   return associations.every((row) => branchInScope(scope, row.branch_id));
+}
+
+/**
+ * The canonical branch-scoped READ-reachability rule, shared by the
+ * provider-private catalogue LIST and DETAIL (one rule, expressed inside
+ * the authoritative SQL query): a program is reachable iff it has no
+ * ACTIVE branch association at all (a draft not yet placed anywhere) or at
+ * least one active association to an assigned active branch. The resolved
+ * scope already carries assigned ACTIVE branches only, and an empty scope
+ * grants nothing beyond branchless drafts (never a fallback to org-wide).
+ * Mutations keep their stricter `every` rule (programInBranchScope).
+ */
+export function programReadableInBranchScope(
+  eb: ExpressionBuilder<DB, 'program'>,
+  branchScope: readonly string[],
+): Expression<SqlBool> {
+  const activeAssociations = eb
+    .selectFrom('program_branch')
+    .select('program_branch.program_id')
+    .whereRef('program_branch.program_id', '=', 'program.id')
+    .where('program_branch.active', '=', true);
+  const branchless = eb.not(eb.exists(activeAssociations));
+  if (branchScope.length === 0) return branchless;
+  return eb.or([
+    branchless,
+    eb.exists(activeAssociations.where('program_branch.branch_id', 'in', [...branchScope])),
+  ]);
 }
 
 /** Deterministic option ordering (D-S4-1): (sort_hint, id). */

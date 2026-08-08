@@ -13,7 +13,6 @@ const BLUE_WAVE_ID = '0198a2f0-5b7a-7000-8000-1f4a2d9c6e01';
 const FALCON_ID = '0198a2f0-5b7a-7000-8000-1f4a2d9c6e03';
 const SUNRISE_ID = '0198a2f0-5b7a-7000-8000-1f4a2d9c6e05';
 
-const ADULT_SWIMMING_ID = '0198a2f0-5b7a-7000-8000-7a1b8c3d9f01';
 const JUNIOR_SQUAD_ID = '0198a2f0-5b7a-7000-8000-7a1b8c3d9f02';
 const SUNSET_OPEN_WATER_ID = '0198a2f0-5b7a-7000-8000-7a1b8c3d9f10';
 const FALCON_KICKBOXING_ID = '0198a2f0-5b7a-7000-8000-7a1b8c3d9f31';
@@ -139,7 +138,7 @@ test('owner journey: populated index → filters → pagination → multi-option
   });
 });
 
-test('branch-scoped manager: reachable listings only, out-of-scope detail readable with the scope explained', async ({
+test('branch-scoped manager: reachable listings only, out-of-scope detail safely not found', async ({
   page,
 }, testInfo) => {
   await signInAs(page, 'manager@bluewave.demo');
@@ -153,6 +152,7 @@ test('branch-scoped manager: reachable listings only, out-of-scope detail readab
   const list = page.getByRole('list', { name: 'Listings' });
   await expect(list.getByText('Ladies Aqua Fitness')).toBeVisible();
   await expect(list.getByText('Holiday Swim Camp')).toBeVisible();
+  await expect(list.getByText('Aqua Fitness Express')).toBeVisible();
   await expect(list.getByText('Junior Swim Squad')).not.toBeVisible();
   await expect(list.getByText('School Term Program')).not.toBeVisible();
   await noHorizontalOverflow(page);
@@ -161,12 +161,12 @@ test('branch-scoped manager: reachable listings only, out-of-scope detail readab
     fullPage: true,
   });
 
-  // The real detail read is organization-wide; the scope is explained.
+  // The detail shares the list's reachability rule: a direct URL to an
+  // out-of-scope in-organization listing gets the SAME safe not-found
+  // surface as an unknown id — no title, state, or existence leak.
   await clientGoto(page, `/o/${BLUE_WAVE_ID}/listings/${JUNIOR_SQUAD_ID}`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Junior Swim Squad' })).toBeVisible();
-  await expect(
-    page.getByText(/runs only at branches outside your assigned branches/),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Listing not found' })).toBeVisible();
+  await expect(page.getByText('Junior Swim Squad')).not.toBeVisible();
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-listing-out-of-scope.png`),
     fullPage: true,

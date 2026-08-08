@@ -14,6 +14,8 @@
  * write the docs/28 §15 audit/outbox vocabulary in the same transaction
  * with ids-only payloads.
  */
+import { sql, type SqlBool } from 'kysely';
+
 import { appendAuditEvent } from '../../../db/audit';
 import { isDbError } from '../../../db/errors';
 import { newId } from '../../../db/ids';
@@ -26,6 +28,7 @@ import {
   editModeOf,
   findOrgProgram,
   programInBranchScope,
+  programReadableInBranchScope,
   toOptionView,
   OPTION_COLUMNS,
   type CatalogueActor,
@@ -276,6 +279,20 @@ export async function getProviderProgram(
   input: { programId: string },
 ): Promise<GetProgramResult> {
   return withTransaction(deps.db, async (trx) => {
+    // Branch-scoped staff read exactly what their list reaches — the SAME
+    // canonical reachability rule, so an in-organization out-of-scope
+    // program is not-found-shaped like a foreign or unknown id.
+    if (scope.branchScope !== 'all') {
+      const branchScope = scope.branchScope;
+      const reachable = await trx
+        .selectFrom('program')
+        .select('id')
+        .where('id', '=', input.programId)
+        .where('organization_id', '=', scope.organizationId)
+        .where((eb) => programReadableInBranchScope(eb, branchScope))
+        .executeTakeFirst();
+      if (reachable === undefined) return { kind: 'programNotFound' as const };
+    }
     const program = await loadProgramDetailInTrx(trx, {
       programId: input.programId,
       organizationId: scope.organizationId,
@@ -468,49 +485,33 @@ export async function listProviderPrograms(
         'created_at',
         'updated_at',
       ])
-      .where('organization_id', '=', scope.organizationId)
-      .orderBy('created_at')
-      .orderBy('id')
-      .limit(limit + 1);
+      .where('organization_id', '=', scope.organizationId);
+    // Branch-scoped staff see only listings they can reach (branchless
+    // drafts or ≥1 active association in scope) — the shared canonical
+    // rule participates in the authoritative query BEFORE ordering, cursor
+    // continuation, and the LIMIT window, so inaccessible rows never
+    // consume page slots and the cursor walks the reachable set.
+    if (scope.branchScope !== 'all') {
+      const branchScope = scope.branchScope;
+      query = query.where((eb) => programReadableInBranchScope(eb, branchScope));
+    }
     if (input.cursor !== undefined) {
       const anchor = await trx
         .selectFrom('program')
-        .select(['created_at', 'id'])
+        .select('id')
         .where('id', '=', input.cursor)
         .where('organization_id', '=', scope.organizationId)
         .executeTakeFirst();
       if (anchor !== undefined) {
-        query = query.where((eb) =>
-          eb.or([
-            eb('created_at', '>', anchor.created_at),
-            eb.and([eb('created_at', '=', anchor.created_at), eb('id', '>', anchor.id)]),
-          ]),
+        // Row-wise keyset continuation evaluated entirely in SQL: pulling
+        // the anchor timestamp into JS would truncate `created_at` to
+        // millisecond Date precision and let the anchor row re-qualify.
+        query = query.where(
+          sql<SqlBool>`(created_at, id) > (SELECT created_at, id FROM program WHERE id = ${input.cursor})`,
         );
       }
     }
-    let rows = await query.execute();
-
-    // Branch-scoped staff see only listings they can reach: branchless
-    // drafts or listings with at least one active association in scope.
-    if (scope.branchScope !== 'all') {
-      const reachable: typeof rows = [];
-      for (const row of rows) {
-        const associations = await trx
-          .selectFrom('program_branch')
-          .select('branch_id')
-          .where('program_id', '=', row.id)
-          .where('active', '=', true)
-          .execute();
-        if (
-          associations.length === 0 ||
-          associations.some((association) => branchInScope(scope, association.branch_id))
-        ) {
-          reachable.push(row);
-        }
-      }
-      rows = reachable;
-    }
-
+    const rows = await query.orderBy('created_at').orderBy('id').limit(limit + 1).execute();
     const page = rows.slice(0, limit);
     return {
       programs: page.map((row) => ({

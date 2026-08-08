@@ -297,23 +297,3 @@ export function completenessGaps(program: ProgramDetailRecord): CompletenessGap[
   }
   return missing;
 }
-
-// -- branch-scope reach (mirror of the real LIST filter, display only) ------
-
-/**
- * TRUE iff this listing appears in a branch-scoped caller's list: no active
- * association at all (a draft not placed anywhere) or at least one active
- * association to an assigned ACTIVE branch. The detail read itself is
- * organization-wide in the shipped backend — this only explains why a
- * listing may not appear in the caller's index.
- */
-export function listingReachableForScope(
-  program: ProgramDetailRecord,
-  assignedActiveBranchIds: readonly string[],
-): boolean {
-  const activeAssociations = program.branches.filter((branch) => branch.associationActive);
-  return (
-    activeAssociations.length === 0 ||
-    activeAssociations.some((branch) => assignedActiveBranchIds.includes(branch.branchId))
-  );
-}

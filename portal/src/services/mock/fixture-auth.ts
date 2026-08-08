@@ -2362,19 +2362,45 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     };
   };
 
+  /**
+   * The canonical branch-scoped READ-reachability rule shared by the list
+   * and the detail — mirrors the backend's one authoritative predicate
+   * (catalogue-shared.ts programReadableInBranchScope): reachable = no
+   * ACTIVE branch association at all (a draft not placed anywhere) OR at
+   * least one active association to an assigned ACTIVE branch. The
+   * resolved seat carries assigned branches only; a deactivated branch
+   * grants no reach, and an empty scope never falls back to org-wide.
+   */
+  const programReachableForSeat = (
+    organization: FixtureOrganizationState,
+    seatEntry: FixtureMembershipSeat,
+    row: FixtureProgramState,
+  ): boolean => {
+    if (seatEntry.branchScope === 'all') {
+      return true;
+    }
+    const assignedActive = seatEntry.branchScope.filter((branchId) =>
+      organization.branches.some((candidate) => candidate.id === branchId && candidate.active),
+    );
+    const activeAssociations = row.branchAssociations.filter((entry) => entry.active);
+    return (
+      activeAssociations.length === 0 ||
+      activeAssociations.some((entry) => assignedActive.includes(entry.branchId))
+    );
+  };
+
   const listingsPort: ListingsReadPort = {
     /**
      * Mirrors GET /provider/organizations/:orgId/listings exactly
      * (program-management.ts listProviderPrograms): keyset pagination in
      * `(createdAt, id)` order with an opaque id cursor (an unknown or
      * foreign cursor is IGNORED — the list restarts from the beginning);
-     * `limit` clamped to 1–100 (default 50); the window of `limit + 1`
-     * rows is fetched FIRST and branch-scope filtering happens after —
-     * including the real consequence that a scoped caller's `nextCursor`
-     * derives from the filtered window (see the recorded W2-7 gap).
-     * Reachable for a scoped membership = no ACTIVE association at all
-     * (a draft not placed anywhere) OR at least one active association to
-     * an assigned ACTIVE branch.
+     * `limit` clamped to 1–100 (default 50). Branch-scope reachability
+     * participates BEFORE the pagination window — exactly like the
+     * corrected service, where the shared rule sits inside the
+     * authoritative query ahead of ordering, cursor continuation, and
+     * `LIMIT` — so inaccessible listings never consume page slots and the
+     * cursor walks the reachable ordered set.
      */
     async listListings(organizationId, params): Promise<ListListingsOutcome> {
       const caller = store.current;
@@ -2395,19 +2421,25 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         return { kind: 'forbidden' };
       }
       const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
-      const sorted = [...organization.programs].sort((a, b) =>
-        a.createdAt < b.createdAt
-          ? -1
-          : a.createdAt > b.createdAt
-            ? 1
-            : a.id < b.id
-              ? -1
-              : 1,
-      );
+      // Reachability filters the AUTHORITATIVE ordered set before any
+      // windowing, mirroring the corrected SQL query shape.
+      const sorted = [...organization.programs]
+        .filter((row) => programReachableForSeat(organization, seatEntry, row))
+        .sort((a, b) =>
+          a.createdAt < b.createdAt
+            ? -1
+            : a.createdAt > b.createdAt
+              ? 1
+              : a.id < b.id
+                ? -1
+                : 1,
+        );
       let afterAnchor = sorted;
       const cursor = params?.cursor;
       if (cursor !== undefined) {
-        const anchor = sorted.find((row) => row.id === cursor);
+        // The anchor lookup stays org-wide (an unknown or foreign cursor is
+        // ignored); continuation happens over the reachable ordered set.
+        const anchor = organization.programs.find((row) => row.id === cursor);
         if (anchor !== undefined) {
           afterAnchor = sorted.filter(
             (row) =>
@@ -2416,25 +2448,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
           );
         }
       }
-      let rows = afterAnchor.slice(0, limit + 1);
-      if (seatEntry.branchScope !== 'all') {
-        // The resolved principal carries assigned ACTIVE branches only —
-        // a deactivated branch grants no reach.
-        const assignedActive = seatEntry.branchScope.filter((branchId) =>
-          organization.branches.some(
-            (candidate) => candidate.id === branchId && candidate.active,
-          ),
-        );
-        rows = rows.filter((row) => {
-          const activeAssociations = row.branchAssociations.filter(
-            (entry) => entry.active,
-          );
-          return (
-            activeAssociations.length === 0 ||
-            activeAssociations.some((entry) => assignedActive.includes(entry.branchId))
-          );
-        });
-      }
+      const rows = afterAnchor.slice(0, limit + 1);
       const page = rows.slice(0, limit);
       return {
         kind: 'loaded',
@@ -2446,10 +2460,11 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
 
     /**
-     * Mirrors GET .../listings/:programId exactly: organization-scoped only
-     * (unknown ids and other organizations' ids collapse into ONE
-     * not-found shape) and — like the shipped service — NO branch-scope
-     * filter on the detail read.
+     * Mirrors GET .../listings/:programId exactly: organization-scoped,
+     * with the SAME branch-scope reachability rule as the list — an
+     * in-organization but out-of-scope listing, an unknown id, and another
+     * organization's id all collapse into ONE not-found shape (no
+     * enumeration oracle).
      */
     async loadListing(organizationId, programId): Promise<ListingDetailOutcome> {
       const caller = store.current;
@@ -2470,7 +2485,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         return { kind: 'forbidden' };
       }
       const row = organization.programs.find((candidate) => candidate.id === programId);
-      if (row === undefined) {
+      if (row === undefined || !programReachableForSeat(organization, seatEntry, row)) {
         return { kind: 'notFound' };
       }
       return { kind: 'loaded', program: projectProgramDetail(organization, row) };

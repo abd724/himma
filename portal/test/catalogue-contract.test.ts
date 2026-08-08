@@ -207,24 +207,64 @@ describe('listings read port (fixture semantics, W2-7)', () => {
     expect(page.nextCursor).toBeNull();
   });
 
-  test('RECORDED backend behavior: scope filtering happens after the limit+1 window, so a scoped page can silently truncate (mirrored, not invented)', async () => {
-    // With limit 10 the window is listings 1–11; filtering leaves 7 rows and
-    // nextCursor is null — the reachable 12th listing (Aqua Fitness Express)
-    // never appears. This mirrors listProviderPrograms exactly and is
-    // recorded as a genuine backend gap for W2-12/backend planning.
-    const page = await pageOf(runtimeAs('manager@bluewave.demo'), blueWave, { limit: 10 });
-    expect(page.programs).toHaveLength(7);
-    expect(page.nextCursor).toBeNull();
-    expect(page.programs.map((row) => row.id)).not.toContain(fixtureListings.aquaExpress);
+  test('scope participates BEFORE the pagination window: pages fill with reachable listings and the cursor walks the whole reachable set', async () => {
+    const runtime = runtimeAs('manager@bluewave.demo');
+    // With limit 10 every one of the 8 reachable listings arrives — the old
+    // defective mirror filtered the limit+1 window after the fact, returned
+    // 7 rows, and silently dropped Aqua Fitness Express.
+    const single = await pageOf(runtime, blueWave, { limit: 10 });
+    expect(single.programs).toHaveLength(8);
+    expect(single.programs.map((row) => row.id)).toContain(fixtureListings.aquaExpress);
+    expect(single.nextCursor).toBeNull();
+
+    // A small-limit walk: inaccessible listings never consume page slots,
+    // the cursor advances over the reachable ordered set, and every
+    // reachable listing arrives exactly once.
+    const first = await pageOf(runtime, blueWave, { limit: 3 });
+    expect(first.programs).toHaveLength(3);
+    expect(first.nextCursor).toBe(first.programs[2]!.id);
+    const second = await pageOf(runtime, blueWave, { limit: 3, cursor: first.nextCursor! });
+    expect(second.programs).toHaveLength(3);
+    const third = await pageOf(runtime, blueWave, { limit: 3, cursor: second.nextCursor! });
+    expect(third.programs).toHaveLength(2);
+    expect(third.nextCursor).toBeNull();
+    const walked = [...first.programs, ...second.programs, ...third.programs].map((row) => row.id);
+    expect(walked).toEqual([
+      fixtureListings.adultSwimming,
+      fixtureListings.ladiesAqua,
+      fixtureListings.holidayCamp,
+      fixtureListings.strokeClinic,
+      fixtureListings.aquaTherapy,
+      fixtureListings.mastersTraining,
+      fixtureListings.synchroSquad,
+      fixtureListings.aquaExpress,
+    ]);
   });
 
-  test('the DETAIL read is organization-scoped only — the shipped service applies no branch-scope filter (proven behavior, mirrored)', async () => {
-    const program = await detailOf(
-      runtimeAs('manager@bluewave.demo'),
+  test('the DETAIL shares the list reachability rule: an out-of-scope in-organization listing is not-found-shaped exactly like unknown and foreign ids', async () => {
+    const runtime = runtimeAs('manager@bluewave.demo');
+    const outOfScope = await runtime.listingsPort.loadListing(
       blueWave,
       fixtureListings.juniorSquad, // Bay-only: outside Salem's Marina scope
     );
-    expect(program.titleEn).toBe('Junior Swim Squad');
+    const unknown = await runtime.listingsPort.loadListing(
+      blueWave,
+      '0198a2f0-5b7a-7000-8000-000000000000',
+    );
+    const foreign = await runtime.listingsPort.loadListing(blueWave, fixtureListings.noorAfterSchool);
+    expect(outOfScope).toEqual({ kind: 'notFound' });
+    expect(unknown).toEqual(outOfScope);
+    expect(foreign).toEqual(outOfScope);
+    // Reachable listings still load — in scope and branchless drafts alike.
+    expect((await runtime.listingsPort.loadListing(blueWave, fixtureListings.ladiesAqua)).kind).toBe('loaded');
+    expect((await runtime.listingsPort.loadListing(blueWave, fixtureListings.holidayCamp)).kind).toBe('loaded');
+    // Organization-wide catalogue readers keep the org-wide detail read.
+    expect(
+      (await runtimeAs('owner@bluewave.demo').listingsPort.loadListing(blueWave, fixtureListings.juniorSquad)).kind,
+    ).toBe('loaded');
+    expect(
+      (await runtimeAs('director@himma.demo').listingsPort.loadListing(blueWave, fixtureListings.juniorSquad)).kind,
+    ).toBe('loaded');
   });
 
   test('unknown listing ids and a foreign organization’s listing id collapse into ONE byte-identical not-found shape', async () => {

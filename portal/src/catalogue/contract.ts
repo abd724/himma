@@ -10,17 +10,19 @@
  *   `(createdAt, id)` order: `limit` 1–100 (server default 50), `cursor` is
  *   an OPAQUE listing id returned as `nextCursor` — never a page number.
  *   The real service ignores an unknown/foreign cursor (lists from the
- *   start) and, for branch-scoped staff, filters the fetched window to
- *   REACHABLE listings: those with no active branch association (drafts
- *   not yet placed anywhere) or at least one active association to one of
- *   the caller's assigned ACTIVE branches. The summary row carries EXACTLY
- *   the real seven fields — no price, branch, media, offer, or revision
- *   data exists on the list contract.
+ *   start) and, for branch-scoped staff, applies the canonical
+ *   reachability rule INSIDE the authoritative query before ordering and
+ *   the pagination window: reachable = no active branch association
+ *   (drafts not yet placed anywhere) or at least one active association to
+ *   one of the caller's assigned ACTIVE branches. Inaccessible listings
+ *   never consume page slots; the cursor walks the reachable ordered set.
+ *   The summary row carries EXACTLY the real seven fields — no price,
+ *   branch, media, offer, or revision data exists on the list contract.
  * - `loadListing` ⇄ `GET .../listings/:programId` (same capability). The
- *   detail read is organization-scoped ONLY: the shipped service applies NO
- *   branch-scope filter (scope constrains the list window and mutations,
- *   never this read) — proven from program-management.ts. Unknown ids and
- *   other organizations' ids collapse into one not-found shape.
+ *   detail read shares the SAME branch-scope reachability rule as the
+ *   list (one canonical predicate in the backend): an in-organization but
+ *   out-of-scope listing, an unknown id, and another organization's id all
+ *   collapse into one not-found shape.
  *
  * Deliberately absent because W2-7 is read-oriented (W2-8/W2-9 own them):
  * no create/PATCH, no submit/publish/pause/archive, no price-option, branch-

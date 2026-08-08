@@ -128,7 +128,8 @@ describe('listings index (W2-7)', () => {
       ),
     ).toBeInTheDocument();
 
-    // Reachable: Marina-associated listings + the branchless draft.
+    // Reachable: Marina-associated listings + the branchless draft — ALL of
+    // them, because scope participates before the pagination window.
     for (const title of [
       'Adult Beginner Swimming',
       'Ladies Aqua Fitness',
@@ -137,6 +138,7 @@ describe('listings index (W2-7)', () => {
       'Aqua Therapy Sessions',
       'Masters Training',
       'Synchro Performance Squad',
+      'Aqua Fitness Express',
     ]) {
       expect(within(list).getByText(title)).toBeInTheDocument();
     }
@@ -150,7 +152,7 @@ describe('listings index (W2-7)', () => {
     ]) {
       expect(within(list).queryByText(title)).not.toBeInTheDocument();
     }
-    expect(within(list).getAllByRole('listitem')).toHaveLength(7);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(8);
     expect(screen.queryByRole('button', { name: 'Load more listings' })).not.toBeInTheDocument();
   });
 

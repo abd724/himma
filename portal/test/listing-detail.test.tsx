@@ -247,26 +247,30 @@ describe('listing detail (W2-7, read-oriented)', () => {
     expect(main.textContent).not.toMatch(/\bwomen\b/);
   });
 
-  test('a branch-scoped manager can read an out-of-scope listing by URL (the real org-wide detail read) with the scope explained', async () => {
+  test('a branch-scoped manager’s direct URL to an out-of-scope listing renders the SAME safe not-found surface as an unknown id', async () => {
     const outOfScope = renderPortal({
       asIdentity: 'manager@bluewave.demo',
       initialEntries: [detailPath(blueWave, fixtureListings.juniorSquad)],
     });
-    await screen.findByRole('heading', { level: 1, name: 'Junior Swim Squad' });
-    expect(
-      screen.getByText(/runs only at branches outside your assigned branches/),
-    ).toBeInTheDocument();
+    await screen.findByRole('heading', { level: 2, name: 'Listing not found' });
+    expect(screen.queryByText('Junior Swim Squad')).not.toBeInTheDocument();
+    const outOfScopeMain = outOfScope.container.querySelector('main')?.textContent ?? '';
     outOfScope.unmount();
 
-    // In-scope listing: no such note; the assigned branch is marked.
+    const unknown = renderPortal({
+      asIdentity: 'manager@bluewave.demo',
+      initialEntries: [detailPath(blueWave, '0198a2f0-5b7a-7000-8000-000000000000')],
+    });
+    await screen.findByRole('heading', { level: 2, name: 'Listing not found' });
+    expect(unknown.container.querySelector('main')?.textContent ?? '').toBe(outOfScopeMain);
+    unknown.unmount();
+
+    // In-scope listing: reads normally; the assigned branch is marked.
     renderPortal({
       asIdentity: 'manager@bluewave.demo',
       initialEntries: [detailPath(blueWave, fixtureListings.ladiesAqua)],
     });
     await screen.findByRole('heading', { level: 1, name: 'Ladies Aqua Fitness' });
-    expect(
-      screen.queryByText(/runs only at branches outside your assigned branches/),
-    ).not.toBeInTheDocument();
     expect(screen.getByText('Assigned to you')).toBeInTheDocument();
   });
 

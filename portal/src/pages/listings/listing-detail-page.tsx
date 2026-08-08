@@ -27,7 +27,6 @@ import {
   GENDER_LABELS,
   LISTING_STATE_DESCRIPTIONS,
   isListingState,
-  listingReachableForScope,
   listingStateLabel,
   listingStateTone,
   offerKindLabel,
@@ -49,11 +48,11 @@ import styles from './listings.module.css';
  * only: no editor, no lifecycle action, no option/branch/media/offer/
  * revision mutation exists on this surface (W2-8/W2-9 own those).
  *
- * The detail read is organization-scoped, exactly like the shipped backend:
- * a branch-scoped membership can open any of its organization's listings by
- * URL (scope constrains the index reach and future mutations, never this
- * read), while unknown ids and other organizations' ids collapse into one
- * safe not-found surface.
+ * The detail read shares the backend's ONE branch-scope reachability rule
+ * with the index: a branch-scoped membership reads exactly the listings its
+ * list reaches, and an in-organization out-of-scope listing collapses into
+ * the SAME safe not-found surface as unknown ids and other organizations'
+ * ids (no enumeration oracle).
  */
 export function ListingDetailPage() {
   const organization = useActiveOrganization();
@@ -155,9 +154,6 @@ function ListingNotFound({ organizationId }: { organizationId: string }) {
 
 function ListingDetail({ view, program }: { view: OrganizationView; program: ProgramDetailRecord }) {
   const authority = catalogueAuthority(view);
-  const outsideScope =
-    authority.assignedActiveBranchIds !== null &&
-    !listingReachableForScope(program, authority.assignedActiveBranchIds);
 
   return (
     <div className={styles.detailWrap}>
@@ -178,12 +174,6 @@ function ListingDetail({ view, program }: { view: OrganizationView; program: Pro
 
       {authority.suspended ? (
         <InlineAlert tone="info">{SUSPENDED_CATALOGUE_COPY}</InlineAlert>
-      ) : null}
-      {outsideScope ? (
-        <InlineAlert tone="info">
-          This listing runs only at branches outside your assigned branches, so it doesn&rsquo;t
-          appear in your listings view. You can still read it here.
-        </InlineAlert>
       ) : null}
 
       <StatusSection view={view} program={program} />
