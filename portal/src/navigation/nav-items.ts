@@ -66,7 +66,12 @@ export const portalNavItems: readonly PortalNavItem[] = [
     segment: 'listings',
     group: 'workspace',
     comingSoon: false,
-    requiredCapability: null,
+    // `catalogue.read` = owner, org_manager, branch_manager,
+    // listings_editor in the shipped registry (docs/28 §6): the Listings
+    // section renders only for memberships that hold it (docs/29 §5).
+    // Visibility is usability only; the backend stays the boundary, and a
+    // direct URL renders the truthful no-access surface.
+    requiredCapability: 'catalogue.read',
   },
   {
     id: 'schedule',

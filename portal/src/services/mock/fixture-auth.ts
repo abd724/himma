@@ -50,6 +50,17 @@ import type {
   UpdateBranchOutcome,
 } from '../../branches/contract';
 import { BRANCH_FIELD_LIMITS } from '../../branches/contract';
+import type {
+  ListingDetailOutcome,
+  ListingsReadPort,
+  ListListingsOutcome,
+  OfferRecord,
+  OpenRevisionRecord,
+  PriceOptionRecord,
+  ProgramDetailRecord,
+  ProgramMediaRecord,
+  ProgramSummaryRecord,
+} from '../../catalogue/contract';
 import type { InvitationAcceptOutcome, InvitationPort } from '../../invitations/contract';
 import type {
   OnboardingPort,
@@ -72,7 +83,12 @@ import type {
   ProviderRole,
 } from '../../provider-access/contract';
 import { ORG_WIDE_ONLY_ROLES } from '../../provider-access/contract';
-import type { AreaReadPort, AreaRecord } from '../../taxonomy/contract';
+import type {
+  ActivityTypeReadPort,
+  ActivityTypeRecord,
+  AreaReadPort,
+  AreaRecord,
+} from '../../taxonomy/contract';
 import type {
   IssueInvitationOutcome,
   RevokeInvitationOutcome,
@@ -129,6 +145,7 @@ export const fixtureBranches = {
   blueWaveBay: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a02',
   blueWaveSufouh: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a03',
   noorBarsha: NOOR_BRANCH_ID,
+  falconQuoz: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a21',
 } as const;
 
 /**
@@ -152,6 +169,85 @@ function areaDirectory(): AreaRecord[] {
     area('04', 'downtown-dubai', 'Downtown Dubai'),
     area('05', 'dubai-marina', 'Dubai Marina'),
     area('06', 'jumeirah', 'Jumeirah'),
+  ];
+}
+
+/**
+ * Fixture activity-type taxonomy — DB-managed reference data (D-S4-3). The
+ * PRIVATE directory keeps the `active` flag (the provider detail projection
+ * embeds it); the PUBLIC read (`GET /catalogue/activity-types`) serves only
+ * ACTIVE rows, which is why a listing referencing a deactivated type simply
+ * has no label in the public read.
+ */
+interface FixtureActivityType {
+  readonly id: string;
+  readonly slug: string;
+  readonly labelEn: string;
+  readonly labelAr: string | null;
+  readonly categoryId: string;
+  readonly active: boolean;
+}
+
+const fixtureCategoryIds = {
+  aquatics: '0198a2f0-5b7a-7000-8000-3a7b4c9d5e01',
+  fitness: '0198a2f0-5b7a-7000-8000-3a7b4c9d5e02',
+  education: '0198a2f0-5b7a-7000-8000-3a7b4c9d5e03',
+  combat: '0198a2f0-5b7a-7000-8000-3a7b4c9d5e04',
+} as const;
+
+export const fixtureActivityTypes = {
+  swimming: '0198a2f0-5b7a-7000-8000-2f6a3b8c4d01',
+  aquaFitness: '0198a2f0-5b7a-7000-8000-2f6a3b8c4d02',
+  learningSupport: '0198a2f0-5b7a-7000-8000-2f6a3b8c4d03',
+  kickboxing: '0198a2f0-5b7a-7000-8000-2f6a3b8c4d04',
+  /** Deactivated taxonomy row — absent from the public read; a listing that
+   *  still references it carries `activityType.active: false` in its detail
+   *  and fails the `activeTaxonomy` completeness requirement. */
+  synchronizedSwimming: '0198a2f0-5b7a-7000-8000-2f6a3b8c4d05',
+} as const;
+
+function activityTypeDirectory(): FixtureActivityType[] {
+  return [
+    {
+      id: fixtureActivityTypes.swimming,
+      slug: 'swimming',
+      labelEn: 'Swimming',
+      labelAr: null,
+      categoryId: fixtureCategoryIds.aquatics,
+      active: true,
+    },
+    {
+      id: fixtureActivityTypes.aquaFitness,
+      slug: 'aqua-fitness',
+      labelEn: 'Aqua Fitness',
+      labelAr: null,
+      categoryId: fixtureCategoryIds.fitness,
+      active: true,
+    },
+    {
+      id: fixtureActivityTypes.learningSupport,
+      slug: 'learning-support',
+      labelEn: 'Learning Support',
+      labelAr: null,
+      categoryId: fixtureCategoryIds.education,
+      active: true,
+    },
+    {
+      id: fixtureActivityTypes.kickboxing,
+      slug: 'kickboxing',
+      labelEn: 'Kickboxing',
+      labelAr: null,
+      categoryId: fixtureCategoryIds.combat,
+      active: true,
+    },
+    {
+      id: fixtureActivityTypes.synchronizedSwimming,
+      slug: 'synchronized-swimming',
+      labelEn: 'Synchronized Swimming',
+      labelAr: null,
+      categoryId: fixtureCategoryIds.aquatics,
+      active: false,
+    },
   ];
 }
 
@@ -280,6 +376,80 @@ interface FixtureBranchState {
   version: number;
 }
 
+/** Mirrors program_price_option (D-S4-1 child; stable id, archive-only). */
+interface FixturePriceOption {
+  readonly id: string;
+  readonly kind: string;
+  readonly amountFils: number | null;
+  readonly sessionsCount: number | null;
+  readonly labelEn: string | null;
+  readonly labelAr: string | null;
+  readonly sortHint: number;
+  readonly state: 'active' | 'archived';
+  readonly version: number;
+}
+
+/** Mirrors program_branch (append-only association; remove = active=false). */
+interface FixtureProgramBranch {
+  readonly branchId: string;
+  readonly active: boolean;
+  readonly version: number;
+}
+
+interface FixtureProgramMedia {
+  readonly id: string;
+  readonly mediaRef: string;
+  readonly sortHint: number;
+  readonly altTextEn: string | null;
+  readonly altTextAr: string | null;
+  readonly active: boolean;
+  readonly version: number;
+}
+
+interface FixtureOffer {
+  readonly id: string;
+  readonly kind: string;
+  readonly labelEn: string;
+  readonly labelAr: string | null;
+  readonly trialAmountFils: number | null;
+  readonly effectiveStart: string | null;
+  readonly effectiveEnd: string | null;
+  readonly state: 'active' | 'ended';
+  readonly version: number;
+}
+
+/** Mirrors the `program` row + its S4 children — exactly the fields the
+ *  real provider-private projections serve; nothing operational (bookings,
+ *  capacity, sessions, revenue…) exists here because the backend owns no
+ *  such truth yet. */
+interface FixtureProgramState {
+  readonly id: string;
+  readonly titleEn: string;
+  readonly titleAr: string | null;
+  readonly descriptionEn: string | null;
+  readonly descriptionAr: string | null;
+  readonly activityTypeId: string;
+  readonly setting: 'indoor' | 'outdoor';
+  readonly minAge: number | null;
+  readonly maxAge: number | null;
+  readonly allAges: boolean;
+  readonly genderEligibility: string;
+  readonly skillLevel: string | null;
+  readonly eligibilityNotes: string | null;
+  readonly listingState: string;
+  readonly publishedAt: string | null;
+  readonly archivedAt: string | null;
+  readonly sensitiveFieldsVersion: number;
+  readonly version: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly priceOptions: readonly FixturePriceOption[];
+  readonly branchAssociations: readonly FixtureProgramBranch[];
+  readonly media: readonly FixtureProgramMedia[];
+  readonly offers: readonly FixtureOffer[];
+  readonly openRevision: { id: string; state: string; createdAt: string; version: number } | null;
+}
+
 /** Mirrors organization_public_profile — the storefront record (own version). */
 interface FixtureProfileState {
   displayName: string;
@@ -304,13 +474,304 @@ interface FixtureOrganizationState {
   version: number;
   profile: FixtureProfileState;
   branches: FixtureBranchState[];
-  listingCount: number;
+  /** The org's catalogue truth — every listing in every lifecycle state,
+   *  exactly the entities the real provider-private reads serve. */
+  programs: FixtureProgramState[];
   /** The org's staff truth — memberships incl. revoked history plus every
    *  invitation lifecycle state, exactly like the real staff read. */
   staff: {
     memberships: FixtureStaffMembership[];
     invitations: FixtureStaffInvitation[];
   };
+}
+
+/** Stable listing ids (exported for tests and deep-link fixtures). */
+export const fixtureListings = {
+  adultSwimming: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f01',
+  juniorSquad: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f02',
+  ladiesAqua: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f03',
+  privateCoaching: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f04',
+  holidayCamp: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f05',
+  schoolTerm: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f06',
+  strokeClinic: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f07',
+  aquaTherapy: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f08',
+  mastersTraining: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f09',
+  sunsetOpenWater: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f10',
+  synchroSquad: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f11',
+  aquaExpress: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f12',
+  noorAfterSchool: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f21',
+  noorExamPrep: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f22',
+  falconKickboxing: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f31',
+} as const;
+
+const priceOption = (
+  suffix: string,
+  kind: string,
+  amountFils: number | null,
+  options: Partial<
+    Pick<FixturePriceOption, 'sessionsCount' | 'labelEn' | 'sortHint' | 'state'>
+  > = {},
+): FixturePriceOption => ({
+  id: `0198a2f0-5b7a-7000-8000-8b2c9d4e0a${suffix}`,
+  kind,
+  amountFils,
+  sessionsCount: options.sessionsCount ?? null,
+  labelEn: options.labelEn ?? null,
+  labelAr: null,
+  sortHint: options.sortHint ?? 10,
+  state: options.state ?? 'active',
+  version: 1,
+});
+
+const mediaRow = (
+  suffix: string,
+  altTextEn: string | null,
+  options: Partial<Pick<FixtureProgramMedia, 'active' | 'sortHint'>> = {},
+): FixtureProgramMedia => ({
+  id: `0198a2f0-5b7a-7000-8000-9c3d0e5f1b${suffix}`,
+  mediaRef: `0198a2f0-5b7a-7000-8000-4b8c5d0e6f${suffix}`,
+  sortHint: options.sortHint ?? 10,
+  altTextEn,
+  altTextAr: null,
+  active: options.active ?? true,
+  version: 1,
+});
+
+const offerRow = (
+  suffix: string,
+  kind: string,
+  labelEn: string,
+  options: Partial<
+    Pick<FixtureOffer, 'trialAmountFils' | 'effectiveStart' | 'effectiveEnd' | 'state'>
+  > = {},
+): FixtureOffer => ({
+  id: `0198a2f0-5b7a-7000-8000-0d4e1f6a2c${suffix}`,
+  kind,
+  labelEn,
+  labelAr: null,
+  trialAmountFils: options.trialAmountFils ?? null,
+  effectiveStart: options.effectiveStart ?? null,
+  effectiveEnd: options.effectiveEnd ?? null,
+  state: options.state ?? 'active',
+  version: 1,
+});
+
+const programRow = (
+  id: string,
+  titleEn: string,
+  activityTypeId: string,
+  listingState: string,
+  createdAt: string,
+  options: Partial<Omit<FixtureProgramState, 'id' | 'titleEn' | 'activityTypeId' | 'listingState' | 'createdAt'>> = {},
+): FixtureProgramState => ({
+  id,
+  titleEn,
+  titleAr: options.titleAr ?? null,
+  descriptionEn: options.descriptionEn ?? null,
+  descriptionAr: options.descriptionAr ?? null,
+  activityTypeId,
+  setting: options.setting ?? 'indoor',
+  minAge: options.minAge ?? null,
+  maxAge: options.maxAge ?? null,
+  allAges: options.allAges ?? false,
+  genderEligibility: options.genderEligibility ?? 'mixed',
+  skillLevel: options.skillLevel ?? null,
+  eligibilityNotes: options.eligibilityNotes ?? null,
+  listingState,
+  publishedAt: options.publishedAt ?? null,
+  archivedAt: options.archivedAt ?? null,
+  sensitiveFieldsVersion: options.sensitiveFieldsVersion ?? 1,
+  version: options.version ?? 2,
+  createdAt,
+  updatedAt: options.updatedAt ?? createdAt,
+  priceOptions: options.priceOptions ?? [],
+  branchAssociations: options.branchAssociations ?? [],
+  media: options.media ?? [],
+  offers: options.offers ?? [],
+  openRevision: options.openRevision ?? null,
+});
+
+const association = (branchId: string, active = true): FixtureProgramBranch => ({
+  branchId,
+  active,
+  version: 1,
+});
+
+/**
+ * Blue Wave catalogue — every docs/24 §5.3 lifecycle state, a multi-option
+ * flagship listing (ONE listing, several ProgramPriceOptions — D-S4-1), an
+ * archived option, multi-branch and inactive-branch associations, offers
+ * (informational — never checkout math), a pending revision, and drafts
+ * with each real completeness gap. Amounts are integer fils (AED × 100).
+ */
+function blueWaveProgramRows(): FixtureProgramState[] {
+  return [
+    programRow(fixtureListings.adultSwimming, 'Adult Beginner Swimming', fixtureActivityTypes.swimming, 'published', '2026-04-02T08:00:00.000Z', {
+      descriptionEn:
+        'Small-group swimming classes for adults starting from zero — water confidence, breathing, and freestyle foundations with certified coaches.',
+      minAge: 16,
+      skillLevel: 'beginner',
+      publishedAt: '2026-05-10T08:00:00.000Z',
+      updatedAt: '2026-07-28T08:00:00.000Z',
+      priceOptions: [
+        priceOption('01', 'monthly', 45_000, { sortHint: 10 }),
+        priceOption('02', 'term', 120_000, { labelEn: '3 months', sortHint: 20 }),
+        priceOption('03', 'dropIn', 6_000, { sortHint: 30, state: 'archived' }),
+      ],
+      branchAssociations: [
+        association(fixtureBranches.blueWaveMarina),
+        association(fixtureBranches.blueWaveBay),
+        // Historical association, removed (active=false) — history is kept.
+        association(fixtureBranches.blueWaveSufouh, false),
+      ],
+      media: [
+        mediaRow('01', 'Coach guiding an adult swimmer in the training pool', { sortHint: 10 }),
+        mediaRow('02', null, { sortHint: 20, active: false }),
+      ],
+      offers: [offerRow('01', 'freeTrial', 'Free trial session')],
+    }),
+    programRow(fixtureListings.juniorSquad, 'Junior Swim Squad', fixtureActivityTypes.swimming, 'published', '2026-04-06T08:00:00.000Z', {
+      descriptionEn: 'Competitive squad training for confident young swimmers.',
+      minAge: 8,
+      maxAge: 14,
+      skillLevel: 'intermediate',
+      publishedAt: '2026-05-12T08:00:00.000Z',
+      updatedAt: '2026-08-01T08:00:00.000Z',
+      priceOptions: [priceOption('04', 'term', 90_000, { labelEn: 'School term' })],
+      branchAssociations: [association(fixtureBranches.blueWaveBay)],
+      openRevision: {
+        id: '0198a2f0-5b7a-7000-8000-1e5f2a7b3d01',
+        state: 'submitted',
+        createdAt: '2026-08-01T08:00:00.000Z',
+        version: 1,
+      },
+    }),
+    programRow(fixtureListings.ladiesAqua, 'Ladies Aqua Fitness', fixtureActivityTypes.aquaFitness, 'published', '2026-04-10T08:00:00.000Z', {
+      descriptionEn: 'Low-impact water workouts in a ladies-only environment.',
+      allAges: false,
+      minAge: 16,
+      genderEligibility: 'women',
+      skillLevel: 'all-levels',
+      publishedAt: '2026-05-15T08:00:00.000Z',
+      priceOptions: [priceOption('05', 'dropIn', 8_000)],
+      branchAssociations: [association(fixtureBranches.blueWaveMarina)],
+      offers: [
+        offerRow('02', 'paidTrial', 'Trial class', { trialAmountFils: 2_500 }),
+      ],
+    }),
+    programRow(fixtureListings.privateCoaching, 'Private Swim Coaching', fixtureActivityTypes.swimming, 'approved', '2026-04-20T08:00:00.000Z', {
+      descriptionEn: 'One-to-one stroke coaching tailored to your goals.',
+      allAges: true,
+      priceOptions: [
+        priceOption('06', 'package', 160_000, { sessionsCount: 8, labelEn: '8 sessions' }),
+      ],
+      branchAssociations: [association(fixtureBranches.blueWaveBay)],
+    }),
+    programRow(fixtureListings.holidayCamp, 'Holiday Swim Camp', fixtureActivityTypes.swimming, 'draft', '2026-05-04T08:00:00.000Z', {
+      descriptionEn: 'A week of water skills, games, and safety for children.',
+      minAge: 6,
+      maxAge: 12,
+      setting: 'outdoor',
+      priceOptions: [priceOption('07', 'camp', 120_000, { labelEn: 'Camp week' })],
+      // No branch association yet — a draft not placed anywhere (reachable
+      // by every branch scope, exactly like the real list filter).
+      branchAssociations: [],
+    }),
+    programRow(fixtureListings.schoolTerm, 'School Term Program', fixtureActivityTypes.swimming, 'submitted', '2026-05-20T08:00:00.000Z', {
+      minAge: 6,
+      maxAge: 16,
+      priceOptions: [priceOption('08', 'term', 75_000)],
+      branchAssociations: [association(fixtureBranches.blueWaveBay)],
+    }),
+    programRow(fixtureListings.strokeClinic, 'Stroke Development Clinic', fixtureActivityTypes.swimming, 'in_review', '2026-06-01T08:00:00.000Z', {
+      skillLevel: 'advanced',
+      minAge: 12,
+      priceOptions: [priceOption('09', 'dropIn', 9_000)],
+      branchAssociations: [association(fixtureBranches.blueWaveMarina)],
+    }),
+    programRow(fixtureListings.aquaTherapy, 'Aqua Therapy Sessions', fixtureActivityTypes.aquaFitness, 'changes_requested', '2026-06-10T08:00:00.000Z', {
+      descriptionEn: 'Gentle guided water therapy for recovery and mobility.',
+      allAges: true,
+      priceOptions: [priceOption('10', 'dropIn', 10_000)],
+      branchAssociations: [association(fixtureBranches.blueWaveMarina)],
+    }),
+    programRow(fixtureListings.mastersTraining, 'Masters Training', fixtureActivityTypes.swimming, 'paused', '2026-06-18T08:00:00.000Z', {
+      minAge: 18,
+      skillLevel: 'advanced',
+      publishedAt: '2026-07-01T08:00:00.000Z',
+      priceOptions: [priceOption('11', 'monthly', 52_000)],
+      branchAssociations: [
+        association(fixtureBranches.blueWaveMarina),
+        association(fixtureBranches.blueWaveBay),
+      ],
+      offers: [
+        offerRow('03', 'discount', 'Founding members offer', {
+          effectiveStart: '2026-06-20T00:00:00.000Z',
+          effectiveEnd: '2026-07-20T00:00:00.000Z',
+          state: 'ended',
+        }),
+      ],
+    }),
+    programRow(fixtureListings.sunsetOpenWater, 'Sunset Open Water Program', fixtureActivityTypes.swimming, 'archived', '2026-06-25T08:00:00.000Z', {
+      setting: 'outdoor',
+      minAge: 18,
+      publishedAt: '2026-07-02T08:00:00.000Z',
+      archivedAt: '2026-07-30T08:00:00.000Z',
+      priceOptions: [priceOption('12', 'monthly', 40_000)],
+      branchAssociations: [
+        association(fixtureBranches.blueWaveBay),
+        // Association still active while its BRANCH is deactivated — the
+        // branch row renders truthfully as a deactivated location.
+        association(fixtureBranches.blueWaveSufouh),
+      ],
+    }),
+    programRow(fixtureListings.synchroSquad, 'Synchro Performance Squad', fixtureActivityTypes.synchronizedSwimming, 'draft', '2026-07-08T08:00:00.000Z', {
+      minAge: 10,
+      maxAge: 17,
+      priceOptions: [priceOption('13', 'term', 110_000)],
+      branchAssociations: [association(fixtureBranches.blueWaveMarina)],
+    }),
+    programRow(fixtureListings.aquaExpress, 'Aqua Fitness Express', fixtureActivityTypes.aquaFitness, 'draft', '2026-07-15T08:00:00.000Z', {
+      allAges: false,
+      minAge: 16,
+      // No price option yet — the `activePriceOption` completeness gap.
+      priceOptions: [],
+      branchAssociations: [association(fixtureBranches.blueWaveMarina)],
+    }),
+  ];
+}
+
+function noorProgramRows(): FixtureProgramState[] {
+  return [
+    programRow(fixtureListings.noorAfterSchool, 'After-School Learning Support', fixtureActivityTypes.learningSupport, 'published', '2026-03-20T08:00:00.000Z', {
+      descriptionEn: 'Daily homework help and structured learning support.',
+      minAge: 6,
+      maxAge: 14,
+      publishedAt: '2026-04-15T08:00:00.000Z',
+      priceOptions: [priceOption('21', 'monthly', 65_000)],
+      branchAssociations: [association(fixtureBranches.noorBarsha)],
+    }),
+    programRow(fixtureListings.noorExamPrep, 'Exam Prep Intensive', fixtureActivityTypes.learningSupport, 'draft', '2026-07-01T08:00:00.000Z', {
+      minAge: 13,
+      maxAge: 18,
+      priceOptions: [
+        priceOption('22', 'package', 140_000, { sessionsCount: 10, labelEn: '10 sessions' }),
+      ],
+      branchAssociations: [association(fixtureBranches.noorBarsha)],
+    }),
+  ];
+}
+
+function falconProgramRows(): FixtureProgramState[] {
+  return [
+    programRow(fixtureListings.falconKickboxing, 'Teen Kickboxing Fundamentals', fixtureActivityTypes.kickboxing, 'published', '2026-02-10T08:00:00.000Z', {
+      minAge: 13,
+      maxAge: 17,
+      publishedAt: '2026-03-01T08:00:00.000Z',
+      priceOptions: [priceOption('31', 'monthly', 38_000)],
+      branchAssociations: [association(fixtureBranches.falconQuoz)],
+    }),
+  ];
 }
 
 function organizationDirectory(): Map<string, FixtureOrganizationState> {
@@ -391,7 +852,7 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
       legalName?: string;
       profile?: Partial<FixtureProfileState>;
       branches?: FixtureBranchState[];
-      listingCount?: number;
+      programs?: FixtureProgramState[];
       staff?: FixtureOrganizationState['staff'];
     } = {},
   ): FixtureOrganizationState => ({
@@ -419,13 +880,13 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
     branches:
       options.branches ??
       [branch(ref.organizationId, 'branch-1', 'Main branch', 'Downtown Dubai')],
-    listingCount: options.listingCount ?? 0,
+    programs: options.programs ?? [],
   });
 
   return new Map(
     [
       org(fixtureOrganizations.blueWave, 'live', {
-        listingCount: 3,
+        programs: blueWaveProgramRows(),
         staff: {
           memberships: [
             membershipRow('01', fixtureUsers.ranaOwner, 'owner', '2026-03-02T08:00:00.000Z'),
@@ -504,7 +965,7 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
         ],
       }),
       org(fixtureOrganizations.noor, 'live', {
-        listingCount: 2,
+        programs: noorProgramRows(),
         // Exactly ONE active owner: the last-active-owner invariant makes
         // this owner's own removal impossible until another owner exists.
         staff: {
@@ -527,7 +988,10 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
         ],
       }),
       org(fixtureOrganizations.falcon, 'suspended', {
-        listingCount: 1,
+        programs: falconProgramRows(),
+        branches: [
+          branch(fixtureOrganizations.falcon.organizationId, fixtureBranches.falconQuoz, 'Al Quoz dojo', 'Al Barsha'),
+        ],
         // Suspended: the staff READ still works; every staff mutation is
         // refused with the canonical organizationSuspended outcome.
         staff: {
@@ -733,7 +1197,10 @@ interface FixtureSessionStore {
   staffLoadFailures: Set<string>;
   staffMutationFailures: Set<string>;
   invitationMailFailures: Set<string>;
+  listingsLoadFailures: Set<string>;
+  listingDetailFailures: Set<string>;
   areaLoadFailurePending: boolean;
+  activityTypesLoadFailurePending: boolean;
   createdBranchCount: number;
   createdStaffRowCount: number;
   /**
@@ -798,6 +1265,12 @@ export interface FixtureAccessControls {
   /** Make the next issued invitation report `mailDelivery: 'failed'`
    *  (the invitation is still created — exactly the real semantics). */
   failNextInvitationMail(organizationId: string): void;
+  /** Make the next listings-index read fail transiently. */
+  failNextListingsLoad(organizationId: string): void;
+  /** Make the next listing-detail read fail transiently. */
+  failNextListingDetailLoad(organizationId: string): void;
+  /** Make the next activity-type taxonomy read fail transiently. */
+  failNextActivityTypesLoad(): void;
 }
 
 export interface FixtureAuthRuntime {
@@ -809,6 +1282,8 @@ export interface FixtureAuthRuntime {
   branchPort: BranchPort;
   areaPort: AreaReadPort;
   teamPort: TeamPort;
+  listingsPort: ListingsReadPort;
+  activityTypePort: ActivityTypeReadPort;
   controls: FixtureAccessControls;
   /**
    * Test-harness seeding: aligns the fixture store with a prepared session
@@ -843,7 +1318,10 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     staffLoadFailures: new Set(),
     staffMutationFailures: new Set(),
     invitationMailFailures: new Set(),
+    listingsLoadFailures: new Set(),
+    listingDetailFailures: new Set(),
     areaLoadFailurePending: false,
+    activityTypesLoadFailurePending: false,
     createdBranchCount: 0,
     createdStaffRowCount: 0,
     stepUpValidUntil: null,
@@ -1106,7 +1584,9 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         active: branch.active,
       })),
       membership: { role: seatEntry.role, capabilities },
-      listingCount: capabilities.includes('catalogue.read') ? organization.listingCount : null,
+      listingCount: capabilities.includes('catalogue.read')
+        ? organization.programs.length
+        : null,
     };
     return { kind: 'loaded', snapshot };
   };
@@ -1771,6 +2251,232 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
+  const activityTypes = activityTypeDirectory();
+
+  const activityTypePort: ActivityTypeReadPort = {
+    /** Mirrors GET /catalogue/activity-types — ACTIVE rows only, no
+     *  synonyms/admin metadata (deactivated types are simply absent). */
+    async listActivityTypes() {
+      if (store.activityTypesLoadFailurePending) {
+        store.activityTypesLoadFailurePending = false;
+        return { kind: 'unavailable' as const };
+      }
+      const records: ActivityTypeRecord[] = activityTypes
+        .filter((type) => type.active)
+        .map((type) => ({
+          id: type.id,
+          slug: type.slug,
+          labelEn: type.labelEn,
+          labelAr: type.labelAr,
+          categoryId: type.categoryId,
+        }));
+      return { kind: 'loaded' as const, activityTypes: records };
+    },
+  };
+
+  /** Exactly the real seven-field list row — nothing else is projected. */
+  const projectProgramSummary = (row: FixtureProgramState): ProgramSummaryRecord => ({
+    id: row.id,
+    titleEn: row.titleEn,
+    listingState: row.listingState,
+    activityTypeId: row.activityTypeId,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+
+  const projectProgramDetail = (
+    organization: FixtureOrganizationState,
+    row: FixtureProgramState,
+  ): ProgramDetailRecord => {
+    const activityType = activityTypes.find((type) => type.id === row.activityTypeId);
+    if (!activityType) {
+      throw new Error(`fixture program ${row.id} references an unknown activity type`);
+    }
+    const priceOptions: PriceOptionRecord[] = [...row.priceOptions]
+      .sort((a, b) => a.sortHint - b.sortHint || (a.id < b.id ? -1 : 1))
+      .map((option) => ({
+        id: option.id,
+        kind: option.kind,
+        amountFils: option.amountFils,
+        currency: 'AED',
+        sessionsCount: option.sessionsCount,
+        labelEn: option.labelEn,
+        labelAr: option.labelAr,
+        sortHint: option.sortHint,
+        state: option.state,
+        version: option.version,
+      }));
+    const media: ProgramMediaRecord[] = [...row.media]
+      .sort((a, b) => a.sortHint - b.sortHint || (a.id < b.id ? -1 : 1))
+      .map((entry) => ({ ...entry }));
+    const offers: OfferRecord[] = row.offers.map((offer) => ({ ...offer }));
+    const openRevision: OpenRevisionRecord | null =
+      row.openRevision === null ? null : { ...row.openRevision };
+    return {
+      id: row.id,
+      organizationId: organization.organizationId,
+      activityType: {
+        id: activityType.id,
+        slug: activityType.slug,
+        labelEn: activityType.labelEn,
+        active: activityType.active,
+        categoryId: activityType.categoryId,
+      },
+      titleEn: row.titleEn,
+      titleAr: row.titleAr,
+      descriptionEn: row.descriptionEn,
+      descriptionAr: row.descriptionAr,
+      setting: row.setting,
+      minAge: row.minAge,
+      maxAge: row.maxAge,
+      allAges: row.allAges,
+      genderEligibility: row.genderEligibility,
+      skillLevel: row.skillLevel,
+      eligibilityNotes: row.eligibilityNotes,
+      listingState: row.listingState,
+      publishedAt: row.publishedAt,
+      archivedAt: row.archivedAt,
+      sensitiveFieldsVersion: row.sensitiveFieldsVersion,
+      version: row.version,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      priceOptions,
+      branches: row.branchAssociations.map((entry) => {
+        const branchRow = organization.branches.find(
+          (candidate) => candidate.id === entry.branchId,
+        );
+        return {
+          branchId: entry.branchId,
+          // Same-organization by construction (composite-FK spine); the
+          // label is the same branch truth the W2-5 surfaces render.
+          label: branchRow?.label ?? 'Unavailable branch',
+          branchActive: branchRow?.active ?? false,
+          associationActive: entry.active,
+          version: entry.version,
+        };
+      }),
+      media,
+      offers,
+      openRevision,
+    };
+  };
+
+  const listingsPort: ListingsReadPort = {
+    /**
+     * Mirrors GET /provider/organizations/:orgId/listings exactly
+     * (program-management.ts listProviderPrograms): keyset pagination in
+     * `(createdAt, id)` order with an opaque id cursor (an unknown or
+     * foreign cursor is IGNORED — the list restarts from the beginning);
+     * `limit` clamped to 1–100 (default 50); the window of `limit + 1`
+     * rows is fetched FIRST and branch-scope filtering happens after —
+     * including the real consequence that a scoped caller's `nextCursor`
+     * derives from the filtered window (see the recorded W2-7 gap).
+     * Reachable for a scoped membership = no ACTIVE association at all
+     * (a draft not placed anywhere) OR at least one active association to
+     * an assigned ACTIVE branch.
+     */
+    async listListings(organizationId, params): Promise<ListListingsOutcome> {
+      const caller = store.current;
+      if (!caller) {
+        return { kind: 'unavailable' };
+      }
+      if (store.listingsLoadFailures.delete(organizationId)) {
+        return { kind: 'unavailable' };
+      }
+      const organization = organizations.get(organizationId);
+      const seatEntry = caller.memberships.find(
+        (candidate) => candidate.organizationId === organizationId,
+      );
+      if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+        return { kind: 'notFound' };
+      }
+      if (!ROLE_CAPABILITIES[seatEntry.role].includes('catalogue.read')) {
+        return { kind: 'forbidden' };
+      }
+      const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
+      const sorted = [...organization.programs].sort((a, b) =>
+        a.createdAt < b.createdAt
+          ? -1
+          : a.createdAt > b.createdAt
+            ? 1
+            : a.id < b.id
+              ? -1
+              : 1,
+      );
+      let afterAnchor = sorted;
+      const cursor = params?.cursor;
+      if (cursor !== undefined) {
+        const anchor = sorted.find((row) => row.id === cursor);
+        if (anchor !== undefined) {
+          afterAnchor = sorted.filter(
+            (row) =>
+              row.createdAt > anchor.createdAt ||
+              (row.createdAt === anchor.createdAt && row.id > anchor.id),
+          );
+        }
+      }
+      let rows = afterAnchor.slice(0, limit + 1);
+      if (seatEntry.branchScope !== 'all') {
+        // The resolved principal carries assigned ACTIVE branches only —
+        // a deactivated branch grants no reach.
+        const assignedActive = seatEntry.branchScope.filter((branchId) =>
+          organization.branches.some(
+            (candidate) => candidate.id === branchId && candidate.active,
+          ),
+        );
+        rows = rows.filter((row) => {
+          const activeAssociations = row.branchAssociations.filter(
+            (entry) => entry.active,
+          );
+          return (
+            activeAssociations.length === 0 ||
+            activeAssociations.some((entry) => assignedActive.includes(entry.branchId))
+          );
+        });
+      }
+      const page = rows.slice(0, limit);
+      return {
+        kind: 'loaded',
+        page: {
+          programs: page.map(projectProgramSummary),
+          nextCursor: rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
+        },
+      };
+    },
+
+    /**
+     * Mirrors GET .../listings/:programId exactly: organization-scoped only
+     * (unknown ids and other organizations' ids collapse into ONE
+     * not-found shape) and — like the shipped service — NO branch-scope
+     * filter on the detail read.
+     */
+    async loadListing(organizationId, programId): Promise<ListingDetailOutcome> {
+      const caller = store.current;
+      if (!caller) {
+        return { kind: 'unavailable' };
+      }
+      if (store.listingDetailFailures.delete(organizationId)) {
+        return { kind: 'unavailable' };
+      }
+      const organization = organizations.get(organizationId);
+      const seatEntry = caller.memberships.find(
+        (candidate) => candidate.organizationId === organizationId,
+      );
+      if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+        return { kind: 'notFound' };
+      }
+      if (!ROLE_CAPABILITIES[seatEntry.role].includes('catalogue.read')) {
+        return { kind: 'forbidden' };
+      }
+      const row = organization.programs.find((candidate) => candidate.id === programId);
+      if (row === undefined) {
+        return { kind: 'notFound' };
+      }
+      return { kind: 'loaded', program: projectProgramDetail(organization, row) };
+    },
+  };
+
   const controls: FixtureAccessControls = {
     expireSession() {
       store.current = null;
@@ -1844,6 +2550,15 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     failNextInvitationMail(organizationId) {
       store.invitationMailFailures.add(organizationId);
     },
+    failNextListingsLoad(organizationId) {
+      store.listingsLoadFailures.add(organizationId);
+    },
+    failNextListingDetailLoad(organizationId) {
+      store.listingDetailFailures.add(organizationId);
+    },
+    failNextActivityTypesLoad() {
+      store.activityTypesLoadFailurePending = true;
+    },
   };
 
   const seedSession = (email: string) => {
@@ -1875,6 +2590,8 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     branchPort,
     areaPort,
     teamPort,
+    listingsPort,
+    activityTypePort,
     controls,
     seedSession,
     sessionStateFor,

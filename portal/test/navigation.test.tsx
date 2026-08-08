@@ -32,7 +32,9 @@ describe('primary navigation', () => {
     renderPortal({ initialEntries: [`/o/${org1.id}/listings`] });
     const nav = await screen.findByRole('navigation', { name: 'Primary' });
 
-    expect(within(nav).getByRole('link', { name: 'Listings' })).toHaveAttribute(
+    // Listings is capability-gated (catalogue.read): it renders once the
+    // organization's membership capabilities resolve.
+    expect(await within(nav).findByRole('link', { name: 'Listings' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -83,12 +85,18 @@ describe('primary navigation', () => {
     }
   });
 
-  test('navigation metadata carries EXACTLY the known capability truth (W2-6)', () => {
-    // Only Team is capability-gated today: staff.read is owner-only in the
-    // shipped registry. No other item may encode a permission guess —
-    // future domain permissions stay unknown until their backends land.
+  test('navigation metadata carries EXACTLY the known capability truth (W2-6/W2-7)', () => {
+    // Exactly two items are capability-gated today: Team (staff.read,
+    // owner-only) and Listings (catalogue.read — owner, org_manager,
+    // branch_manager, listings_editor). No other item may encode a
+    // permission guess — future domain permissions stay unknown until
+    // their backends land.
+    const expected: Record<string, string | null> = {
+      team: 'staff.read',
+      listings: 'catalogue.read',
+    };
     for (const item of portalNavItems) {
-      expect(item.requiredCapability).toBe(item.id === 'team' ? 'staff.read' : null);
+      expect(item.requiredCapability).toBe(expected[item.id] ?? null);
     }
   });
 });

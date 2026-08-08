@@ -12,6 +12,32 @@
  * provider deliberately picks a new area (dirty-field PATCH semantics).
  */
 
+/**
+ * Activity-type taxonomy read — mirrors the REAL public taxonomy read
+ * `GET /catalogue/activity-types` field for field: ACTIVE admin-owned rows
+ * in deterministic order, no synonyms, no admin/version metadata. W2-7 uses
+ * it only to LABEL the `activityTypeId` carried by the provider listing
+ * summary rows (the listing detail projection embeds its own activity-type
+ * object and needs no lookup). An inactive activity type is simply absent
+ * from this read — a listing referencing one renders without a label here
+ * and carries the truthful `active: false` flag in its own detail.
+ */
+export interface ActivityTypeRecord {
+  readonly id: string;
+  readonly slug: string;
+  readonly labelEn: string;
+  readonly labelAr: string | null;
+  readonly categoryId: string;
+}
+
+export type ActivityTypeListOutcome =
+  | { readonly kind: 'loaded'; readonly activityTypes: readonly ActivityTypeRecord[] }
+  | { readonly kind: 'unavailable' };
+
+export interface ActivityTypeReadPort {
+  listActivityTypes(): Promise<ActivityTypeListOutcome>;
+}
+
 export interface AreaRecord {
   readonly id: string;
   readonly slug: string;

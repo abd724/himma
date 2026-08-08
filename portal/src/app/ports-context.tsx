@@ -1,9 +1,10 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { BranchPort } from '../branches/contract';
+import type { ListingsReadPort } from '../catalogue/contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
-import type { AreaReadPort } from '../taxonomy/contract';
+import type { ActivityTypeReadPort, AreaReadPort } from '../taxonomy/contract';
 import type { TeamPort } from '../team/contract';
 
 /** Domain-port access for pages — composed by AppProviders from the runtime. */
@@ -14,6 +15,8 @@ export interface PortalPorts {
   readonly branchPort: BranchPort;
   readonly areaPort: AreaReadPort;
   readonly teamPort: TeamPort;
+  readonly listingsPort: ListingsReadPort;
+  readonly activityTypePort: ActivityTypeReadPort;
 }
 
 const PortsContext = createContext<PortalPorts | null>(null);

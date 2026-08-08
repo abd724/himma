@@ -4,10 +4,12 @@ import { SessionProvider } from '../auth/session-context';
 import type { PortalSessionState } from '../auth/session-machine';
 import {
   createUnconfiguredAccessPort,
+  createUnconfiguredActivityTypePort,
   createUnconfiguredAreaPort,
   createUnconfiguredAuthAdapter,
   createUnconfiguredBranchPort,
   createUnconfiguredInvitationPort,
+  createUnconfiguredListingsPort,
   createUnconfiguredOnboardingPort,
   createUnconfiguredProfilePort,
   createUnconfiguredTeamPort,
@@ -48,6 +50,8 @@ export function AppProviders({
         branchPort: createUnconfiguredBranchPort(),
         areaPort: createUnconfiguredAreaPort(),
         teamPort: createUnconfiguredTeamPort(),
+        listingsPort: createUnconfiguredListingsPort(),
+        activityTypePort: createUnconfiguredActivityTypePort(),
       },
   );
 
@@ -67,6 +71,8 @@ export function AppProviders({
               branchPort: runtime.branchPort,
               areaPort: runtime.areaPort,
               teamPort: runtime.teamPort,
+              listingsPort: runtime.listingsPort,
+              activityTypePort: runtime.activityTypePort,
             }}
           >
             {children}
