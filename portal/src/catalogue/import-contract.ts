@@ -4,7 +4,11 @@
  * NO bulk-import backend/processing engine exists yet, and the PRODUCTION
  * import file contract is explicitly unresolved (docs/23 §18.17 blocks the
  * §8.5 template on the Arabic-content decision; no column specification
- * exists anywhere in the repository). This module therefore defines:
+ * exists anywhere in the repository). Owner ruling D-W2-3 (2026-08-14,
+ * binding for the FUTURE production template): required launch content may
+ * be English-required; Arabic fields remain optional; missing Arabic must
+ * never block a valid import — carried forward here, not redesigned around.
+ * This module therefore defines:
  *
  * - the clearly VERSIONED frontend fixture schema ("import preview format
  *   v1") the dry-run UX validates against — a pre-release working format,

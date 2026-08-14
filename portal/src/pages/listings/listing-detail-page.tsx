@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ImageOff, SearchX } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
-import { editorAuthority, listingMutableForScope } from './editor/editor-domain';
+import { EDITOR_SCOPE_COPY, editorAuthority, listingMutableForScope } from './editor/editor-domain';
 import { usePortalPorts } from '../../app/ports-context';
 import type {
   OfferRecord,
@@ -163,10 +163,13 @@ function ListingDetail({ view, program }: { view: OrganizationView; program: Pro
   // exists: `listings.manage` plus the STRICTER branch-scope mutation rule
   // (readable never implies editable) and no suspension. The editor route
   // itself renders read-only truth for locked lifecycle states.
-  const canOpenEditor =
-    editorAuthority(view).canManage &&
-    !authority.suspended &&
-    listingMutableForScope(program, authority.assignedActiveBranchIds);
+  const mutableForScope = listingMutableForScope(program, authority.assignedActiveBranchIds);
+  const canOpenEditor = editorAuthority(view).canManage && !authority.suspended && mutableForScope;
+  // W2-11 preflight fix: a branch-scoped manager READING a listing outside
+  // their mutation scope gets the truthful reason (the same W2-8 wording)
+  // instead of a silently missing Edit entry.
+  const showScopeLimit =
+    editorAuthority(view).canManage && !authority.suspended && !mutableForScope;
 
   return (
     <div className={styles.detailWrap}>
@@ -192,6 +195,8 @@ function ListingDetail({ view, program }: { view: OrganizationView; program: Pro
               Edit listing
             </Link>
           </p>
+        ) : showScopeLimit ? (
+          <p className={styles.detailSubline}>{EDITOR_SCOPE_COPY}</p>
         ) : null}
       </header>
 

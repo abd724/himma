@@ -258,6 +258,40 @@ describe('listing detail (W2-7, read-oriented)', () => {
     }
   });
 
+  // W2-11 preflight fix: a Branch Manager who can READ a listing but not
+  // edit it (every-rule scope) must see WHY there is no Edit entry — the
+  // absence alone reads as breakage in a walkthrough.
+  test('a readable-but-not-mutable listing explains the branch-scope limit to the Branch Manager instead of silently hiding Edit', async () => {
+    const scoped = renderPortal({
+      asIdentity: 'manager@bluewave.demo',
+      initialEntries: [detailPath(blueWave, fixtureListings.mastersTraining)],
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Masters Training' });
+    expect(screen.queryByRole('link', { name: 'Edit listing' })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/runs at branches outside your assigned branches, so it can’t be edited from your branch scope/),
+    ).toBeInTheDocument();
+    scoped.unmount();
+
+    // A listing fully inside the scope keeps the ordinary Edit entry and
+    // no limitation line; org-wide viewers never see the line.
+    const { unmount } = renderPortal({
+      asIdentity: 'manager@bluewave.demo',
+      initialEntries: [detailPath(blueWave, fixtureListings.ladiesAqua)],
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Ladies Aqua Fitness' });
+    expect(screen.getByRole('link', { name: 'Edit listing' })).toBeInTheDocument();
+    expect(screen.queryByText(/outside your assigned branches/)).not.toBeInTheDocument();
+    unmount();
+
+    renderPortal({
+      asIdentity: 'owner@bluewave.demo',
+      initialEntries: [detailPath(blueWave, fixtureListings.mastersTraining)],
+    });
+    await screen.findAllByRole('heading', { level: 1, name: 'Masters Training' });
+    expect(screen.queryByText(/outside your assigned branches/)).not.toBeInTheDocument();
+  });
+
   test('eligibility renders canonical presentation wording (gender codes never leak)', async () => {
     renderPortal({
       asIdentity: 'owner@bluewave.demo',
