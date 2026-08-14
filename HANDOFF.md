@@ -1,8 +1,22 @@
 # Himma — Session Handoff
 
-Read this after README.md, CLAUDE.md, and docs/01–23. It captures live project state as of 2026-08-05 so a fresh session can continue without re-deriving anything.
+Read this after README.md, CLAUDE.md, and docs/01–24 (plus docs/25–29 for backend/portal work). It captures live project state so a fresh session can continue without re-deriving anything. Sections below are grouped by workstream; within each group the NEWEST entry sits on top. **Start with "Where we are NOW" — everything after it is the detailed historical record.**
 
-## Where we are: the Checkout milestone (docs/22) is CLOSED
+## Where we are NOW (2026-08-14)
+
+| Workstream | Status | Latest commit / record |
+|---|---|---|
+| **Customer app (frontend-first, mock-driven)** | Milestones 1–5 ALL CLOSED (discovery · evaluation · booking · checkout; docs/17–22). Native-validated per the 2026-08-06 audit + A1–A3 corrections. No payment submission exists (docs/23 §19 prohibition stands). | checkout closed at `chore(checkout-review)`; audit approved `62a3f04` (sections below) |
+| **Backend (production, Slices 1–4)** | Slice 1 (DB foundation), Slice 2 (identity/MFA/admin), Slice 3 (provider orgs/branches/staff/storefront), Slice 4 (catalogue/search/moderation) — ALL code-complete and owner-approved. Real PostgreSQL + Fastify; 682/682 Jest. NOT serving any frontend yet (W2-12/W4 own integration). | Slice 4 closeout + the W2-7 read-scope correction `44ac54c` |
+| **Provider portal (W2, frontend-first over fixtures)** | W2-0…W2-7 FULLY APPROVED and CLOSED (plan · shell · access · onboarding · profile · branches · team · listings read incl. the `44ac54c` correction). **W2-8 Listing Editor implemented at `c65ca15` — AWAITING OWNER REVIEW (the current stop point).** | `c65ca15` (W2-8 section below) |
+| **Admin portal (W3)** | Not started (phase-gated). | — |
+| **Real API integration** | NOT started anywhere: portal + customer app run on semantic fixtures behind typed adapter seams; production builds are fail-closed. W2-12 owns portal integration. | — |
+
+**Current stop point:** W2-8 (provider listing editor) is complete and committed at `c65ca15`, awaiting owner review. **Next responsibility after approval: W2-9 — Lifecycle, Moderation & Revision UX + Dashboard (do NOT start without owner approval).** Standing prohibitions: no real payment submission (docs/23 §19), no schools/business product, no lifecycle actions in W2-8 surfaces, no live backend calls from any frontend.
+
+**Map of the history below (each group newest-first):** ① customer-app + native-validation records (directly below) → ② backend Slice 1 → Slice 2 (B2-1…B2-6C) → Slice 3 (S3-1…S3-4) → ③ **the provider-portal W2 block (W2-8 newest → W2-0)** → ④ backend Slice 4 records (S4-6 closeout → specification) and Slice 3 closeout/spec → ⑤ appendices (route inventory, verification totals, screenshot/state inventories, debt registers, architecture map, QA notes, owner workflow).
+
+## Customer-app record: the Checkout milestone (docs/22) is CLOSED
 
 Four customer milestones are complete and owner-approved:
 
