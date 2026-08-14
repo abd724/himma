@@ -21,6 +21,9 @@
 .createActionWrap {
   display: flex;
   justify-content: flex-start;
+  align-items: center;
+  gap: var(--hp-space-lg);
+  flex-wrap: wrap;
 }
 
 /* -- filters ------------------------------------------------------------- */

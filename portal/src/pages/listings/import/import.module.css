@@ -1,0 +1,231 @@
+.importWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xl);
+  max-width: 860px;
+}
+
+.dropZone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hp-space-md);
+  border: 1.5px dashed var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  padding: var(--hp-space-lg);
+  background: var(--hp-color-background-elevated);
+}
+
+.dropZoneActive {
+  border-color: var(--hp-color-brand-primary);
+}
+
+.fileInputLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+}
+
+.fileInput {
+  font: var(--hp-type-supporting);
+}
+
+.fileMeta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+.fileName {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.guidanceList {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.guidanceRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guidanceRow dt {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  display: flex;
+  gap: var(--hp-space-sm);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.guidanceRow dd {
+  margin: 0;
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.requiredChip {
+  font: var(--hp-type-micro-label);
+  color: var(--hp-color-brand-primary);
+}
+
+.mappingGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: var(--hp-space-md);
+}
+
+.mappingField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+  min-width: 0;
+}
+
+.mappingField label {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-primary);
+}
+
+.mappingField select {
+  font: var(--hp-type-supporting);
+  padding: 8px 10px;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-control);
+  background: var(--hp-color-background-elevated);
+  color: var(--hp-color-text-primary);
+  min-width: 0;
+}
+
+.summaryTiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: var(--hp-space-md);
+}
+
+.summaryTile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  padding: var(--hp-space-md);
+  background: var(--hp-color-background-elevated);
+}
+
+.summaryValue {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryLabel {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.rowList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.rowCard {
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-md) var(--hp-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+}
+
+.rowHeadline {
+  display: flex;
+  gap: var(--hp-space-md);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.rowNumber {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  white-space: nowrap;
+}
+
+.rowTitle {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.issueList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.issueRow {
+  display: flex;
+  gap: var(--hp-space-sm);
+  align-items: baseline;
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+  flex-wrap: wrap;
+}
+
+.issueField {
+  color: var(--hp-color-text-primary);
+  white-space: nowrap;
+}
+
+.listingList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.actionsRow {
+  display: flex;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.alertFocus {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  outline: none;
+}
+
+.alertFocus:empty {
+  display: none;
+}
+
+.srOnlyStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

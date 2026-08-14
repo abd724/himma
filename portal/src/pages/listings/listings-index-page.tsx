@@ -213,6 +213,12 @@ function ListingsContent({ view }: { view: OrganizationView }) {
           <ActionLink to={organizationPath(organizationId, 'listings/new')}>
             Create listing
           </ActionLink>
+          <Link
+            className={styles.inlineLink}
+            to={organizationPath(organizationId, 'listings/import')}
+          >
+            Import listings from a spreadsheet
+          </Link>
         </div>
       ) : null}
 

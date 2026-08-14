@@ -93,6 +93,8 @@ import type {
   PublishProgramOutcome,
   SubmitProgramOutcome,
 } from '../../catalogue/lifecycle-contract';
+import type { BulkImportPort, DryRunOutcome, ImportRowInput } from '../../catalogue/import-contract';
+import { validateImportRows, type ImportReferenceData } from '../../catalogue/import-validation';
 import type { InvitationAcceptOutcome, InvitationPort } from '../../invitations/contract';
 import type {
   OnboardingPort,
@@ -1357,6 +1359,7 @@ export interface FixtureAuthRuntime {
   listingsPort: ListingsReadPort;
   listingEditorPort: ListingEditorPort;
   listingLifecyclePort: ListingLifecyclePort;
+  bulkImportPort: BulkImportPort;
   activityTypePort: ActivityTypeReadPort;
   controls: FixtureAccessControls;
   /**
@@ -3609,6 +3612,49 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
+  // -- W2-10 bulk-import dry-run (preview ONLY — no engine exists) ----------
+
+  /**
+   * Mirrors what a future server-side dry-run would check, over the SAME
+   * shared truth the rest of the portal reads: ACTIVE taxonomy, the org's
+   * branches, the caller's branch scope, and the caller's REACHABLE listing
+   * titles (a branch-scoped seat never receives org-wide titles through
+   * duplicate warnings). The policy pipeline matches every other catalogue
+   * mutation workflow (`listings.manage`; suspended organizations refuse).
+   * READ-ONLY by construction: `validateImportRows` is a pure function and
+   * no program row is ever created, changed, submitted, or published here.
+   */
+  const bulkImportPort: BulkImportPort = {
+    async dryRun(organizationId, rows: readonly ImportRowInput[]): Promise<DryRunOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const { organization, seatEntry } = context;
+      const assignedActiveBranchIds =
+        seatEntry.branchScope === 'all'
+          ? null
+          : seatEntry.branchScope.filter((branchId) =>
+              organization.branches.some((candidate) => candidate.id === branchId && candidate.active),
+            );
+      const reference: ImportReferenceData = {
+        activityTypes: activityTypeDirectory()
+          .filter((type) => type.active)
+          .map((type) => ({ id: type.id, labelEn: type.labelEn })),
+        branches: organization.branches.map((branchRow) => ({
+          id: branchRow.id,
+          label: branchRow.label,
+          active: branchRow.active,
+        })),
+        assignedActiveBranchIds,
+        existingListingTitles: organization.programs
+          .filter((row) => programReachableForSeat(organization, seatEntry, row))
+          .map((row) => row.titleEn),
+      };
+      return { kind: 'dryRunComplete', report: validateImportRows(rows, reference) };
+    },
+  };
+
   const controls: FixtureAccessControls = {
     expireSession() {
       store.current = null;
@@ -3759,6 +3805,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     listingsPort,
     listingEditorPort,
     listingLifecyclePort,
+    bulkImportPort,
     activityTypePort,
     controls,
     seedSession,

@@ -22,6 +22,7 @@ import { FinancePage } from '../pages/finance-page';
 import { ListingCreatePage } from '../pages/listings/editor/listing-create-page';
 import { ListingEditorPage } from '../pages/listings/editor/listing-editor-page';
 import { ListingDetailPage } from '../pages/listings/listing-detail-page';
+import { ListingImportPage } from '../pages/listings/import/listing-import-page';
 import { ListingRevisionPage } from '../pages/listings/listing-revision-page';
 import { ListingsIndexPage } from '../pages/listings/listings-index-page';
 import { NotFoundPage, OrganizationSectionNotFoundPage } from '../pages/not-found-page';
@@ -84,6 +85,7 @@ export const portalRoutes: RouteObject[] = [
               // Creation + editing live on their own routes; the detail
               // stays read-oriented and hosts the W2-9 lifecycle actions.
               { path: 'listings/new', element: <ListingCreatePage /> },
+              { path: 'listings/import', element: <ListingImportPage /> },
               { path: 'listings/:programId', element: <ListingDetailPage /> },
               { path: 'listings/:programId/edit', element: <ListingEditorPage /> },
               { path: 'listings/:programId/revision', element: <ListingRevisionPage /> },

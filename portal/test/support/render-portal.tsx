@@ -108,6 +108,7 @@ export function renderPortal({
     listingsPort: fixture.listingsPort,
     listingEditorPort: fixture.listingEditorPort,
     listingLifecyclePort: fixture.listingLifecyclePort,
+    bulkImportPort: fixture.bulkImportPort,
     activityTypePort: fixture.activityTypePort,
   };
   const router = createMemoryRouter(portalRoutes, { initialEntries });
