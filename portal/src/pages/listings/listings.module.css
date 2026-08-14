@@ -502,3 +502,30 @@
 .gateBlocked {
   color: var(--hp-color-text-primary);
 }
+
+/* -- lifecycle action panel (W2-9) ---------------------------------------- */
+
+.lifecycleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  border-block-start: 1px solid var(--hp-color-border-default);
+  padding-block-start: var(--hp-space-md);
+}
+
+.lifecycleActions {
+  display: flex;
+  gap: var(--hp-space-md);
+  flex-wrap: wrap;
+}
+
+.alertFocus {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  outline: none;
+}
+
+.alertFocus:empty {
+  display: none;
+}

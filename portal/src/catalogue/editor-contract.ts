@@ -20,10 +20,12 @@
  * - `updateOffer`              ⇄ PATCH .../offers/:offerId                  (`listings.manage`)
  * - `endOffer`                 ⇄ POST  .../offers/:offerId/end              (`listings.manage`)
  *
- * Deliberately ABSENT because W2-9 owns the lifecycle surface: no submit, no
- * publish, no unpublish, no pause, no resume, no archive-listing, no
- * revision decision/withdrawal — the port type cannot express them, and a
- * structural test locks the operation set.
+ * Deliberately ABSENT here: lifecycle actions live on the dedicated
+ * `ListingLifecyclePort` (lifecycle-contract.ts) exactly as the real routes
+ * separate them — this EDITOR port cannot express submit/publish/pause/
+ * archive (a structural test locks the 13-operation set), and no port
+ * anywhere can express a revision decision/withdrawal (no such provider
+ * route exists).
  *
  * Semantics preserved from the shipped services:
  * - Edit-state matrix: `draft`/`changes_requested` edit DIRECTLY;

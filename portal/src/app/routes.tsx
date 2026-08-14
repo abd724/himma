@@ -17,11 +17,12 @@ import { BranchCreatePage } from '../pages/branches/branch-create-page';
 import { BranchDetailPage } from '../pages/branches/branch-detail-page';
 import { BranchesPage } from '../pages/branches/branch-list-page';
 import { BusinessProfilePage } from '../pages/profile/business-profile-page';
-import { DashboardPage } from '../pages/dashboard-page';
+import { DashboardPage } from '../pages/dashboard/dashboard-page';
 import { FinancePage } from '../pages/finance-page';
 import { ListingCreatePage } from '../pages/listings/editor/listing-create-page';
 import { ListingEditorPage } from '../pages/listings/editor/listing-editor-page';
 import { ListingDetailPage } from '../pages/listings/listing-detail-page';
+import { ListingRevisionPage } from '../pages/listings/listing-revision-page';
 import { ListingsIndexPage } from '../pages/listings/listings-index-page';
 import { NotFoundPage, OrganizationSectionNotFoundPage } from '../pages/not-found-page';
 import { OnboardingPage } from '../pages/onboarding/onboarding-page';
@@ -80,12 +81,12 @@ export const portalRoutes: RouteObject[] = [
               { index: true, element: <DashboardPage /> },
               { path: 'onboarding', element: <OnboardingPage /> },
               { path: 'listings', element: <ListingsIndexPage /> },
-              // W2-8: creation + editing live on their own routes; the
-              // W2-7 detail stays read-oriented. Lifecycle actions and the
-              // revision route stay with W2-9.
+              // Creation + editing live on their own routes; the detail
+              // stays read-oriented and hosts the W2-9 lifecycle actions.
               { path: 'listings/new', element: <ListingCreatePage /> },
               { path: 'listings/:programId', element: <ListingDetailPage /> },
               { path: 'listings/:programId/edit', element: <ListingEditorPage /> },
+              { path: 'listings/:programId/revision', element: <ListingRevisionPage /> },
               { path: 'schedule', element: <SchedulePage /> },
               { path: 'bookings', element: <BookingsPage /> },
               { path: 'branches', element: <BranchesPage /> },

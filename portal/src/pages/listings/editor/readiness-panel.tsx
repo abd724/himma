@@ -1,6 +1,9 @@
+import { Link } from 'react-router-dom';
 import type { ProgramDetailRecord } from '../../../catalogue/contract';
 import { VisuallyHidden } from '../../../components/ui/visually-hidden';
+import { organizationPath } from '../../../navigation/nav-items';
 import { completenessGaps, type CompletenessGap } from '../listing-domain';
+import listingStyles from '../listings.module.css';
 import styles from './editor.module.css';
 
 const ALL_REQUIREMENTS: readonly CompletenessGap[] = [
@@ -20,13 +23,19 @@ const REQUIREMENT_COPY: Record<CompletenessGap, string> = {
 };
 
 /**
- * READINESS indicator only (task §21): the exact structured S4 completeness
- * rules a listing must meet before the NEXT lifecycle step — rendered as
- * information, never as an action. Submitting for review is W2-9's; no
- * control here changes lifecycle state. Shown on draft and
- * changes-requested listings, where the provider can still act on it.
+ * READINESS indicator only: the exact structured S4 completeness rules a
+ * listing must meet before the NEXT lifecycle step — rendered as
+ * information. The lifecycle COMMANDS live in one deliberate home, the
+ * listing page's status area (task §16) — this panel links there when the
+ * listing is ready instead of duplicating the action.
  */
-export function ReadinessPanel({ program }: { program: ProgramDetailRecord }) {
+export function ReadinessPanel({
+  organizationId,
+  program,
+}: {
+  organizationId: string;
+  program: ProgramDetailRecord;
+}) {
   if (program.listingState !== 'draft' && program.listingState !== 'changes_requested') {
     return null;
   }
@@ -39,8 +48,14 @@ export function ReadinessPanel({ program }: { program: ProgramDetailRecord }) {
       <div className={styles.sectionCard}>
         {gaps.length === 0 ? (
           <p className={styles.sectionIntro}>
-            This listing meets the submission requirements. Submitting it for Himma review arrives
-            in an upcoming portal update.
+            This listing meets the submission requirements. Submit it for Himma review from{' '}
+            <Link
+              className={listingStyles.inlineLink}
+              to={`${organizationPath(organizationId, 'listings')}/${program.id}`}
+            >
+              the listing page
+            </Link>
+            .
           </p>
         ) : (
           <p className={styles.sectionIntro}>

@@ -107,4 +107,4 @@ export function commonMutationErrorCopy(kind: string): string {
 }
 
 export const CHANGES_REQUESTED_EDITOR_COPY =
-  'Himma asked for changes before this listing can be approved. Make your corrections here — sending it back for review arrives in an upcoming portal update.';
+  'Himma asked for changes before this listing can be approved. Make your corrections here, then resubmit it for review from the listing page.';

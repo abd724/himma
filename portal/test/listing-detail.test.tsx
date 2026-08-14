@@ -216,9 +216,15 @@ describe('listing detail (W2-7, read-oriented)', () => {
     expect(screen.getByText('No changes pending Himma review.')).toBeInTheDocument();
   });
 
-  test('W2-7 exposes ZERO mutation controls and no internal DTO fields anywhere on the detail', async () => {
+  // NARROWED at W2-9 (deliberately, not discarded): the detail's status area
+  // now legitimately hosts the named lifecycle commands for viewers who
+  // truly own them, so the zero-mutation sweep applies to (a) viewers
+  // WITHOUT the relevant authority and (b) states with no provider action —
+  // while content editing stays absent for everyone (no textbox/combobox)
+  // and DTO hygiene holds unconditionally.
+  test('a Listings Editor sees ZERO lifecycle/mutation buttons on a published listing (no disabled theater), and no internal DTO fields render', async () => {
     renderPortal({
-      asIdentity: 'owner@bluewave.demo',
+      asIdentity: 'flaky@bluewave.demo',
       initialEntries: [detailPath(blueWave, fixtureListings.adultSwimming)],
     });
     await screen.findByRole('heading', { level: 1, name: 'Adult Beginner Swimming' });
@@ -232,6 +238,24 @@ describe('listing detail (W2-7, read-oriented)', () => {
     // fixture uuid shares this prefix).
     expect(main.textContent).not.toMatch(/0198a2f0/);
     expect(main.textContent).not.toMatch(/sensitiveFieldsVersion|version/i);
+  });
+
+  test('states Himma owns (submitted/in_review) offer the Owner no action, and the detail never hosts content-editing controls', async () => {
+    for (const [programId, title] of [
+      [fixtureListings.schoolTerm, 'School Term Program'],
+      [fixtureListings.strokeClinic, 'Stroke Development Clinic'],
+    ] as const) {
+      const { unmount } = renderPortal({
+        asIdentity: 'owner@bluewave.demo',
+        initialEntries: [detailPath(blueWave, programId)],
+      });
+      await screen.findByRole('heading', { level: 1, name: title });
+      const main = screen.getByRole('main');
+      expect(within(main).queryAllByRole('button')).toHaveLength(0);
+      expect(within(main).queryAllByRole('textbox')).toHaveLength(0);
+      expect(within(main).queryAllByRole('combobox')).toHaveLength(0);
+      unmount();
+    }
   });
 
   test('eligibility renders canonical presentation wording (gender codes never leak)', async () => {

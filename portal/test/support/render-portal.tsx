@@ -107,6 +107,7 @@ export function renderPortal({
     teamPort: fixture.teamPort,
     listingsPort: fixture.listingsPort,
     listingEditorPort: fixture.listingEditorPort,
+    listingLifecyclePort: fixture.listingLifecyclePort,
     activityTypePort: fixture.activityTypePort,
   };
   const router = createMemoryRouter(portalRoutes, { initialEntries });

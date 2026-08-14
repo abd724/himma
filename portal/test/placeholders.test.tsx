@@ -23,8 +23,9 @@ describe('honest placeholder pages', () => {
     expect(main.textContent).not.toMatch(/AED/);
   });
 
+  // The Dashboard became the real W2-9 surface (dashboard.test.tsx owns its
+  // truthfulness now, incl. the no-fabricated-metrics sweep).
   test.each([
-    ['', 'Dashboard'],
     ['/settings', 'Settings & Support'],
     ['/support', 'Support'],
   ])('the %s placeholder names its later portal arrival without fake data', async (segment, heading) => {

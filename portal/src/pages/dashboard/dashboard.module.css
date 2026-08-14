@@ -1,0 +1,115 @@
+.dashboardWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xl);
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: var(--hp-space-lg);
+  align-items: start;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  min-width: 0;
+}
+
+.sectionTitle {
+  font: var(--hp-type-section-title);
+  color: var(--hp-color-text-primary);
+}
+
+.sectionCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  background: var(--hp-color-background-elevated);
+  padding: var(--hp-space-lg);
+  min-width: 0;
+}
+
+.headlineValue {
+  font: var(--hp-type-card-title);
+  color: var(--hp-color-text-primary);
+}
+
+.bodyText {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+}
+
+.supportingText {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.attentionList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.attentionRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.countList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.countRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--hp-space-md);
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.countValue {
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.inlineLink {
+  color: var(--hp-color-brand-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: 4px;
+  font: var(--hp-type-supporting);
+  width: fit-content;
+}
+
+.inlineLink:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: 2px;
+}
+
+.loading {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.cardFailure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+  align-items: flex-start;
+}

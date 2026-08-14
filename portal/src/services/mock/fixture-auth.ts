@@ -85,6 +85,14 @@ import type {
   UpdatePriceOptionOutcome,
   UpdateProgramOutcome,
 } from '../../catalogue/editor-contract';
+import type {
+  ArchiveProgramOutcome,
+  CompletenessGap,
+  ListingLifecyclePort,
+  PauseProgramOutcome,
+  PublishProgramOutcome,
+  SubmitProgramOutcome,
+} from '../../catalogue/lifecycle-contract';
 import type { InvitationAcceptOutcome, InvitationPort } from '../../invitations/contract';
 import type {
   OnboardingPort,
@@ -170,6 +178,7 @@ export const fixtureBranches = {
   blueWaveSufouh: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a03',
   noorBarsha: NOOR_BRANCH_ID,
   falconQuoz: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a21',
+  pearlLagoon: '0198a2f0-5b7a-7000-8000-2b6c3e8f7a31',
 } as const;
 
 /**
@@ -526,6 +535,7 @@ export const fixtureListings = {
   noorAfterSchool: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f21',
   noorExamPrep: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f22',
   falconKickboxing: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f31',
+  pearlFreediving: '0198a2f0-5b7a-7000-8000-7a1b8c3d9f41',
 } as const;
 
 const priceOption = (
@@ -782,6 +792,24 @@ function noorProgramRows(): FixtureProgramState[] {
         priceOption('22', 'package', 140_000, { sessionsCount: 10, labelEn: '10 sessions' }),
       ],
       branchAssociations: [association(fixtureBranches.noorBarsha)],
+    }),
+  ];
+}
+
+/**
+ * Pearl Freediving — verified but NOT yet live: its complete APPROVED
+ * listing exercises the real `organizationNotLive` publication gate (the
+ * listing itself meets every completeness requirement; the block is the
+ * ORGANIZATION's verification state, docs/28 §6).
+ */
+function pearlProgramRows(): FixtureProgramState[] {
+  return [
+    programRow(fixtureListings.pearlFreediving, 'Freediving Foundations', fixtureActivityTypes.swimming, 'approved', '2026-07-20T08:00:00.000Z', {
+      descriptionEn: 'Two-day freediving foundation course — breathwork, safety, and first depth sessions.',
+      minAge: 18,
+      skillLevel: 'beginner',
+      priceOptions: [priceOption('41', 'package', 95_000, { sessionsCount: 4, labelEn: '4 sessions' })],
+      branchAssociations: [association(fixtureBranches.pearlLagoon)],
     }),
   ];
 }
@@ -1069,6 +1097,10 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
           descriptionEn: 'Freediving courses and guided open-water sessions.',
           published: true,
         },
+        branches: [
+          branch(fixtureOrganizations.pearl.organizationId, fixtureBranches.pearlLagoon, 'Lagoon Training Center', 'Palm Jumeirah'),
+        ],
+        programs: pearlProgramRows(),
         staff: soleOwnerStaff('12', fixtureUsers.hudaStages),
       }),
     ].map((entry) => [entry.organizationId, entry]),
@@ -1324,6 +1356,7 @@ export interface FixtureAuthRuntime {
   teamPort: TeamPort;
   listingsPort: ListingsReadPort;
   listingEditorPort: ListingEditorPort;
+  listingLifecyclePort: ListingLifecyclePort;
   activityTypePort: ActivityTypeReadPort;
   controls: FixtureAccessControls;
   /**
@@ -2579,7 +2612,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
    *  mutation refusal → transient-failure control. */
   const resolveCatalogueMutation = (
     organizationId: string,
-    capability: 'listings.manage' | 'media.manage',
+    capability: 'listings.manage' | 'media.manage' | 'listings.publish',
   ):
     | { refusal: 'unavailable' | 'notFound' | 'forbidden' | 'organizationSuspended' }
     | {
@@ -2637,6 +2670,35 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     organization: FixtureOrganizationState,
     programId: string,
   ): number => organization.programs.findIndex((candidate) => candidate.id === programId);
+
+  /** Exact mirror of the backend completenessGaps (program-management.ts):
+   *  non-empty English title, ACTIVE taxonomy, ≥1 active association to an
+   *  ACTIVE branch, ≥1 active price option — in that push order.
+   *  Service-enforced at submit AND publish. Arabic is never required. */
+  const fixtureCompletenessGaps = (
+    organization: FixtureOrganizationState,
+    row: FixtureProgramState,
+  ): CompletenessGap[] => {
+    const missing: CompletenessGap[] = [];
+    if (row.titleEn.trim().length === 0) {
+      missing.push('title');
+    }
+    if (!activityTypeIsActive(row.activityTypeId)) {
+      missing.push('activeTaxonomy');
+    }
+    const hasActiveBranch = row.branchAssociations.some(
+      (entry) =>
+        entry.active &&
+        organization.branches.some((candidate) => candidate.id === entry.branchId && candidate.active),
+    );
+    if (!hasActiveBranch) {
+      missing.push('activeBranch');
+    }
+    if (!row.priceOptions.some((option) => option.state === 'active')) {
+      missing.push('activePriceOption');
+    }
+    return missing;
+  };
 
   const activityTypeIsActive = (activityTypeId: string): boolean =>
     activityTypeDirectory().some((row) => row.id === activityTypeId && row.active);
@@ -3392,6 +3454,161 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
+  // -- W2-9 listing lifecycle actions (mirrors the S4 named actions) --------
+
+  const listingLifecyclePort: ListingLifecyclePort = {
+    /**
+     * Mirrors POST .../listings/:programId/submit (`listings.manage`) with
+     * the exact service order: org-scoped lookup → branch-scope `every`-rule
+     * forbidden → state (draft | changes_requested only — resubmission IS
+     * this action) → CAS → completeness. A submitted listing moves to
+     * `submitted` and waits for Himma; nothing here ever publishes.
+     */
+    async submitProgram(organizationId, programId, expectedVersion): Promise<SubmitProgramOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (!programMutableForSeat(context.organization, context.seatEntry, row)) {
+        return { kind: 'forbidden' };
+      }
+      if (row.listingState !== 'draft' && row.listingState !== 'changes_requested') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (row.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      const missing = fixtureCompletenessGaps(context.organization, row);
+      if (missing.length > 0) {
+        return { kind: 'programIncomplete', missing };
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        listingState: 'submitted',
+        version: row.version + 1,
+        updatedAt: nextCatalogueTimestamp(),
+      });
+      return { kind: 'programSubmitted', version: row.version + 1 };
+    },
+
+    /**
+     * Mirrors POST .../listings/:programId/publish (`listings.publish`) with
+     * the exact service order: org-scoped lookup → state (approved for first
+     * publication | paused for resume) → organization verification state
+     * must be `live` (`organizationNotLive`) → CAS → completeness.
+     * `publishedAt` is stamped only on the first publication from
+     * `approved`. Branch scope is NOT consulted (mirrors the service — no
+     * branch-scoped role holds `listings.publish`).
+     */
+    async publishProgram(
+      organizationId,
+      programId,
+      expectedVersion,
+    ): Promise<PublishProgramOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.publish');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (row.listingState !== 'approved' && row.listingState !== 'paused') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (context.organization.verificationState !== 'live') {
+        return { kind: 'organizationNotLive' };
+      }
+      if (row.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      const missing = fixtureCompletenessGaps(context.organization, row);
+      if (missing.length > 0) {
+        return { kind: 'programIncomplete', missing };
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        listingState: 'published',
+        publishedAt: row.listingState === 'approved' ? nextCatalogueTimestamp() : row.publishedAt,
+        version: row.version + 1,
+        updatedAt: nextCatalogueTimestamp(),
+      });
+      return { kind: 'programPublished', version: row.version + 1 };
+    },
+
+    /**
+     * Mirrors POST .../listings/:programId/pause (`listings.publish`):
+     * legal from `published` only → CAS. Pause is the canonical unpublish —
+     * reversible through the publish action.
+     */
+    async pauseProgram(organizationId, programId, expectedVersion): Promise<PauseProgramOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.publish');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (row.listingState !== 'published') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (row.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        listingState: 'paused',
+        version: row.version + 1,
+        updatedAt: nextCatalogueTimestamp(),
+      });
+      return { kind: 'programPaused', version: row.version + 1 };
+    },
+
+    /**
+     * Mirrors POST .../listings/:programId/archive (`listings.publish`):
+     * legal from `published` | `paused` only → CAS. Terminal — the row
+     * freezes permanently and, exactly like the wire, the outcome carries
+     * no version.
+     */
+    async archiveProgram(
+      organizationId,
+      programId,
+      expectedVersion,
+    ): Promise<ArchiveProgramOutcome> {
+      const context = resolveCatalogueMutation(organizationId, 'listings.publish');
+      if (context.refusal !== null) {
+        return { kind: context.refusal };
+      }
+      const index = findProgramIndex(context.organization, programId);
+      if (index === -1) {
+        return { kind: 'notFound' };
+      }
+      const row = context.organization.programs[index]!;
+      if (row.listingState !== 'published' && row.listingState !== 'paused') {
+        return { kind: 'lifecycleConflict' };
+      }
+      if (row.version !== expectedVersion) {
+        return { kind: 'staleVersion' };
+      }
+      replaceProgram(context.organization, index, {
+        ...row,
+        listingState: 'archived',
+        archivedAt: nextCatalogueTimestamp(),
+        version: row.version + 1,
+        updatedAt: nextCatalogueTimestamp(),
+      });
+      return { kind: 'programArchived' };
+    },
+  };
+
   const controls: FixtureAccessControls = {
     expireSession() {
       store.current = null;
@@ -3541,6 +3758,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     teamPort,
     listingsPort,
     listingEditorPort,
+    listingLifecyclePort,
     activityTypePort,
     controls,
     seedSession,

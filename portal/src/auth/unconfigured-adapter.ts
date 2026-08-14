@@ -2,6 +2,7 @@ import type { PortalAuthAdapter } from './adapter';
 import type { BranchPort } from '../branches/contract';
 import type { ListingsReadPort } from '../catalogue/contract';
 import type { ListingEditorPort } from '../catalogue/editor-contract';
+import type { ListingLifecyclePort } from '../catalogue/lifecycle-contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
@@ -104,5 +105,14 @@ export function createUnconfiguredListingEditorPort(): ListingEditorPort {
     addOffer: async () => ({ kind: 'unavailable' }),
     updateOffer: async () => ({ kind: 'unavailable' }),
     endOffer: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredListingLifecyclePort(): ListingLifecyclePort {
+  return {
+    submitProgram: async () => ({ kind: 'unavailable' }),
+    publishProgram: async () => ({ kind: 'unavailable' }),
+    pauseProgram: async () => ({ kind: 'unavailable' }),
+    archiveProgram: async () => ({ kind: 'unavailable' }),
   };
 }

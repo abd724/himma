@@ -44,9 +44,10 @@ import styles from './editor.module.css';
  * changes-requested listings edit directly; approved/published/paused
  * listings edit non-protected fields directly while protected changes
  * route through Himma review (ProgramRevision); submitted/in-review/
- * archived listings are read-only here. Lifecycle actions (submit,
- * publish, pause, resume, archive, resubmit) belong to W2-9 and do not
- * exist on this surface.
+ * archived listings are read-only here. Lifecycle COMMANDS (submit,
+ * publish, pause, resume, archive, resubmit) live in their one deliberate
+ * home — the listing page's status area — and do not exist on this
+ * surface; the editor links there instead.
  */
 export function ListingEditorPage() {
   const organization = useActiveOrganization();
@@ -237,8 +238,18 @@ function EditorGate({
           {revisionPending ? ` ${REVISION_PENDING_COPY}` : ''}
         </InlineAlert>
       ) : null}
+      {!suspended && revisionPending ? (
+        <p className={styles.editorSubline}>
+          <Link
+            className={listingStyles.inlineLink}
+            to={`${organizationPath(view.organization.id, 'listings')}/${program.id}/revision`}
+          >
+            View the pending review
+          </Link>
+        </p>
+      ) : null}
 
-      <ReadinessPanel program={program} />
+      <ReadinessPanel organizationId={view.organization.id} program={program} />
 
       <ProgramDetailsSection
         view={view}

@@ -10,6 +10,7 @@ import {
   createUnconfiguredBranchPort,
   createUnconfiguredInvitationPort,
   createUnconfiguredListingEditorPort,
+  createUnconfiguredListingLifecyclePort,
   createUnconfiguredListingsPort,
   createUnconfiguredOnboardingPort,
   createUnconfiguredProfilePort,
@@ -53,6 +54,7 @@ export function AppProviders({
         teamPort: createUnconfiguredTeamPort(),
         listingsPort: createUnconfiguredListingsPort(),
         listingEditorPort: createUnconfiguredListingEditorPort(),
+        listingLifecyclePort: createUnconfiguredListingLifecyclePort(),
         activityTypePort: createUnconfiguredActivityTypePort(),
       },
   );
@@ -75,6 +77,7 @@ export function AppProviders({
               teamPort: runtime.teamPort,
               listingsPort: runtime.listingsPort,
               listingEditorPort: runtime.listingEditorPort,
+              listingLifecyclePort: runtime.listingLifecyclePort,
               activityTypePort: runtime.activityTypePort,
             }}
           >

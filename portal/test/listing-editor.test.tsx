@@ -15,7 +15,9 @@ const editPath = (ref: { organizationId: string }, programId: string) =>
 const detailPath = (ref: { organizationId: string }, programId: string) =>
   `/o/${ref.organizationId}/listings/${programId}`;
 
-/** W2-9 lifecycle vocabulary that must NOT exist anywhere on the editor. */
+/** Lifecycle COMMAND vocabulary that must not exist as a control on the
+ *  editor — the commands live in their one home, the listing page's status
+ *  area (W2-9); the editor may only LINK there in neutral words. */
 const LIFECYCLE_CONTROLS = /submit for review|publish|unpublish|pause|resume|archive listing|resubmit|send back for review|withdraw/i;
 
 describe('listing editor page (W2-8)', () => {
@@ -65,7 +67,7 @@ describe('listing editor page (W2-8)', () => {
     expect(within(panel).queryByRole('button')).not.toBeInTheDocument(); // information only
   });
 
-  test('NO lifecycle action exists anywhere on the editor (W2-9 boundary)', async () => {
+  test('NO lifecycle command exists anywhere on the editor (narrowed at W2-9: the listing page owns them)', async () => {
     renderPortal({
       asIdentity: 'owner@bluewave.demo',
       initialEntries: [editPath(blueWave, fixtureListings.holidayCamp)],
@@ -77,7 +79,7 @@ describe('listing editor page (W2-8)', () => {
     }
   });
 
-  test('a changes-requested listing is editable with the correction context; resubmission is truthfully a later milestone', async () => {
+  test('a changes-requested listing is editable with the correction context; resubmission lives on the listing page (linked, never a command here)', async () => {
     renderPortal({
       asIdentity: 'owner@bluewave.demo',
       initialEntries: [editPath(blueWave, fixtureListings.aquaTherapy)],
@@ -87,7 +89,9 @@ describe('listing editor page (W2-8)', () => {
       screen.getByText(/Himma asked for changes before this listing can be approved/),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
-    expect(screen.getByText(/sending it back for review arrives in an upcoming portal update/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/resubmit it for review from the listing page/),
+    ).toBeInTheDocument();
   });
 
   test.each([

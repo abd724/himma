@@ -16,6 +16,8 @@ import { usePageTitle } from '../../hooks/use-page-title';
 import { organizationPath } from '../../navigation/nav-items';
 import { useActiveOrganization } from '../../organization/organization-context';
 import type { OrganizationView } from '../../profile/contract';
+import { ListingLifecyclePanel } from './listing-lifecycle-panel';
+import { lifecyclePlan, SUBMIT_READY_COPY } from './lifecycle-domain';
 import {
   ageSummary,
   CATALOGUE_NO_ACCESS_COPY,
@@ -45,9 +47,11 @@ import styles from './listings.module.css';
 /**
  * Provider-private listing detail (docs/29 §6 route
  * `/o/:organizationId/listings/:programId`) — the READ view over the real
- * detail projection (`GET .../listings/:programId`). W2-7 renders truth
- * only: no editor, no lifecycle action, no option/branch/media/offer/
- * revision mutation exists on this surface (W2-8/W2-9 own those).
+ * detail projection (`GET .../listings/:programId`), plus the ONE lifecycle
+ * action home (W2-9): the status section hosts the named submit/publish/
+ * pause/archive commands for viewers who truly own them. Content editing
+ * stays on the `/edit` route; no option/branch/media/offer mutation exists
+ * here.
  *
  * The detail read shares the backend's ONE branch-scope reachability rule
  * with the index: a branch-scoped membership reads exactly the listings its
@@ -205,7 +209,7 @@ function ListingDetail({ view, program }: { view: OrganizationView; program: Pro
       />
       <MediaSection media={program.media} />
       <OffersSection offers={program.offers} />
-      <ReviewSection program={program} />
+      <ReviewSection organizationId={view.organization.id} program={program} />
     </div>
   );
 }
@@ -220,6 +224,11 @@ function StatusSection({ view, program }: { view: OrganizationView; program: Pro
   const gaps = completenessGaps(program);
   const showReadiness =
     program.listingState === 'draft' || program.listingState === 'changes_requested';
+  // Whether the lifecycle panel below already announces submission
+  // readiness together with the Submit action (avoids saying it twice).
+  const panelOwnsReadyCopy = lifecyclePlan(view, program).actions.some(
+    (action) => action === 'submit' || action === 'resubmit',
+  );
 
   return (
     <section aria-labelledby="listing-status-heading" className={styles.section}>
@@ -279,26 +288,27 @@ function StatusSection({ view, program }: { view: OrganizationView; program: Pro
         ) : null}
 
         {showReadiness ? (
-          <div className={styles.readinessBlock}>
-            {gaps.length === 0 ? (
+          gaps.length === 0 ? (
+            panelOwnsReadyCopy ? null : (
+              <div className={styles.readinessBlock}>
+                <p className={styles.supportingText}>{SUBMIT_READY_COPY}</p>
+              </div>
+            )
+          ) : (
+            <div className={styles.readinessBlock}>
               <p className={styles.supportingText}>
-                This listing meets the submission requirements. Submitting for review arrives in an
-                upcoming portal update.
+                Before it can be submitted for Himma review, this listing still needs:
               </p>
-            ) : (
-              <>
-                <p className={styles.supportingText}>
-                  Before it can be submitted for Himma review, this listing still needs:
-                </p>
-                <ul className={styles.readinessList}>
-                  {gaps.map((gap) => (
-                    <li key={gap}>{COMPLETENESS_GAP_COPY[gap]}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
+              <ul className={styles.readinessList}>
+                {gaps.map((gap) => (
+                  <li key={gap}>{COMPLETENESS_GAP_COPY[gap]}</li>
+                ))}
+              </ul>
+            </div>
+          )
         ) : null}
+
+        <ListingLifecyclePanel view={view} program={program} />
       </div>
     </section>
   );
@@ -603,7 +613,13 @@ function OffersSection({ offers }: { offers: readonly OfferRecord[] }) {
 
 // -- review / pending changes (read-only; decisions are Himma-side) ----------
 
-function ReviewSection({ program }: { program: ProgramDetailRecord }) {
+function ReviewSection({
+  organizationId,
+  program,
+}: {
+  organizationId: string;
+  program: ProgramDetailRecord;
+}) {
   const reviewGated =
     program.listingState === 'approved' ||
     program.listingState === 'published' ||
@@ -624,6 +640,14 @@ function ReviewSection({ program }: { program: ProgramDetailRecord }) {
               Submitted {formatListingDate(program.openRevision.createdAt)}. Sensitive details
               (like pricing and eligibility) keep their current values on the catalogue until
               Himma approves the change.
+            </p>
+            <p className={styles.supportingText}>
+              <Link
+                className={styles.inlineLink}
+                to={`${organizationPath(organizationId, 'listings')}/${program.id}/revision`}
+              >
+                View the pending review
+              </Link>
             </p>
           </>
         ) : (
