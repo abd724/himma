@@ -2,10 +2,22 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import styles from './action-link.module.css';
 
-/** Primary link styled as the portal's standard action button. */
-export function ActionLink({ to, children }: { to: string; children: ReactNode }) {
+/** Link styled as the portal's standard action button. `secondary` renders
+ *  the outlined companion treatment for supporting actions. */
+export function ActionLink({
+  to,
+  children,
+  variant = 'primary',
+}: {
+  to: string;
+  children: ReactNode;
+  variant?: 'primary' | 'secondary';
+}) {
   return (
-    <Link className={styles.actionLink} to={to}>
+    <Link
+      className={variant === 'secondary' ? `${styles.actionLink} ${styles.secondary}` : styles.actionLink}
+      to={to}
+    >
       {children}
     </Link>
   );

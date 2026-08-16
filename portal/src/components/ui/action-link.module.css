@@ -15,3 +15,13 @@
 .actionLink:hover {
   background: var(--hp-color-brand-primary-pressed);
 }
+
+.secondary {
+  background: var(--hp-color-background-elevated);
+  color: var(--hp-color-brand-primary);
+  border: 1px solid var(--hp-color-border-default);
+}
+
+.secondary:hover {
+  background: var(--hp-color-brand-primary-soft);
+}

@@ -7,6 +7,7 @@ import {
   createUnconfiguredAuthAdapter,
   createUnconfiguredBranchPort,
   createUnconfiguredBulkImportPort,
+  createUnconfiguredListingCardPort,
   createUnconfiguredInvitationPort,
   createUnconfiguredListingEditorPort,
   createUnconfiguredListingLifecyclePort,
@@ -20,6 +21,7 @@ import type { BranchPort } from '../branches/contract';
 import type { ListingsReadPort } from '../catalogue/contract';
 import type { ListingEditorPort } from '../catalogue/editor-contract';
 import type { BulkImportPort } from '../catalogue/import-contract';
+import type { ListingCardPort } from '../catalogue/card-contract';
 import type { ListingLifecyclePort } from '../catalogue/lifecycle-contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
@@ -43,6 +45,7 @@ export interface AuthRuntime {
   readonly listingEditorPort: ListingEditorPort;
   readonly listingLifecyclePort: ListingLifecyclePort;
   readonly bulkImportPort: BulkImportPort;
+  readonly listingCardPort: ListingCardPort;
   readonly activityTypePort: ActivityTypeReadPort;
 }
 
@@ -83,6 +86,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       listingEditorPort: fixture.listingEditorPort,
       listingLifecyclePort: fixture.listingLifecyclePort,
       bulkImportPort: fixture.bulkImportPort,
+      listingCardPort: fixture.listingCardPort,
       activityTypePort: fixture.activityTypePort,
     };
   }
@@ -101,6 +105,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     listingEditorPort: createUnconfiguredListingEditorPort(),
     listingLifecyclePort: createUnconfiguredListingLifecyclePort(),
     bulkImportPort: createUnconfiguredBulkImportPort(),
+    listingCardPort: createUnconfiguredListingCardPort(),
     activityTypePort: createUnconfiguredActivityTypePort(),
   };
 }

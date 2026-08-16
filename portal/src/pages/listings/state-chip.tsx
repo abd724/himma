@@ -6,6 +6,10 @@ const toneClass: Record<StateTone, string> = {
   pending: styles.chipPending ?? '',
   attention: styles.chipAttention ?? '',
   neutral: styles.chipNeutral ?? '',
+  info: styles.chipInfo ?? '',
+  infoOutline: styles.chipInfoOutline ?? '',
+  warning: styles.chipWarning ?? '',
+  muted: styles.chipMuted ?? '',
 };
 
 /** Lifecycle chip — the tone is decorative; the LABEL carries the meaning,

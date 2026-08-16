@@ -94,6 +94,12 @@ import type {
   SubmitProgramOutcome,
 } from '../../catalogue/lifecycle-contract';
 import type { BulkImportPort, DryRunOutcome, ImportRowInput } from '../../catalogue/import-contract';
+import type {
+  ListingCardExtras,
+  ListingCardExtrasOutcome,
+  ListingCardPort,
+  ListingPriceSummary,
+} from '../../catalogue/card-contract';
 import { validateImportRows, type ImportReferenceData } from '../../catalogue/import-validation';
 import type { InvitationAcceptOutcome, InvitationPort } from '../../invitations/contract';
 import type {
@@ -573,6 +579,24 @@ const mediaRow = (
   version: 1,
 });
 
+/**
+ * Fixture-only preview resolution: mediaRef → checked-in demo asset served
+ * from the portal's own public directory (Unsplash-licensed photos recorded
+ * in docs/ASSET_ATTRIBUTION.md; no network dependency). The real binary
+ * media/storage/CDN backend remains the carried Class-C gap — production
+ * resolution arrives with it, and an unmapped ref simply renders the
+ * intentional placeholder.
+ */
+const FIXTURE_MEDIA_PREVIEWS: Readonly<Record<string, string>> = {
+  '0198a2f0-5b7a-7000-8000-4b8c5d0e6f01': '/fixture-media/pool-lanes.jpg',
+  '0198a2f0-5b7a-7000-8000-4b8c5d0e6f03': '/fixture-media/swim-race.jpg',
+  '0198a2f0-5b7a-7000-8000-4b8c5d0e6f04': '/fixture-media/fitness-woman.jpg',
+  '0198a2f0-5b7a-7000-8000-4b8c5d0e6f05': '/fixture-media/swim-race.jpg',
+  '0198a2f0-5b7a-7000-8000-4b8c5d0e6f06': '/fixture-media/gym.jpg',
+  '0198a2f0-5b7a-7000-8000-4b8c5d0e6f07': '/fixture-media/wellness.jpg',
+  '0198a2f0-5b7a-7000-8000-4b8c5d0e6f08': '/fixture-media/books.jpg',
+};
+
 const offerRow = (
   suffix: string,
   kind: string,
@@ -673,7 +697,13 @@ function blueWaveProgramRows(): FixtureProgramState[] {
       skillLevel: 'intermediate',
       publishedAt: '2026-05-12T08:00:00.000Z',
       updatedAt: '2026-08-01T08:00:00.000Z',
-      priceOptions: [priceOption('04', 'term', 90_000, { labelEn: 'School term' })],
+      priceOptions: [
+        priceOption('04', 'term', 90_000, { labelEn: 'School term' }),
+        // Active FREE option: the derived row price becomes "Free" (an
+        // eligible free option outranks any paid amount — never a range).
+        priceOption('24', 'free', null, { labelEn: 'Community taster', sortHint: 5 }),
+      ],
+      media: [mediaRow('03', 'Young swimmers racing in lanes')],
       branchAssociations: [association(fixtureBranches.blueWaveBay)],
       openRevision: {
         id: '0198a2f0-5b7a-7000-8000-1e5f2a7b3d01',
@@ -690,6 +720,7 @@ function blueWaveProgramRows(): FixtureProgramState[] {
       skillLevel: 'all-levels',
       publishedAt: '2026-05-15T08:00:00.000Z',
       priceOptions: [priceOption('05', 'dropIn', 8_000)],
+      media: [mediaRow('04', 'Ladies aqua fitness class in the pool')],
       branchAssociations: [association(fixtureBranches.blueWaveMarina)],
       offers: [
         offerRow('02', 'paidTrial', 'Trial class', { trialAmountFils: 2_500 }),
@@ -701,6 +732,7 @@ function blueWaveProgramRows(): FixtureProgramState[] {
       priceOptions: [
         priceOption('06', 'package', 160_000, { sessionsCount: 8, labelEn: '8 sessions' }),
       ],
+      media: [mediaRow('05', 'Coach working one-to-one with a swimmer')],
       branchAssociations: [association(fixtureBranches.blueWaveBay)],
     }),
     programRow(fixtureListings.holidayCamp, 'Holiday Swim Camp', fixtureActivityTypes.swimming, 'draft', '2026-05-04T08:00:00.000Z', {
@@ -729,6 +761,7 @@ function blueWaveProgramRows(): FixtureProgramState[] {
       descriptionEn: 'Gentle guided water therapy for recovery and mobility.',
       allAges: true,
       priceOptions: [priceOption('10', 'dropIn', 10_000)],
+      media: [mediaRow('07', 'Gentle guided movement in warm water')],
       branchAssociations: [association(fixtureBranches.blueWaveMarina)],
     }),
     programRow(fixtureListings.mastersTraining, 'Masters Training', fixtureActivityTypes.swimming, 'paused', '2026-06-18T08:00:00.000Z', {
@@ -736,6 +769,7 @@ function blueWaveProgramRows(): FixtureProgramState[] {
       skillLevel: 'advanced',
       publishedAt: '2026-07-01T08:00:00.000Z',
       priceOptions: [priceOption('11', 'monthly', 52_000)],
+      media: [mediaRow('06', 'Adult training set in the competition pool')],
       branchAssociations: [
         association(fixtureBranches.blueWaveMarina),
         association(fixtureBranches.blueWaveBay),
@@ -785,6 +819,7 @@ function noorProgramRows(): FixtureProgramState[] {
       maxAge: 14,
       publishedAt: '2026-04-15T08:00:00.000Z',
       priceOptions: [priceOption('21', 'monthly', 65_000)],
+      media: [mediaRow('08', 'After-school study group with a tutor')],
       branchAssociations: [association(fixtureBranches.noorBarsha)],
     }),
     programRow(fixtureListings.noorExamPrep, 'Exam Prep Intensive', fixtureActivityTypes.learningSupport, 'draft', '2026-07-01T08:00:00.000Z', {
@@ -1360,6 +1395,7 @@ export interface FixtureAuthRuntime {
   listingEditorPort: ListingEditorPort;
   listingLifecyclePort: ListingLifecyclePort;
   bulkImportPort: BulkImportPort;
+  listingCardPort: ListingCardPort;
   activityTypePort: ActivityTypeReadPort;
   controls: FixtureAccessControls;
   /**
@@ -3655,6 +3691,79 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
+  // -- W2-11 listing-card presentation projection (READ-only) ---------------
+
+  /**
+   * Composes the owner-approved Listings-index row extras (thumbnail ·
+   * derived price summary · branch summary) from the SAME shared catalogue
+   * truth, under the caller's exact read authority: `catalogue.read`
+   * required, and only ids the caller's branch scope can READ resolve —
+   * everything else is silently absent (no enumeration, no scope leak).
+   * See card-contract.ts for the recorded W2-12 list-projection gap.
+   */
+  const listingCardPort: ListingCardPort = {
+    async loadCardExtras(organizationId, programIds): Promise<ListingCardExtrasOutcome> {
+      const caller = store.current;
+      if (!caller) {
+        return { kind: 'unavailable' };
+      }
+      const organization = organizations.get(organizationId);
+      const seatEntry = caller.memberships.find(
+        (candidate) => candidate.organizationId === organizationId,
+      );
+      if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
+        return { kind: 'notFound' };
+      }
+      if (!ROLE_CAPABILITIES[seatEntry.role].includes('catalogue.read')) {
+        return { kind: 'forbidden' };
+      }
+      const extras: Record<string, ListingCardExtras> = {};
+      for (const programId of programIds) {
+        const row = organization.programs.find((candidate) => candidate.id === programId);
+        if (row === undefined || !programReachableForSeat(organization, seatEntry, row)) {
+          continue;
+        }
+        const activeMedia = [...row.media]
+          .filter((entry) => entry.active)
+          .sort((a, b) => a.sortHint - b.sortHint || (a.id < b.id ? -1 : 1));
+        const firstRef = activeMedia[0]?.mediaRef;
+        const thumbnailUrl =
+          firstRef !== undefined ? (FIXTURE_MEDIA_PREVIEWS[firstRef] ?? null) : null;
+
+        const activeOptions = row.priceOptions.filter((option) => option.state === 'active');
+        let priceSummary: ListingPriceSummary;
+        if (activeOptions.some((option) => option.kind === 'free')) {
+          priceSummary = { kind: 'free' };
+        } else {
+          const amounts = activeOptions
+            .map((option) => option.amountFils)
+            .filter((amount): amount is number => amount !== null);
+          priceSummary =
+            amounts.length > 0
+              ? { kind: 'from', amountFils: Math.min(...amounts) }
+              : { kind: 'none' };
+        }
+
+        const activeAssociations = row.branchAssociations.filter((entry) => entry.active);
+        const firstBranch =
+          activeAssociations.length > 0
+            ? organization.branches.find(
+                (candidate) => candidate.id === activeAssociations[0]!.branchId,
+              )
+            : undefined;
+        extras[programId] = {
+          thumbnailUrl,
+          priceSummary,
+          branchSummary: {
+            firstLabel: firstBranch?.label ?? null,
+            activeCount: activeAssociations.length,
+          },
+        };
+      }
+      return { kind: 'loaded', extras };
+    },
+  };
+
   const controls: FixtureAccessControls = {
     expireSession() {
       store.current = null;
@@ -3806,6 +3915,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     listingEditorPort,
     listingLifecyclePort,
     bulkImportPort,
+    listingCardPort,
     activityTypePort,
     controls,
     seedSession,

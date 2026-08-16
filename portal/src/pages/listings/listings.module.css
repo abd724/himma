@@ -70,12 +70,12 @@
 }
 
 .listingLink {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--hp-space-md);
-  padding: var(--hp-space-md) var(--hp-space-lg);
-  min-height: 64px;
+  gap: var(--hp-space-md) var(--hp-space-lg);
+  padding: var(--hp-space-sm) var(--hp-space-lg);
+  min-height: 84px;
   text-decoration: none;
   color: inherit;
 }
@@ -87,6 +87,35 @@
 .listingLink:focus-visible {
   outline: 2px solid var(--hp-color-brand-primary);
   outline-offset: -2px;
+}
+
+/* Compact management thumbnail: recognizable, never dominant. */
+.listingThumb,
+.listingThumbFallback {
+  width: 88px;
+  height: 68px;
+  border-radius: var(--hp-radius-control);
+  flex-shrink: 0;
+}
+
+.listingThumb {
+  object-fit: cover;
+  display: block;
+}
+
+.listingThumbFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hp-color-brand-primary-soft);
+  border: 1px solid var(--hp-color-border-default);
+}
+
+.listingThumbIcon {
+  width: 24px;
+  height: 24px;
+  color: var(--hp-color-brand-primary);
+  opacity: 0.55;
 }
 
 .listingMain {
@@ -108,10 +137,24 @@
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 480px) {
   .listingLink {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    row-gap: var(--hp-space-xs);
+  }
+
+  .listingThumb,
+  .listingThumbFallback {
+    width: 64px;
+    height: 56px;
+  }
+
+  /* Priority order on narrow widths: thumbnail · title · status first —
+     the chip tucks under the text column, never overflowing. */
+  .listingLink > :last-child {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 
@@ -134,7 +177,7 @@
 
 .chipPositive {
   color: var(--hp-color-text-primary);
-  background: var(--hp-color-brand-primary-soft);
+  background: var(--hp-color-status-success-soft);
 }
 
 .chipPending {
@@ -144,11 +187,32 @@
 
 .chipAttention {
   color: var(--hp-color-text-primary);
-  border: 1px solid var(--hp-color-brand-accent-warm);
+  background: var(--hp-color-status-error-soft);
 }
 
 .chipNeutral {
   color: var(--hp-color-text-secondary);
+  border: 1px solid var(--hp-color-border-default);
+}
+
+.chipInfo {
+  color: var(--hp-color-brand-primary);
+  background: var(--hp-color-brand-primary-soft);
+}
+
+.chipInfoOutline {
+  color: var(--hp-color-brand-primary);
+  border: 1px solid var(--hp-color-brand-primary);
+}
+
+.chipWarning {
+  color: var(--hp-color-text-primary);
+  background: var(--hp-color-status-warning-soft);
+}
+
+.chipMuted {
+  color: var(--hp-color-text-secondary);
+  background: var(--hp-color-background-main);
   border: 1px solid var(--hp-color-border-default);
 }
 

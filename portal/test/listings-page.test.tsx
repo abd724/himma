@@ -17,8 +17,11 @@ const listingsPath = (ref: { organizationId: string }) => `/o/${ref.organization
 /** Marketplace truths the backend does not own yet — the index must never
  *  fabricate them (task §28). `sessions` appears only as package metadata
  *  on the DETAIL, never on the index. */
+// "customers" narrowed to the metric form at the W2-11 owner correction:
+// the header's honest description mentions customers; a fabricated COUNT
+// ("12 customers") stays prohibited.
 const PROHIBITED_INDEX_VOCABULARY =
-  /\b(booked|bookings|capacity|available spots|next session|attendance|customers|revenue|sales|conversion|rating|reviews|popular|payout|payment)\b/i;
+  /\b(booked|bookings|capacity|available spots|next session|attendance|\d+ customers|revenue|sales|conversion|rating|reviews|popular|payout|payment)\b/i;
 
 describe('listings index (W2-7)', () => {
   test('an Owner sees the operational index: exact lifecycle labels, activity labels, one row per Program, no fabricated metrics', async () => {
@@ -42,13 +45,23 @@ describe('listings index (W2-7)', () => {
     expect(within(list).getByText('Changes requested')).toBeInTheDocument();
     expect(within(list).getByText('Paused')).toBeInTheDocument();
 
-    // Activity labels come from the public taxonomy read.
-    expect(within(list).getAllByText(/Swimming ·/).length).toBeGreaterThan(0);
+    // Activity labels come from the public taxonomy read; the branch
+    // summary joins them once the card extras resolve.
+    expect((await within(list).findAllByText(/Swimming ·/)).length).toBeGreaterThan(0);
 
-    // Nothing the backend does not own is displayed.
+    // Nothing the backend does not own is displayed. (Narrowed at the
+    // W2-11 owner correction: rows now carry the DERIVED price summary
+    // under D-S4-1 — free wins, else the lowest ACTIVE option, never an
+    // authoritative Program.price — so a bare no-AED sweep no longer
+    // applies; the fabricated-vocabulary sweep stands.)
     const main = screen.getByRole('main');
     expect(main.textContent).not.toMatch(PROHIBITED_INDEX_VOCABULARY);
-    expect(main.textContent).not.toMatch(/AED/);
+    // Adult Beginner Swimming: active Monthly 450 + Term 1,200, archived
+    // Drop-in 60 → the lowest ACTIVE option prices the row.
+    expect(await within(list).findByText(/From AED 450 ·/)).toBeInTheDocument();
+    expect(within(list).queryByText(/AED 60/)).not.toBeInTheDocument();
+    // Junior Swim Squad carries an active FREE option → "Free", never a range.
+    expect(within(list).getByText(/^Free ·/)).toBeInTheDocument();
   });
 
   test('cursor pagination: Load more appends the rest and then disappears', async () => {

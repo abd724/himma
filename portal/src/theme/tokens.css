@@ -18,6 +18,10 @@
   --hp-color-border-default: #e8e7f0;
   --hp-color-status-success: #2dba7f;
   --hp-color-status-error: #dc4c5a;
+  --hp-color-status-warning: #b7791f;
+  --hp-color-status-success-soft: #e3f6ec;
+  --hp-color-status-error-soft: #fbe9eb;
+  --hp-color-status-warning-soft: #fcf1d8;
   --hp-color-overlay-backdrop: rgba(32, 34, 58, 0.45);
 
   /* typography */

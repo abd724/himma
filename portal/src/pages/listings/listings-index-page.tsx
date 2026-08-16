@@ -1,8 +1,9 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Image as ImageIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortalPorts } from '../../app/ports-context';
+import type { ListingCardExtras } from '../../catalogue/card-contract';
 import type { ProgramListPage, ProgramSummaryRecord } from '../../catalogue/contract';
 import { LISTING_STATES } from '../../catalogue/contract';
 import { ActionLink } from '../../components/ui/action-link';
@@ -19,6 +20,7 @@ import {
   CATALOGUE_NO_ACCESS_COPY,
   SUSPENDED_CATALOGUE_COPY,
   catalogueAuthority,
+  formatAedFromFils,
   formatListingDate,
   LISTING_STATE_LABELS,
   listingStateLabel,
@@ -57,7 +59,7 @@ export function ListingsIndexPage() {
     <>
       <PageHeader
         title="Listings"
-        description="The programs you offer on Himma — their details, pricing options, and where each one stands."
+        description="Create, review, and manage the activities customers see on Himma."
       />
       {viewQuery.isPending ? (
         <p className={styles.loading} role="status">
@@ -93,7 +95,7 @@ function CatalogueNoAccess() {
 }
 
 function ListingsContent({ view }: { view: OrganizationView }) {
-  const { listingsPort, activityTypePort } = usePortalPorts();
+  const { listingsPort, activityTypePort, listingCardPort } = usePortalPorts();
   const authority = catalogueAuthority(view);
   const organizationId = view.organization.id;
 
@@ -130,6 +132,22 @@ function ListingsContent({ view }: { view: OrganizationView }) {
     }
     return labels;
   }, [taxonomyQuery.data]);
+
+  // Row extras (thumbnail · price summary · branch summary) — the
+  // presentation projection composed from the shared catalogue truth. Rows
+  // are primary and render without it; extras fill in as they resolve. The
+  // real list wire cannot serve these fields yet (recorded W2-12
+  // list-projection requirement in card-contract.ts).
+  const loadedIds = (listQuery.data?.pages.flatMap((page) => page.programs) ?? []).map(
+    (row) => row.id,
+  );
+  const extrasQuery = useQuery({
+    queryKey: ['listingCardExtras', organizationId, loadedIds.join(',')],
+    queryFn: () => listingCardPort.loadCardExtras(organizationId, loadedIds),
+    enabled: loadedIds.length > 0,
+  });
+  const cardExtras: Readonly<Record<string, ListingCardExtras>> =
+    extrasQuery.data?.kind === 'loaded' ? extrasQuery.data.extras : {};
 
   const [stateFilter, setStateFilter] = useState('all');
   const [titleSearch, setTitleSearch] = useState('');
@@ -213,12 +231,12 @@ function ListingsContent({ view }: { view: OrganizationView }) {
           <ActionLink to={organizationPath(organizationId, 'listings/new')}>
             Create listing
           </ActionLink>
-          <Link
-            className={styles.inlineLink}
+          <ActionLink
+            variant="secondary"
             to={organizationPath(organizationId, 'listings/import')}
           >
             Import listings from a spreadsheet
-          </Link>
+          </ActionLink>
         </div>
       ) : null}
 
@@ -265,6 +283,7 @@ function ListingsContent({ view }: { view: OrganizationView }) {
               row={row}
               organizationId={organizationId}
               activityTypeLabel={activityTypeLabels.get(row.activityTypeId) ?? null}
+              extras={cardExtras[row.id] ?? null}
             />
           ))}
         </ul>
@@ -291,24 +310,70 @@ function ListingsContent({ view }: { view: OrganizationView }) {
   );
 }
 
+/** Compact price line under the binding D-S4-1 semantics: an active free
+ *  option shows "Free"; otherwise "From" the LOWEST active option; no
+ *  active option shows the honest readiness state. Never a Program.price,
+ *  never a range, never an average. */
+function priceSummaryLabel(extras: ListingCardExtras): string {
+  if (extras.priceSummary.kind === 'free') return 'Free';
+  if (extras.priceSummary.kind === 'from') {
+    return `From ${formatAedFromFils(extras.priceSummary.amountFils)}`;
+  }
+  return 'No pricing yet';
+}
+
+/** Concise branch summary ("Marina" / "Marina + 2 more" / not placed yet). */
+function branchSummaryLabel(extras: ListingCardExtras): string {
+  const { firstLabel, activeCount } = extras.branchSummary;
+  if (activeCount === 0 || firstLabel === null) return 'No branch yet';
+  return activeCount === 1 ? firstLabel : `${firstLabel} + ${activeCount - 1} more`;
+}
+
 function ListingRow({
   row,
   organizationId,
   activityTypeLabel,
+  extras,
 }: {
   row: ProgramSummaryRecord;
   organizationId: string;
   activityTypeLabel: string | null;
+  extras: ListingCardExtras | null;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const thumbnailUrl = extras?.thumbnailUrl ?? null;
+  const showImage = thumbnailUrl !== null && !imageFailed;
+  const contextLine = [
+    ...(activityTypeLabel !== null ? [activityTypeLabel] : []),
+    ...(extras !== null ? [branchSummaryLabel(extras)] : []),
+  ].join(' · ');
+  const commerceLine = [
+    ...(extras !== null ? [priceSummaryLabel(extras)] : []),
+    `Updated ${formatListingDate(row.updatedAt)}`,
+  ].join(' · ');
+
   return (
     <li className={styles.listingRow}>
       <Link className={styles.listingLink} to={organizationPath(organizationId, `listings/${row.id}`)}>
+        {/* The adjacent title names the listing — the image adds no new
+            information, so it stays decorative for assistive tech. */}
+        {showImage ? (
+          <img
+            className={styles.listingThumb}
+            src={thumbnailUrl}
+            alt=""
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <span className={styles.listingThumbFallback} aria-hidden="true">
+            <ImageIcon strokeWidth={1.5} className={styles.listingThumbIcon} />
+          </span>
+        )}
         <span className={styles.listingMain}>
           <span className={styles.listingTitle}>{row.titleEn}</span>
-          <span className={styles.listingMeta}>
-            {activityTypeLabel !== null ? `${activityTypeLabel} · ` : ''}
-            Updated {formatListingDate(row.updatedAt)}
-          </span>
+          {contextLine !== '' ? <span className={styles.listingMeta}>{contextLine}</span> : null}
+          <span className={styles.listingMeta}>{commerceLine}</span>
         </span>
         <StateChip label={listingStateLabel(row.listingState)} tone={listingStateTone(row.listingState)} />
       </Link>

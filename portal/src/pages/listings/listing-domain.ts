@@ -77,17 +77,29 @@ export const LISTING_STATE_DESCRIPTIONS: Record<ListingState, string> = {
     'Permanently retired. Archiving is final: an archived listing can’t be published again.',
 };
 
-export type StateTone = 'positive' | 'pending' | 'attention' | 'neutral';
+export type StateTone =
+  | 'positive'
+  | 'pending'
+  | 'attention'
+  | 'neutral'
+  | 'info'
+  | 'infoOutline'
+  | 'warning'
+  | 'muted';
 
+/** Restrained semantic tones (W2-11 owner correction): success for live,
+ *  indigo for with-Himma states, outlined indigo for approved-not-published,
+ *  coral for needs-provider-action, amber for paused, muted for archived.
+ *  Tone stays decorative — the label always carries the meaning. */
 export const LISTING_STATE_TONES: Record<ListingState, StateTone> = {
   draft: 'neutral',
-  submitted: 'pending',
-  in_review: 'pending',
-  approved: 'pending',
+  submitted: 'info',
+  in_review: 'info',
+  approved: 'infoOutline',
   changes_requested: 'attention',
   published: 'positive',
-  paused: 'neutral',
-  archived: 'neutral',
+  paused: 'warning',
+  archived: 'muted',
 };
 
 export function isListingState(value: string): value is ListingState {

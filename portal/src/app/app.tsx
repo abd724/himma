@@ -9,6 +9,7 @@ import {
   createUnconfiguredAuthAdapter,
   createUnconfiguredBranchPort,
   createUnconfiguredBulkImportPort,
+  createUnconfiguredListingCardPort,
   createUnconfiguredInvitationPort,
   createUnconfiguredListingEditorPort,
   createUnconfiguredListingLifecyclePort,
@@ -57,6 +58,7 @@ export function AppProviders({
         listingEditorPort: createUnconfiguredListingEditorPort(),
         listingLifecyclePort: createUnconfiguredListingLifecyclePort(),
         bulkImportPort: createUnconfiguredBulkImportPort(),
+        listingCardPort: createUnconfiguredListingCardPort(),
         activityTypePort: createUnconfiguredActivityTypePort(),
       },
   );
@@ -81,6 +83,7 @@ export function AppProviders({
               listingEditorPort: runtime.listingEditorPort,
               listingLifecyclePort: runtime.listingLifecyclePort,
               bulkImportPort: runtime.bulkImportPort,
+              listingCardPort: runtime.listingCardPort,
               activityTypePort: runtime.activityTypePort,
             }}
           >

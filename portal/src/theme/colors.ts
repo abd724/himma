@@ -27,6 +27,11 @@ export const colors = {
   status: {
     success: '#2DBA7F',
     error: '#DC4C5A',
+    warning: '#B7791F',
+    /** Restrained tinted backgrounds for status chips/badges. */
+    successSoft: '#E3F6EC',
+    errorSoft: '#FBE9EB',
+    warningSoft: '#FCF1D8',
   },
   overlay: {
     backdrop: 'rgba(32, 34, 58, 0.45)',

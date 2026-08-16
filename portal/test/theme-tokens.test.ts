@@ -29,6 +29,10 @@ describe('design-token parity (tokens.css ↔ src/theme)', () => {
     ['--hp-color-border-default', colors.border.default],
     ['--hp-color-status-success', colors.status.success],
     ['--hp-color-status-error', colors.status.error],
+    ['--hp-color-status-warning', colors.status.warning],
+    ['--hp-color-status-success-soft', colors.status.successSoft],
+    ['--hp-color-status-error-soft', colors.status.errorSoft],
+    ['--hp-color-status-warning-soft', colors.status.warningSoft],
     ['--hp-color-overlay-backdrop', colors.overlay.backdrop],
   ])('%s matches the TypeScript token', (variable, expected) => {
     expect(cssVar(variable)).toBe(expected.toLowerCase());
