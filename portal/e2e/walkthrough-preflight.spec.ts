@@ -70,7 +70,8 @@ test('Scenario A (Owner, tasks 1–11): dashboard → branch → scoped invite �
   await signInAs(page, 'owner@bluewave.demo');
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
   await expect(page.getByText('Live on Himma')).toBeVisible();
-  await expect(page.getByText(/approved and not yet published/)).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Key numbers' }).getByText('Needs attention')).toBeVisible();
+  await expect(page.getByText(/publish when you’re ready/)).toBeVisible();
   await page.screenshot({ path: join(evidence, `${testInfo.project.name}-a1-dashboard.png`), fullPage: true });
 
   // Task 2 — add the new Jumeirah branch.
@@ -214,7 +215,10 @@ test('Scenario B (Listings Editor, tasks 14–17): workspace retry → changes-r
 
   // Task 17 — dashboard says who publishes.
   await clientGoto(page, `/o/${BLUE_WAVE_ID}`);
-  await expect(page.getByText(/an Owner or Organization Manager publishes them/)).toBeVisible();
+  // A non-publisher's dashboard never frames the approved listing as
+  // THEIR action (publication is someone else's step).
+  await expect(page.getByRole('heading', { name: 'Needs your attention' })).toBeVisible();
+  await expect(page.getByRole('main').getByText(/publish when you’re ready/)).toHaveCount(0);
 });
 
 test('Scenario C (Branch Manager, tasks 18–21): scoped index → scope-limited detail → in-scope resubmit → scoped import validation', async ({

@@ -98,13 +98,15 @@ describe('lifecycle + dashboard accessibility (jest-axe, W2-9)', () => {
     expect(await axe(none.container)).toHaveNoViolations();
   });
 
-  test('dashboard — populated Owner view', async () => {
+  test('dashboard — populated Owner view (KPIs, attention/awaiting, overview, recent)', async () => {
     const page = renderPortal({
       asIdentity: 'owner@bluewave.demo',
       initialEntries: [`/o/${blueWave.organizationId}`],
     });
+    await screen.findByRole('list', { name: 'Key numbers' });
     await screen.findByRole('list', { name: 'Listings by status' });
-    await screen.findByRole('heading', { name: 'Team' });
+    await screen.findByRole('heading', { name: 'Awaiting Himma' });
+    await screen.findByRole('heading', { name: 'Recently updated' });
     expect(await axe(page.container)).toHaveNoViolations();
   });
 
@@ -124,10 +126,10 @@ describe('lifecycle + dashboard accessibility (jest-axe, W2-9)', () => {
       asIdentity: 'owner@bluewave.demo',
       initialEntries: [`/o/${blueWave.organizationId}`],
     });
-    const heading = await screen.findByRole('heading', { name: 'Listings' });
+    const heading = await screen.findByRole('heading', { name: 'Needs your attention' });
     const card = heading.closest('section')!;
     await waitFor(() =>
-      expect(within(card).getByText(/We couldn’t load your catalogue summary/)).toBeInTheDocument(),
+      expect(within(card).getByText(/We couldn’t check your catalogue/)).toBeInTheDocument(),
     );
     expect(await axe(failed.container)).toHaveNoViolations();
   });

@@ -1,3 +1,4 @@
+import type { ListingCardExtras } from '../../catalogue/card-contract';
 import type {
   ListingState,
   ListingsReadPort,
@@ -82,4 +83,117 @@ export const DASHBOARD_STATE_ORDER: readonly ListingState[] = [
 
 export function listingCountLabel(count: number): string {
   return `${count} listing${count === 1 ? '' : 's'}`;
+}
+
+// -- Needs your attention / Awaiting Himma (W2-11 owner correction) -----------
+
+/**
+ * The EXACT needs-attention rule (documented + test-locked; role-aware;
+ * derived only from the caller's reachable rows and the card projection):
+ *
+ * A listing needs the provider's attention when it is
+ * 1. `changes_requested` (Himma asked for corrections), or
+ * 2. `approved` AND the viewer holds `listings.publish` (ready for THEIR
+ *    publication act — for other roles it is someone else's step and is
+ *    deliberately not counted), or
+ * 3. a `draft` whose card projection PROVES incompleteness — no active
+ *    price option or no active branch. (The list surface cannot see the
+ *    title/taxonomy completeness dimensions; a draft failing only those is
+ *    not counted here — a recorded projection limitation, resolved by the
+ *    listing's own readiness panel.)
+ * Plus ONE organization item when its verification state is `draft` or
+ * `rejected` (the provider's setup/resubmission action).
+ *
+ * NOT counted: published, paused, archived, submitted/in_review (those are
+ * "Awaiting Himma"), approved for viewers without publication authority,
+ * and every future booking/payment concern (no backend exists).
+ */
+export type AttentionItem =
+  | { readonly kind: 'changesRequested'; readonly id: string; readonly titleEn: string }
+  | { readonly kind: 'approvedReadyToPublish'; readonly id: string; readonly titleEn: string }
+  | {
+      readonly kind: 'draftIncomplete';
+      readonly id: string;
+      readonly titleEn: string;
+      readonly reason: string;
+    }
+  | { readonly kind: 'organizationSetup'; readonly verificationState: string };
+
+export function attentionItems(input: {
+  readonly rows: readonly ProgramSummaryRecord[];
+  readonly extras: Readonly<Record<string, ListingCardExtras>>;
+  readonly canPublish: boolean;
+  readonly organizationVerificationState: string;
+}): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  if (input.organizationVerificationState === 'draft' || input.organizationVerificationState === 'rejected') {
+    items.push({ kind: 'organizationSetup', verificationState: input.organizationVerificationState });
+  }
+  for (const row of input.rows) {
+    if (row.listingState === 'changes_requested') {
+      items.push({ kind: 'changesRequested', id: row.id, titleEn: row.titleEn });
+      continue;
+    }
+    if (row.listingState === 'approved' && input.canPublish) {
+      items.push({ kind: 'approvedReadyToPublish', id: row.id, titleEn: row.titleEn });
+      continue;
+    }
+    if (row.listingState === 'draft') {
+      const extras = input.extras[row.id];
+      if (extras === undefined) continue;
+      const missingOption = extras.priceSummary.kind === 'none';
+      const missingBranch = extras.branchSummary.activeCount === 0;
+      if (missingOption || missingBranch) {
+        const reason =
+          missingOption && missingBranch
+            ? 'Needs a branch and a price option'
+            : missingOption
+              ? 'Needs a price option'
+              : 'Needs a branch';
+        items.push({ kind: 'draftIncomplete', id: row.id, titleEn: row.titleEn, reason });
+      }
+    }
+  }
+  return items;
+}
+
+/** Things currently WITH Himma (no provider action): submitted/in-review
+ *  listings from the caller's reachable set, plus the organization's own
+ *  verification while it sits with Himma. */
+export type AwaitingItem =
+  | { readonly kind: 'listing'; readonly id: string; readonly titleEn: string; readonly listingState: ListingState }
+  | { readonly kind: 'organizationVerification'; readonly verificationState: string };
+
+export function awaitingHimmaItems(input: {
+  readonly rows: readonly ProgramSummaryRecord[];
+  readonly organizationVerificationState: string;
+}): AwaitingItem[] {
+  const items: AwaitingItem[] = [];
+  if (['submitted', 'in_review', 'verified'].includes(input.organizationVerificationState)) {
+    items.push({
+      kind: 'organizationVerification',
+      verificationState: input.organizationVerificationState,
+    });
+  }
+  for (const row of input.rows) {
+    if (row.listingState === 'submitted' || row.listingState === 'in_review') {
+      items.push({
+        kind: 'listing',
+        id: row.id,
+        titleEn: row.titleEn,
+        listingState: row.listingState,
+      });
+    }
+  }
+  return items;
+}
+
+/** The most recently updated reachable listings (management recency). */
+export function recentListings(
+  rows: readonly ProgramSummaryRecord[],
+  limit = 4,
+): ProgramSummaryRecord[] {
+  return [...rows]
+    .sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : a.updatedAt < b.updatedAt ? 1 : a.id < b.id ? -1 : 1))
+    .slice(0, limit);
 }

@@ -3,16 +3,18 @@ import { join } from 'node:path';
 import { evidenceDir, noHorizontalOverflow, signInAs } from './support';
 
 /**
- * W2-9 provider Dashboard over the production build (fixture opt-in):
- * truthful status derived from the shared catalogue/org/team fixture truth
- * only — counts by real lifecycle state, role/scope-aware cards, no
- * fabricated business metrics — refreshed by lifecycle mutations.
+ * W2-11 owner Dashboard correction over the production build (fixture
+ * opt-in): the operational dashboard — truthful KPI row, the exact
+ * needs-attention rule, the Awaiting-Himma split, concise organization
+ * status, compact catalogue overview, recently-updated rows — all
+ * scope-aware, with NO fabricated business metrics (bookings, participants,
+ * revenue, growth, charts, goals stay absent until their backends exist).
  */
-const evidence = evidenceDir('portal-w2-9');
+const evidence = evidenceDir('portal-w2-11-dashboard-correction');
 
 const BLUE_WAVE_ID = '0198a2f0-5b7a-7000-8000-1f4a2d9c6e01';
+const DESERT_BLOOM_ID = '0198a2f0-5b7a-7000-8000-1f4a2d9c6e07';
 const SUNRISE_ID = '0198a2f0-5b7a-7000-8000-1f4a2d9c6e05';
-const PRIVATE_COACHING_ID = '0198a2f0-5b7a-7000-8000-7a1b8c3d9f04'; // approved
 
 const consoleErrors: string[] = [];
 
@@ -39,90 +41,90 @@ async function clientGoto(page: Page, path: string) {
   }, path);
 }
 
-test('Owner dashboard: truthful org/catalogue/team cards, refreshed by a lifecycle mutation (before/after)', async ({
+test('A — established provider: KPI row, needs-attention/awaiting split, compact overview, recent listings', async ({
   page,
 }, testInfo) => {
   await signInAs(page, 'owner@bluewave.demo');
   await clientGoto(page, `/o/${BLUE_WAVE_ID}`);
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
-  await expect(page.getByText('Live on Himma')).toBeVisible();
-  await expect(page.getByText('1 listing approved and not yet published')).toBeVisible();
+
+  // KPI truth (scope-aware): published 3 · attention 4 · branches 2 · team 8.
+  const kpis = page.getByRole('list', { name: 'Key numbers' });
+  await expect(kpis.getByText('Published listings')).toBeVisible();
+  await expect(kpis.getByText('Needs attention')).toBeVisible();
+  await expect(kpis.getByText('Active branches')).toBeVisible();
+  await expect(kpis.getByText('Team members')).toBeVisible();
+
+  // Needs attention: actionable rows linking into the portal.
+  await expect(page.getByRole('link', { name: /Aqua Therapy Sessions/ })).toBeVisible();
   await expect(page.getByText(/publish when you’re ready/)).toBeVisible();
-  await expect(page.getByText(/8 active members/)).toBeVisible();
-  // No fabricated business metrics anywhere on the page.
+  // Awaiting Himma stays separate, with no action framing.
+  await expect(page.getByRole('heading', { name: 'Awaiting Himma' })).toBeVisible();
+  await expect(page.getByText(/nothing you need to do/)).toBeVisible();
+
+  // Compact overview + recent activity.
+  await expect(page.getByRole('list', { name: 'Listings by status' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recently updated' })).toBeVisible();
+
+  // No fabricated business metrics of any kind.
   const mainText = (await page.getByRole('main').textContent()) ?? '';
-  expect(mainText).not.toMatch(/revenue|payout|booking|attendance|rating|occupancy|conversion/i);
+  expect(mainText).not.toMatch(/revenue|booking|participant|attendance|rating|goal|% up|% down|chart/i);
+
   await noHorizontalOverflow(page);
   await page.screenshot({
-    path: join(evidence, `${testInfo.project.name}-dashboard-owner-before.png`),
+    path: join(evidence, `${testInfo.project.name}-dashboard-owner.png`),
     fullPage: true,
   });
 
-  // Publish the approved listing, then return: the dashboard reflects the
-  // SAME shared truth (no second source).
-  await clientGoto(page, `/o/${BLUE_WAVE_ID}/listings/${PRIVATE_COACHING_ID}`);
-  await page.getByRole('button', { name: 'Publish listing' }).click();
-  await expect(page.getByText(/Published\. Customers can find it/)).toBeVisible();
-  await clientGoto(page, `/o/${BLUE_WAVE_ID}`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
-  await expect(page.getByText(/approved and not yet published/)).toHaveCount(0);
-  const publishedRow = page
-    .getByRole('list', { name: 'Listings by status' })
-    .getByRole('listitem')
-    .filter({ hasText: 'Published' });
-  await expect(publishedRow).toContainText('4');
+  // KPI navigation: published → Listings.
+  await kpis.getByRole('link', { name: /Published listings/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Listings' })).toBeVisible();
+});
+
+test('B — provider mid-verification: setup blocker prioritized truthfully', async ({
+  page,
+}, testInfo) => {
+  await signInAs(page, 'stages@himma.demo');
+  // Rejected verification → the provider's own action, top of attention.
+  await clientGoto(page, `/o/${DESERT_BLOOM_ID}`);
+  await expect(
+    page.getByRole('link', { name: /Finish setting up your organization/ }),
+  ).toBeVisible();
+  await expect(page.getByText(/review and resubmit/)).toBeVisible();
   await page.screenshot({
-    path: join(evidence, `${testInfo.project.name}-dashboard-owner-after.png`),
+    path: join(evidence, `${testInfo.project.name}-dashboard-setup-action.png`),
+    fullPage: true,
+  });
+
+  // Submitted verification → Awaiting Himma, calm up-to-date state.
+  await clientGoto(page, `/o/${SUNRISE_ID}`);
+  await expect(page.getByText(/You’re up to date/)).toBeVisible();
+  await expect(page.getByText('Organization verification')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Create your first listing' })).toBeVisible();
+  await noHorizontalOverflow(page);
+  await page.screenshot({
+    path: join(evidence, `${testInfo.project.name}-dashboard-awaiting-verification.png`),
     fullPage: true,
   });
 });
 
-test('Branch Manager dashboard: scoped counts only, no organization-wide leak, no team card', async ({
+test('C — Branch Manager: scoped KPI wording and no org-wide leakage', async ({
   page,
 }, testInfo) => {
   await signInAs(page, 'manager@bluewave.demo');
   await clientGoto(page, `/o/${BLUE_WAVE_ID}`);
   await expect(
-    page.getByText('These numbers cover the listings within your branch scope.'),
+    page.getByText(/Listing numbers cover the listings you can access/),
   ).toBeVisible();
-  // The out-of-scope approved listing must not surface an attention row.
-  await expect(page.getByText(/approved and not yet published/)).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Team' })).toHaveCount(0);
+  await expect(page.getByText('Published (your scope)')).toBeVisible();
+  // The Bay-only approved listing never surfaces for the Marina scope.
+  const mainText = (await page.getByRole('main').textContent()) ?? '';
+  expect(mainText).not.toMatch(/Private Swim Coaching/);
+  // No Team KPI without staff.read.
+  await expect(page.getByText('Team members')).toHaveCount(0);
   await noHorizontalOverflow(page);
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-dashboard-branch-manager.png`),
-    fullPage: true,
-  });
-});
-
-test('scope-limited role: organization status only, no catalogue or team data', async ({
-  page,
-}, testInfo) => {
-  await signInAs(page, 'finance@bluewave.demo');
-  await clientGoto(page, `/o/${BLUE_WAVE_ID}`);
-  await expect(page.getByRole('heading', { name: 'Organization' })).toBeVisible();
-  await expect(
-    page.getByText(/Your role’s dashboard covers organization status/),
-  ).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Listings' })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Team' })).toHaveCount(0);
-  await page.screenshot({
-    path: join(evidence, `${testInfo.project.name}-dashboard-scope-limited.png`),
-    fullPage: true,
-  });
-});
-
-test('empty catalogue: truthful first-use state with the creation entry and the onboarding home', async ({
-  page,
-}, testInfo) => {
-  await signInAs(page, 'stages@himma.demo');
-  await clientGoto(page, `/o/${SUNRISE_ID}`);
-  await expect(page.getByText('No listings yet.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Create your first listing' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Continue your onboarding' })).toBeVisible();
-  await noHorizontalOverflow(page);
-  await page.screenshot({
-    path: join(evidence, `${testInfo.project.name}-dashboard-empty.png`),
     fullPage: true,
   });
 });

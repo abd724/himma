@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
+import { Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePortalPorts } from '../../app/ports-context';
+import type { ListingCardExtras } from '../../catalogue/card-contract';
 import type { ProgramSummaryRecord } from '../../catalogue/contract';
 import type { StaffInvitationRecord, StaffLoadOutcome } from '../../team/contract';
 import { Button } from '../../components/ui/button';
@@ -11,38 +13,47 @@ import { organizationPath } from '../../navigation/nav-items';
 import { useActiveOrganization } from '../../organization/organization-context';
 import type { OrganizationView } from '../../profile/contract';
 import {
+  attentionItems,
+  awaitingHimmaItems,
   catalogueCounts,
   DASHBOARD_STATE_ORDER,
-  listingCountLabel,
   loadCatalogueSummary,
+  recentListings,
+  type AttentionItem,
+  type AwaitingItem,
 } from './dashboard-domain';
-import { catalogueAuthority, listingStateLabel } from '../listings/listing-domain';
+import { catalogueAuthority, formatListingDate, listingStateLabel, listingStateTone } from '../listings/listing-domain';
+import { StateChip } from '../listings/state-chip';
 import { isStillOnboarding, ORGANIZATION_STATE_LABEL } from '../profile/organization-state';
 import { invitationIsOverdue } from '../team/team-authority';
 import styles from './dashboard.module.css';
 
 /**
- * The provider Dashboard (docs/29 §10) — a truthful status home built ONLY
- * from backend-ready truth the portal already reads:
- * - organization verification + storefront publication state (org view);
- * - the catalogue summarized by REAL lifecycle states, composed from the
- *   provider listings read (scoped memberships see exactly their reachable
- *   set — never organization-wide counts);
- * - pending team invitations (Owner only — `staff.read` is Owner-only).
+ * The provider Dashboard (docs/29 §10; W2-11 owner correction) — the
+ * operational home, built ONLY from truth the current contracts own:
  *
- * Deliberately absent: every metric whose backend does not exist (bookings,
- * revenue, attendance, ratings, capacity, occupancy, conversion) and
- * revision-pending counts (the list contract carries no revision field).
- * A smaller truthful dashboard over a fabricated one, by design.
+ * - a KPI row (published listings · needs-attention count under the EXACT
+ *   dashboard-domain rule · active branches · active team members for
+ *   `staff.read` holders) — every number scope-aware;
+ * - "Needs your attention" (provider-actionable now) split from "Awaiting
+ *   Himma" (submitted/in-review listings, organization verification);
+ * - a concise organization/storefront status;
+ * - a compact catalogue overview by REAL lifecycle state;
+ * - recently updated listings (thumbnails via the ListingCardPort
+ *   projection — no contract widened for this).
  *
- * Content is capability-shaped for usability only — roles without
- * `catalogue.read`/`staff.read` get no catalogue/team card and NO fetch of
- * that data; the backend stays the boundary.
+ * DELIBERATELY ABSENT (no authoritative backend exists — recorded future
+ * dashboard requirements, never faked): bookings, participants (bookings ≠
+ * attending people — an adult account books for children), revenue, average
+ * booking value, cancellations/refunds, attendance/utilization, growth
+ * percentages, performance charts, and provider-configurable goals. The KPI
+ * row and section grid are structured so those cards/sections slot in when
+ * their backends arrive, without redesigning this page.
  */
 export function DashboardPage() {
   usePageTitle('Dashboard');
   const organization = useActiveOrganization();
-  const { profilePort, listingsPort, teamPort } = usePortalPorts();
+  const { profilePort, listingsPort, listingCardPort, teamPort } = usePortalPorts();
 
   const viewQuery = useQuery({
     queryKey: ['organizationView', organization.id],
@@ -58,6 +69,21 @@ export function DashboardPage() {
     queryFn: () => loadCatalogueSummary(listingsPort, organization.id),
     enabled: canReadCatalogue,
   });
+  const rows: readonly ProgramSummaryRecord[] =
+    catalogueQuery.data?.kind === 'loaded' ? catalogueQuery.data.programs : [];
+
+  const extrasQuery = useQuery({
+    queryKey: ['listingCardExtras', organization.id, 'dashboard', rows.map((row) => row.id).join(',')],
+    queryFn: () =>
+      listingCardPort.loadCardExtras(
+        organization.id,
+        rows.map((row) => row.id),
+      ),
+    enabled: rows.length > 0,
+  });
+  const extras: Readonly<Record<string, ListingCardExtras>> =
+    extrasQuery.data?.kind === 'loaded' ? extrasQuery.data.extras : {};
+
   const staffQuery = useQuery({
     queryKey: ['staff', organization.id],
     queryFn: () => teamPort.loadStaff(organization.id),
@@ -68,7 +94,7 @@ export function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        description={`A clear view of ${organization.displayName} on Himma — status, required actions, and what to do next.`}
+        description="Here’s what needs your attention and how your Himma presence is doing."
       />
       {viewQuery.isPending ? (
         <p className={styles.loading} role="status">
@@ -84,33 +110,328 @@ export function DashboardPage() {
           </Button>
         </div>
       ) : (
-        <div className={styles.dashboardWrap}>
-          <div className={styles.cardGrid}>
-            <OrganizationCard view={view} />
-            {canReadCatalogue ? (
-              <CatalogueCard
-                view={view}
-                scoped={authority?.assignedActiveBranchIds !== null}
-                query={catalogueQuery}
-              />
-            ) : null}
-            {canReadStaff ? <TeamCard organizationId={organization.id} query={staffQuery} /> : null}
-          </div>
-          {!canReadCatalogue ? (
-            <p className={styles.supportingText}>
-              Your role&rsquo;s dashboard covers organization status. The catalogue is managed by
-              your organization&rsquo;s catalogue roles.
-            </p>
-          ) : null}
-        </div>
+        <DashboardBody
+          view={view}
+          scoped={authority?.assignedActiveBranchIds !== null}
+          canReadCatalogue={canReadCatalogue}
+          canReadStaff={canReadStaff}
+          rows={rows}
+          extras={extras}
+          catalogueState={
+            !canReadCatalogue
+              ? 'hidden'
+              : catalogueQuery.isPending
+                ? 'loading'
+                : catalogueQuery.data?.kind === 'loaded'
+                  ? 'loaded'
+                  : 'failed'
+          }
+          onRetryCatalogue={() => void catalogueQuery.refetch()}
+          staffQuery={staffQuery}
+        />
       )}
     </>
   );
 }
 
-// -- organization status ------------------------------------------------------
+function DashboardBody({
+  view,
+  scoped,
+  canReadCatalogue,
+  canReadStaff,
+  rows,
+  extras,
+  catalogueState,
+  onRetryCatalogue,
+  staffQuery,
+}: {
+  view: OrganizationView;
+  scoped: boolean;
+  canReadCatalogue: boolean;
+  canReadStaff: boolean;
+  rows: readonly ProgramSummaryRecord[];
+  extras: Readonly<Record<string, ListingCardExtras>>;
+  catalogueState: 'hidden' | 'loading' | 'loaded' | 'failed';
+  onRetryCatalogue: () => void;
+  staffQuery: { isPending: boolean; data?: StaffLoadOutcome | undefined; refetch: () => Promise<unknown> };
+}) {
+  const organizationId = view.organization.id;
+  const canPublish = view.membership.capabilities.includes('listings.publish');
+  const counts = catalogueCounts(rows);
+  const attention = attentionItems({
+    rows,
+    extras,
+    canPublish,
+    organizationVerificationState: view.organization.verificationState,
+  });
+  const awaiting = awaitingHimmaItems({
+    rows,
+    organizationVerificationState: view.organization.verificationState,
+  });
+  const activeBranches = view.branches.filter((branch) => branch.active).length;
+  const staff = staffQuery.data?.kind === 'loaded' ? staffQuery.data.staff : null;
+  const activeMembers = staff?.memberships.filter((row) => row.state === 'active').length ?? null;
+  const pendingInvitations =
+    staff?.invitations.filter(
+      (row: StaffInvitationRecord) => row.state === 'sent' && !invitationIsOverdue(row),
+    ).length ?? null;
 
-function OrganizationCard({ view }: { view: OrganizationView }) {
+  return (
+    <div className={styles.dashboardWrap}>
+      {scoped && canReadCatalogue ? (
+        <p className={styles.supportingText}>
+          Listing numbers cover the listings you can access from your assigned branches.
+        </p>
+      ) : null}
+
+      {/* Section A — KPI row. Future operational KPIs (bookings ·
+          participants · revenue · average booking value · goals) slot in
+          here when their backends exist — never faked meanwhile. */}
+      <ul className={styles.kpiRow} aria-label="Key numbers">
+        {canReadCatalogue ? (
+          <>
+            <KpiCard
+              value={catalogueState === 'loaded' ? counts.published : null}
+              label={scoped ? 'Published (your scope)' : 'Published listings'}
+              to={organizationPath(organizationId, 'listings')}
+            />
+            <KpiCard
+              value={catalogueState === 'loaded' ? attention.length : null}
+              label="Needs attention"
+              href="#dashboard-attention"
+              emphasized={catalogueState === 'loaded' && attention.length > 0}
+            />
+          </>
+        ) : null}
+        <KpiCard
+          value={activeBranches}
+          label="Active branches"
+          to={organizationPath(organizationId, 'branches')}
+        />
+        {canReadStaff ? (
+          <KpiCard
+            value={activeMembers}
+            label="Team members"
+            to={organizationPath(organizationId, 'team')}
+          />
+        ) : null}
+      </ul>
+
+      <div className={styles.columns}>
+        <div className={styles.mainColumn}>
+          <AttentionSection
+            organizationId={organizationId}
+            canReadCatalogue={canReadCatalogue}
+            catalogueState={catalogueState}
+            onRetryCatalogue={onRetryCatalogue}
+            attention={attention}
+            awaiting={awaiting}
+          />
+          {canReadCatalogue && catalogueState === 'loaded' && rows.length > 0 ? (
+            <RecentSection organizationId={organizationId} rows={rows} extras={extras} />
+          ) : null}
+        </div>
+
+        <div className={styles.sideColumn}>
+          <OrganizationSection view={view} />
+          {canReadCatalogue ? (
+            <CatalogueOverviewSection
+              organizationId={organizationId}
+              catalogueState={catalogueState}
+              counts={counts}
+              hasListings={rows.length > 0}
+              canManage={view.membership.capabilities.includes('listings.manage')}
+              suspended={view.organization.verificationState === 'suspended'}
+            />
+          ) : (
+            <p className={styles.supportingText}>
+              Your role&rsquo;s dashboard covers organization status. The catalogue is managed by
+              your organization&rsquo;s catalogue roles.
+            </p>
+          )}
+          {canReadStaff && pendingInvitations !== null && pendingInvitations > 0 ? (
+            <p className={styles.supportingText}>
+              {pendingInvitations} invitation{pendingInvitations === 1 ? '' : 's'} awaiting a
+              response —{' '}
+              <Link className={styles.inlineLink} to={organizationPath(organizationId, 'team')}>
+                go to your team
+              </Link>
+              .
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -- KPI card -----------------------------------------------------------------
+
+function KpiCard({
+  value,
+  label,
+  to,
+  href,
+  emphasized = false,
+}: {
+  value: number | null;
+  label: string;
+  to?: string;
+  href?: string;
+  emphasized?: boolean;
+}) {
+  const body = (
+    <>
+      <span className={styles.kpiValue}>{value === null ? '—' : value}</span>
+      <span className={styles.kpiLabel}>{label}</span>
+    </>
+  );
+  const cardClass = emphasized ? `${styles.kpiCard} ${styles.kpiCardEmphasis}` : styles.kpiCard;
+  return (
+    <li className={styles.kpiItem}>
+      {to !== undefined ? (
+        <Link className={cardClass} to={to}>
+          {body}
+        </Link>
+      ) : href !== undefined ? (
+        <a className={cardClass} href={href}>
+          {body}
+        </a>
+      ) : (
+        <span className={cardClass}>{body}</span>
+      )}
+    </li>
+  );
+}
+
+// -- Section B — Needs your attention / Awaiting Himma -----------------------
+
+function attentionCopy(item: AttentionItem): { headline: string; support: string } {
+  switch (item.kind) {
+    case 'changesRequested':
+      return {
+        headline: item.titleEn,
+        support: 'Himma asked for changes — make the corrections, then resubmit for review.',
+      };
+    case 'approvedReadyToPublish':
+      return { headline: item.titleEn, support: 'Approved by Himma — publish when you’re ready.' };
+    case 'draftIncomplete':
+      return { headline: item.titleEn, support: `Draft — ${item.reason.toLowerCase()} before it can be submitted.` };
+    case 'organizationSetup':
+      return {
+        headline: 'Finish setting up your organization',
+        support:
+          item.verificationState === 'rejected'
+            ? 'Himma asked for changes to your verification — review and resubmit.'
+            : 'Complete your setup and submit it for Himma verification.',
+      };
+  }
+}
+
+function AttentionSection({
+  organizationId,
+  canReadCatalogue,
+  catalogueState,
+  onRetryCatalogue,
+  attention,
+  awaiting,
+}: {
+  organizationId: string;
+  canReadCatalogue: boolean;
+  catalogueState: 'hidden' | 'loading' | 'loaded' | 'failed';
+  onRetryCatalogue: () => void;
+  attention: readonly AttentionItem[];
+  awaiting: readonly AwaitingItem[];
+}) {
+  return (
+    <section aria-labelledby="dashboard-attention-heading" className={styles.section} id="dashboard-attention">
+      <h2 id="dashboard-attention-heading" className={styles.sectionTitle}>
+        Needs your attention
+      </h2>
+      <div className={styles.sectionCard}>
+        {canReadCatalogue && catalogueState === 'loading' ? (
+          <p className={styles.loading} role="status">
+            Checking your catalogue…
+          </p>
+        ) : canReadCatalogue && catalogueState === 'failed' ? (
+          <div className={styles.cardFailure}>
+            <InlineAlert tone="error">
+              We couldn&rsquo;t check your catalogue. Everything else is unaffected.
+            </InlineAlert>
+            <Button variant="secondary" onClick={onRetryCatalogue}>
+              Try again
+            </Button>
+          </div>
+        ) : attention.length === 0 ? (
+          <p className={styles.bodyText}>
+            You&rsquo;re up to date — nothing needs your attention right now.
+          </p>
+        ) : (
+          <ul className={styles.actionList}>
+            {attention.map((item) => {
+              const copy = attentionCopy(item);
+              const target =
+                item.kind === 'organizationSetup'
+                  ? organizationPath(organizationId, 'onboarding')
+                  : `${organizationPath(organizationId, 'listings')}/${item.id}`;
+              return (
+                <li key={item.kind === 'organizationSetup' ? 'org-setup' : item.id}>
+                  <Link className={styles.actionRow} to={target}>
+                    <span className={styles.actionMain}>
+                      <span className={styles.actionHeadline}>{copy.headline}</span>
+                      <span className={styles.actionSupport}>{copy.support}</span>
+                    </span>
+                    <span className={styles.actionChevron} aria-hidden="true">
+                      →
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {awaiting.length > 0 ? (
+          <div className={styles.awaitingBlock}>
+            <h3 className={styles.awaitingTitle}>Awaiting Himma</h3>
+            <ul className={styles.awaitingList}>
+              {awaiting.map((item) =>
+                item.kind === 'organizationVerification' ? (
+                  <li key="org-verification" className={styles.awaitingRow}>
+                    <span>Organization verification</span>
+                    <StateChip
+                      label={ORGANIZATION_STATE_LABEL[item.verificationState] ?? item.verificationState}
+                      tone="info"
+                    />
+                  </li>
+                ) : (
+                  <li key={item.id} className={styles.awaitingRow}>
+                    <Link
+                      className={styles.inlineLink}
+                      to={`${organizationPath(organizationId, 'listings')}/${item.id}`}
+                    >
+                      {item.titleEn}
+                    </Link>
+                    <StateChip
+                      label={listingStateLabel(item.listingState)}
+                      tone={listingStateTone(item.listingState)}
+                    />
+                  </li>
+                ),
+              )}
+            </ul>
+            <p className={styles.supportingText}>
+              Himma is reviewing these — there&rsquo;s nothing you need to do.
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+// -- Section C — organization status (concise) --------------------------------
+
+function OrganizationSection({ view }: { view: OrganizationView }) {
   const state = view.organization.verificationState;
   const onboarding = isStillOnboarding(state);
   return (
@@ -122,21 +443,18 @@ function OrganizationCard({ view }: { view: OrganizationView }) {
         <p className={styles.headlineValue}>{ORGANIZATION_STATE_LABEL[state] ?? state}</p>
         {state === 'suspended' ? (
           <p className={styles.supportingText}>
-            This organization is currently suspended. Everything stays readable, and changes are
-            unavailable until Himma reinstates it.
+            Currently suspended — everything stays readable, and changes are unavailable until
+            Himma reinstates it.
           </p>
         ) : (
           <p className={styles.supportingText}>
             {view.profile.published
-              ? 'Your public storefront is published — it appears to customers once the organization is live.'
-              : 'Your public storefront isn’t published yet.'}
+              ? 'Storefront published — visible to customers once the organization is live.'
+              : 'Storefront not published yet.'}
           </p>
         )}
         {onboarding ? (
-          <Link
-            className={styles.inlineLink}
-            to={organizationPath(view.organization.id, 'onboarding')}
-          >
+          <Link className={styles.inlineLink} to={organizationPath(view.organization.id, 'onboarding')}>
             Continue your onboarding
           </Link>
         ) : (
@@ -149,231 +467,113 @@ function OrganizationCard({ view }: { view: OrganizationView }) {
   );
 }
 
-// -- catalogue summary --------------------------------------------------------
+// -- Section D — compact catalogue overview -----------------------------------
 
-function CatalogueCard({
-  view,
-  scoped,
-  query,
+function CatalogueOverviewSection({
+  organizationId,
+  catalogueState,
+  counts,
+  hasListings,
+  canManage,
+  suspended,
 }: {
-  view: OrganizationView;
-  scoped: boolean;
-  query: {
-    isPending: boolean;
-    data?: Awaited<ReturnType<typeof loadCatalogueSummary>> | undefined;
-    refetch: () => Promise<unknown>;
-  };
+  organizationId: string;
+  catalogueState: 'hidden' | 'loading' | 'loaded' | 'failed';
+  counts: Record<string, number>;
+  hasListings: boolean;
+  canManage: boolean;
+  suspended: boolean;
 }) {
-  const organizationId = view.organization.id;
-  const listingsHref = organizationPath(organizationId, 'listings');
-  const canPublish = view.membership.capabilities.includes('listings.publish');
-  const canManage = view.membership.capabilities.includes('listings.manage');
-  const suspended = view.organization.verificationState === 'suspended';
-
   return (
     <section aria-labelledby="dashboard-catalogue-heading" className={styles.section}>
       <h2 id="dashboard-catalogue-heading" className={styles.sectionTitle}>
-        Listings
+        Catalogue
       </h2>
       <div className={styles.sectionCard}>
-        {query.isPending ? (
+        {catalogueState === 'loading' ? (
           <p className={styles.loading} role="status">
             Loading your catalogue summary…
           </p>
-        ) : query.data?.kind === 'loaded' ? (
-          <CatalogueSummary
-            programs={query.data.programs}
-            listingsHref={listingsHref}
-            canPublish={canPublish}
-            showCreate={canManage && !suspended}
-            scoped={scoped}
-            organizationId={organizationId}
-          />
+        ) : catalogueState !== 'loaded' ? (
+          <p className={styles.supportingText}>The catalogue summary isn&rsquo;t available right now.</p>
+        ) : !hasListings ? (
+          <>
+            <p className={styles.bodyText}>No listings yet.</p>
+            {canManage && !suspended ? (
+              <Link className={styles.inlineLink} to={`${organizationPath(organizationId, 'listings')}/new`}>
+                Create your first listing
+              </Link>
+            ) : (
+              <p className={styles.supportingText}>
+                Listings appear here once your catalogue team creates them.
+              </p>
+            )}
+          </>
         ) : (
-          <div className={styles.cardFailure}>
-            <InlineAlert tone="error">
-              We couldn&rsquo;t load your catalogue summary. Everything else is unaffected.
-            </InlineAlert>
-            <Button variant="secondary" onClick={() => void query.refetch()}>
-              Try again
-            </Button>
-          </div>
+          <>
+            <ul className={styles.statusGrid} aria-label="Listings by status">
+              {DASHBOARD_STATE_ORDER.filter((state) => (counts[state] ?? 0) > 0).map((state) => (
+                <li key={state} className={styles.statusCell}>
+                  <StateChip label={listingStateLabel(state)} tone={listingStateTone(state)} />
+                  <span className={styles.statusCount}>{counts[state]}</span>
+                </li>
+              ))}
+            </ul>
+            <Link className={styles.inlineLink} to={organizationPath(organizationId, 'listings')}>
+              Go to your listings
+            </Link>
+          </>
         )}
       </div>
     </section>
   );
 }
 
-function CatalogueSummary({
-  programs,
-  listingsHref,
-  canPublish,
-  showCreate,
-  scoped,
+// -- optional — recently updated ---------------------------------------------
+
+function RecentSection({
   organizationId,
-}: {
-  programs: readonly ProgramSummaryRecord[];
-  listingsHref: string;
-  canPublish: boolean;
-  showCreate: boolean;
-  scoped: boolean;
-  organizationId: string;
-}) {
-  const counts = catalogueCounts(programs);
-  const attention: Array<{ key: string; headline: string; support: string | null }> = [];
-  if (counts.changes_requested > 0) {
-    attention.push({
-      key: 'changes_requested',
-      headline: `${listingCountLabel(counts.changes_requested)} need${counts.changes_requested === 1 ? 's' : ''} changes before resubmission`,
-      support: 'Himma asked for changes — make the corrections, then resubmit for review.',
-    });
-  }
-  if (counts.approved > 0) {
-    attention.push({
-      key: 'approved',
-      headline: `${listingCountLabel(counts.approved)} approved and not yet published`,
-      support: canPublish
-        ? 'Himma approved — publish when you’re ready.'
-        : 'Himma approved — an Owner or Organization Manager publishes them.',
-    });
-  }
-  if (counts.draft > 0) {
-    attention.push({
-      key: 'draft',
-      headline: `${listingCountLabel(counts.draft)} still in draft`,
-      support: 'Complete and submit them for Himma review when they’re ready.',
-    });
-  }
-
-  if (programs.length === 0) {
-    return (
-      <>
-        <p className={styles.bodyText}>No listings yet.</p>
-        {showCreate ? (
-          <Link className={styles.inlineLink} to={`${listingsHref}/new`}>
-            Create your first listing
-          </Link>
-        ) : (
-          <p className={styles.supportingText}>
-            Listings appear here once your catalogue team creates them.
-          </p>
-        )}
-      </>
-    );
-  }
-
-  return (
-    <>
-      {scoped ? (
-        <p className={styles.supportingText}>
-          These numbers cover the listings within your branch scope.
-        </p>
-      ) : null}
-      {attention.length > 0 ? (
-        <ul className={styles.attentionList}>
-          {attention.map((item) => (
-            <li key={item.key} className={styles.attentionRow}>
-              <p className={styles.bodyText}>{item.headline}</p>
-              {item.support !== null ? (
-                <p className={styles.supportingText}>{item.support}</p>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className={styles.bodyText}>Nothing needs your attention right now.</p>
-      )}
-      <ul className={styles.countList} aria-label="Listings by status">
-        {DASHBOARD_STATE_ORDER.filter((state) => counts[state] > 0).map((state) => (
-          <li key={state} className={styles.countRow}>
-            <span>{listingStateLabel(state)}</span>
-            <span className={styles.countValue}>{counts[state]}</span>
-          </li>
-        ))}
-      </ul>
-      <Link className={styles.inlineLink} to={listingsHref}>
-        Go to your listings
-      </Link>
-      {showCreate ? (
-        <Link className={styles.inlineLink} to={`${organizationPath(organizationId, 'listings')}/new`}>
-          Create a listing
-        </Link>
-      ) : null}
-    </>
-  );
-}
-
-// -- team (Owner-only: `staff.read`) -----------------------------------------
-
-function TeamCard({
-  organizationId,
-  query,
+  rows,
+  extras,
 }: {
   organizationId: string;
-  query: {
-    isPending: boolean;
-    data?: StaffLoadOutcome | undefined;
-    refetch: () => Promise<unknown>;
-  };
+  rows: readonly ProgramSummaryRecord[];
+  extras: Readonly<Record<string, ListingCardExtras>>;
 }) {
+  const recent = recentListings(rows);
   return (
-    <section aria-labelledby="dashboard-team-heading" className={styles.section}>
-      <h2 id="dashboard-team-heading" className={styles.sectionTitle}>
-        Team
+    <section aria-labelledby="dashboard-recent-heading" className={styles.section}>
+      <h2 id="dashboard-recent-heading" className={styles.sectionTitle}>
+        Recently updated
       </h2>
       <div className={styles.sectionCard}>
-        {query.isPending ? (
-          <p className={styles.loading} role="status">
-            Loading your team summary…
-          </p>
-        ) : query.data?.kind === 'loaded' ? (
-          <TeamSummary
-            organizationId={organizationId}
-            memberships={query.data.staff.memberships}
-            invitations={query.data.staff.invitations}
-          />
-        ) : (
-          <div className={styles.cardFailure}>
-            <InlineAlert tone="error">
-              We couldn&rsquo;t load your team summary. Everything else is unaffected.
-            </InlineAlert>
-            <Button variant="secondary" onClick={() => void query.refetch()}>
-              Try again
-            </Button>
-          </div>
-        )}
+        <ul className={styles.recentList}>
+          {recent.map((row) => {
+            const thumbnailUrl = extras[row.id]?.thumbnailUrl ?? null;
+            return (
+              <li key={row.id}>
+                <Link
+                  className={styles.recentRow}
+                  to={`${organizationPath(organizationId, 'listings')}/${row.id}`}
+                >
+                  {thumbnailUrl !== null ? (
+                    <img className={styles.recentThumb} src={thumbnailUrl} alt="" loading="lazy" />
+                  ) : (
+                    <span className={`${styles.recentThumb} ${styles.recentThumbFallback}`} aria-hidden="true">
+                      <ImageIcon strokeWidth={1.5} className={styles.recentThumbIcon} />
+                    </span>
+                  )}
+                  <span className={styles.recentMain}>
+                    <span className={styles.recentTitle}>{row.titleEn}</span>
+                    <span className={styles.recentMeta}>Updated {formatListingDate(row.updatedAt)}</span>
+                  </span>
+                  <StateChip label={listingStateLabel(row.listingState)} tone={listingStateTone(row.listingState)} />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </section>
-  );
-}
-
-function TeamSummary({
-  organizationId,
-  memberships,
-  invitations,
-}: {
-  organizationId: string;
-  memberships: readonly { state: string }[];
-  invitations: readonly StaffInvitationRecord[];
-}) {
-  const activeMembers = memberships.filter((row) => row.state === 'active').length;
-  const pendingInvitations = invitations.filter(
-    (row) => row.state === 'sent' && !invitationIsOverdue(row),
-  ).length;
-  return (
-    <>
-      <p className={styles.bodyText}>
-        {activeMembers} active member{activeMembers === 1 ? '' : 's'}
-        {pendingInvitations > 0
-          ? ` · ${pendingInvitations} invitation${pendingInvitations === 1 ? '' : 's'} awaiting a response`
-          : ''}
-      </p>
-      {pendingInvitations === 0 ? (
-        <p className={styles.supportingText}>No invitations are awaiting a response.</p>
-      ) : null}
-      <Link className={styles.inlineLink} to={organizationPath(organizationId, 'team')}>
-        Go to your team
-      </Link>
-    </>
   );
 }
