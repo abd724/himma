@@ -128,6 +128,8 @@ import type {
   ActivityTypeRecord,
   AreaReadPort,
   AreaRecord,
+  CategoryReadPort,
+  CategoryRecord,
 } from '../../taxonomy/contract';
 import type {
   IssueInvitationOutcome,
@@ -235,6 +237,42 @@ const fixtureCategoryIds = {
   education: '0198a2f0-5b7a-7000-8000-3a7b4c9d5e03',
   combat: '0198a2f0-5b7a-7000-8000-3a7b4c9d5e04',
 } as const;
+
+/** Mirrors the public categories read (`GET /catalogue/categories`):
+ *  ACTIVE admin-owned rows only, giving activity types their catalogue
+ *  context in the selector. Himma-managed — never provider-created. */
+function categoryDirectory(): CategoryRecord[] {
+  return [
+    {
+      id: fixtureCategoryIds.aquatics,
+      slug: 'aquatics',
+      labelEn: 'Aquatics',
+      labelAr: null,
+      imageRef: null,
+    },
+    {
+      id: fixtureCategoryIds.fitness,
+      slug: 'fitness',
+      labelEn: 'Fitness',
+      labelAr: null,
+      imageRef: null,
+    },
+    {
+      id: fixtureCategoryIds.education,
+      slug: 'education',
+      labelEn: 'Education',
+      labelAr: null,
+      imageRef: null,
+    },
+    {
+      id: fixtureCategoryIds.combat,
+      slug: 'combat-sports',
+      labelEn: 'Combat Sports',
+      labelAr: null,
+      imageRef: null,
+    },
+  ];
+}
 
 export const fixtureActivityTypes = {
   swimming: '0198a2f0-5b7a-7000-8000-2f6a3b8c4d01',
@@ -1397,6 +1435,7 @@ export interface FixtureAuthRuntime {
   bulkImportPort: BulkImportPort;
   listingCardPort: ListingCardPort;
   activityTypePort: ActivityTypeReadPort;
+  categoryPort: CategoryReadPort;
   controls: FixtureAccessControls;
   /**
    * Test-harness seeding: aligns the fixture store with a prepared session
@@ -2386,6 +2425,13 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
           categoryId: type.categoryId,
         }));
       return { kind: 'loaded' as const, activityTypes: records };
+    },
+  };
+
+  const categoryPort: CategoryReadPort = {
+    /** Mirrors GET /catalogue/categories — ACTIVE rows, no admin metadata. */
+    async listCategories() {
+      return { kind: 'loaded' as const, categories: categoryDirectory() };
     },
   };
 
@@ -3917,6 +3963,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     bulkImportPort,
     listingCardPort,
     activityTypePort,
+    categoryPort,
     controls,
     seedSession,
     sessionStateFor,

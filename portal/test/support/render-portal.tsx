@@ -111,6 +111,7 @@ export function renderPortal({
     bulkImportPort: fixture.bulkImportPort,
     listingCardPort: fixture.listingCardPort,
     activityTypePort: fixture.activityTypePort,
+    categoryPort: fixture.categoryPort,
   };
   const router = createMemoryRouter(portalRoutes, { initialEntries });
   const initialSessionState =

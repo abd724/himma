@@ -1,0 +1,189 @@
+/* Searchable activity-type selector — same field language as the shared
+   TextField/SelectField (hp tokens only; light theme; 44px targets). */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.label {
+  font: var(--hp-type-caption);
+  letter-spacing: 0.2px;
+  color: var(--hp-color-text-primary);
+}
+
+.requiredMark {
+  color: var(--hp-color-status-error);
+}
+
+.comboWrap {
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: var(--hp-space-md);
+  translate: 0 -50%;
+  width: 16px;
+  height: 16px;
+  color: var(--hp-color-text-secondary);
+  pointer-events: none;
+}
+
+.input {
+  min-height: 44px;
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  padding-inline-start: calc(var(--hp-space-md) + 24px);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-control);
+  background: var(--hp-color-background-elevated);
+  color: var(--hp-color-text-primary);
+  font: var(--hp-type-body);
+  width: 100%;
+}
+
+.input::placeholder {
+  color: var(--hp-color-text-secondary);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: 1px;
+}
+
+.input:disabled {
+  color: var(--hp-color-text-secondary);
+  background: var(--hp-color-background-main);
+}
+
+.inputInvalid {
+  border-color: var(--hp-color-status-error);
+}
+
+.inputWithClear {
+  padding-inline-end: 52px;
+}
+
+.chevron {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: var(--hp-space-md);
+  translate: 0 -50%;
+  width: 18px;
+  height: 18px;
+  color: var(--hp-color-text-secondary);
+  pointer-events: none;
+}
+
+.clearButton {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--hp-color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--hp-radius-control);
+}
+
+.clearButton:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: -2px;
+}
+
+.clearButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.popup {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(100% + 4px);
+  z-index: 30;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-control);
+  background: var(--hp-color-background-elevated);
+  box-shadow: var(--hp-shadow-popover);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: var(--hp-space-xs);
+  display: flex;
+  flex-direction: column;
+}
+
+.option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--hp-space-md);
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  min-height: 44px;
+  align-content: center;
+  border-radius: var(--hp-radius-control);
+  cursor: pointer;
+  font: var(--hp-type-body);
+  color: var(--hp-color-text-primary);
+}
+
+.optionActive {
+  background: var(--hp-color-brand-primary-soft);
+}
+
+.optionSelected .optionLabel {
+  font-weight: 700;
+}
+
+.optionLabel {
+  overflow-wrap: anywhere;
+}
+
+.optionCategory {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+  white-space: nowrap;
+}
+
+.noResults {
+  padding: var(--hp-space-md) var(--hp-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-xs);
+}
+
+.noResultsTitle {
+  font: var(--hp-type-body);
+  font-weight: 700;
+  color: var(--hp-color-text-primary);
+}
+
+.noResultsBody {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.noResultsBody a {
+  color: var(--hp-color-brand-primary);
+  font-weight: 600;
+}
+
+.hint {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-text-secondary);
+}
+
+.error {
+  font: var(--hp-type-supporting);
+  color: var(--hp-color-status-error);
+}

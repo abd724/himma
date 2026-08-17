@@ -32,7 +32,7 @@ describe('listing editor page (W2-8)', () => {
     });
     await screen.findByRole('heading', { level: 1, name: 'Holiday Swim Camp' });
 
-    const title = screen.getByLabelText('Title (English)');
+    const title = screen.getByLabelText(/Listing title/);
     await user.clear(title);
     await user.type(title, 'Holiday Swim Camp Plus');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -127,7 +127,7 @@ describe('listing editor page (W2-8)', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText('Needs Himma review').length).toBeGreaterThan(0);
 
-    const description = screen.getByLabelText('Description (English)');
+    const description = screen.getByLabelText('Description');
     await user.clear(description);
     await user.type(description, 'Updated protected description.');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -154,9 +154,9 @@ describe('listing editor page (W2-8)', () => {
     expect(
       screen.getAllByText(/A change is already awaiting Himma review/).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByLabelText('Description (English)')).toBeDisabled();
+    expect(screen.getByLabelText('Description')).toBeDisabled();
     // Non-protected fields stay live.
-    expect(screen.getByLabelText('Title (English)')).toBeEnabled();
+    expect(screen.getByLabelText(/Listing title/)).toBeEnabled();
   });
 
   test('pricing on a review-gated listing announces the review boundary before and after', async () => {
@@ -187,8 +187,23 @@ describe('listing editor page (W2-8)', () => {
     await screen.findByRole('heading', { level: 1, name: 'Holiday Swim Camp' });
     const pricing = () => screen.getByRole('heading', { name: 'Pricing options' }).closest('section')!;
 
-    // Add a monthly option with a fractional AED amount.
+    // Add a monthly option with a fractional AED amount. The provider
+    // CREATES and configures the option — the type is a finite chip choice
+    // (no dropdown of pre-created Himma prices exists anywhere).
     await user.click(within(pricing()).getByRole('button', { name: 'Add price option' }));
+    expect(within(pricing()).queryByRole('combobox')).not.toBeInTheDocument();
+    const kindChips = within(
+      within(pricing()).getByRole('radiogroup', { name: 'Price option type' }),
+    ).getAllByRole('radio');
+    expect(kindChips.map((chip) => chip.closest('label')?.textContent)).toEqual([
+      'Drop-in',
+      'Monthly',
+      'Term',
+      'Camp',
+      'Package',
+      'Free',
+    ]);
+    await user.click(within(pricing()).getByRole('radio', { name: 'Monthly' }));
     await user.type(within(pricing()).getByLabelText('Price (AED)'), '450.50');
     await user.type(within(pricing()).getByLabelText('Label (optional)'), 'Monthly pass');
     await user.click(within(pricing()).getByRole('button', { name: 'Save option' }));
@@ -225,7 +240,7 @@ describe('listing editor page (W2-8)', () => {
     });
     await screen.findByRole('heading', { level: 1, name: 'Holiday Swim Camp' });
 
-    const title = screen.getByLabelText('Title (English)');
+    const title = screen.getByLabelText(/Listing title/);
     await user.clear(title);
     await user.type(title, 'My Edited Title');
     // Another writer saves first.
@@ -240,7 +255,7 @@ describe('listing editor page (W2-8)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reload latest version' }));
     // The user's edited value survives the reload (reconcile, not discard).
-    expect(await screen.findByLabelText('Title (English)')).toHaveValue('My Edited Title');
+    expect(await screen.findByLabelText(/Listing title/)).toHaveValue('My Edited Title');
     // And the next save applies cleanly against the fresh version.
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('Changes saved.')).toBeInTheDocument();
@@ -256,7 +271,18 @@ describe('listing editor page (W2-8)', () => {
     const offers = () => screen.getByRole('heading', { name: 'Offers' }).closest('section')!;
 
     await user.click(within(offers()).getByRole('button', { name: 'Add offer' }));
-    await user.selectOptions(within(offers()).getByLabelText('Kind'), 'paidTrial');
+    // The Offer INSTANCE is provider-created; its KIND stays the controlled
+    // four-value canon rendered as chips, never free text.
+    const offerKinds = within(
+      within(offers()).getByRole('radiogroup', { name: 'Offer kind' }),
+    ).getAllByRole('radio');
+    expect(offerKinds.map((chip) => chip.closest('label')?.textContent)).toEqual([
+      'Free trial',
+      'Paid trial',
+      'Discount',
+      'Promotion',
+    ]);
+    await user.click(within(offers()).getByRole('radio', { name: 'Paid trial' }));
     await user.type(within(offers()).getByLabelText('Label'), 'Trial class');
     // Paid trial without an amount refuses client-side with honest copy.
     await user.click(within(offers()).getByRole('button', { name: 'Save offer' }));
@@ -360,6 +386,48 @@ describe('editor authority (roles, scope, suspension)', () => {
       }),
     ).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('the Locations section routes a missing location to the REAL W2-5 branch workflow for roles holding branch.create', async () => {
+    const user = userEvent.setup();
+    renderPortal({
+      asIdentity: 'owner@bluewave.demo',
+      initialEntries: [editPath(blueWave, fixtureListings.holidayCamp)],
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Holiday Swim Camp' });
+    const locations = screen.getByRole('heading', { name: 'Locations' }).closest('section')!;
+    // Branch rows carry provider-facing context (name + area), and the
+    // add-branch affordance is a NAVIGATION to the existing creation route,
+    // never an ad-hoc value typed into this page.
+    expect(within(locations).getByText(/Dubai Marina · /)).toBeInTheDocument();
+    const addBranch = within(locations).getByRole('link', { name: /Add a new branch/ });
+    expect(addBranch).toHaveAttribute(
+      'href',
+      `/o/${blueWave.organizationId}/branches/new`,
+    );
+    await user.click(addBranch);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Add branch' }),
+    ).toBeInTheDocument();
+  });
+
+  test('roles without branch.create never gain branch creation from the listing editor', async () => {
+    // Listings Editor: org-wide catalogue authority, NO branch.create.
+    const editor = renderPortal({
+      asIdentity: 'flaky@bluewave.demo',
+      initialEntries: [editPath(blueWave, fixtureListings.holidayCamp)],
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Holiday Swim Camp' });
+    expect(screen.queryByRole('link', { name: /Add a new branch/ })).not.toBeInTheDocument();
+    editor.unmount();
+
+    // Branch Manager: scoped mutation authority, NO branch.create.
+    renderPortal({
+      asIdentity: 'manager@bluewave.demo',
+      initialEntries: [editPath(blueWave, fixtureListings.ladiesAqua)],
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Ladies Aqua Fitness' });
+    expect(screen.queryByRole('link', { name: /Add a new branch/ })).not.toBeInTheDocument();
   });
 
   test('a suspended organization reads its listing but the editor is completely non-mutating', async () => {

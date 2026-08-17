@@ -1,9 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { usePortalPorts } from '../../../app/ports-context';
 import type { ProgramDetailRecord } from '../../../catalogue/contract';
+import { ActionLink } from '../../../components/ui/action-link';
 import { Button } from '../../../components/ui/button';
 import { InlineAlert } from '../../../components/ui/inline-alert';
+import { organizationPath } from '../../../navigation/nav-items';
 import type { OrganizationView } from '../../../profile/contract';
 import { StateChip } from '../state-chip';
 import { commonMutationErrorCopy, type EditorAuthority } from './editor-domain';
@@ -16,6 +19,11 @@ import styles from './editor.module.css';
  * reactivates it. Same-organization ACTIVE branches only; a branch-scoped
  * manager only ever gets controls for branches they control. A draft with
  * no branches is legitimate — nothing here blocks saving elsewhere.
+ *
+ * Branches are PROVIDER-OWNED business entities, never a Himma dropdown:
+ * the listing selects among the provider's OWN branches, and a missing
+ * location routes to the real W2-5 branch-creation workflow (`branch.create`
+ * = Owner + Organization Manager) — never an ad-hoc value typed here.
  */
 export function LocationsSection({
   view,
@@ -107,6 +115,8 @@ export function LocationsSection({
                   ) : null}
                 </span>
                 <span className={styles.childRowMeta}>
+                  {branch.areaLabel}
+                  {' · '}
                   {!branch.active
                     ? associated
                       ? 'Branch deactivated — still associated'
@@ -148,6 +158,18 @@ export function LocationsSection({
             </li>
           ))}
         </ul>
+        {!readOnly && view.membership.capabilities.includes('branch.create') ? (
+          <div className={styles.addBranchRow}>
+            <p className={styles.sectionIntro}>Need a location that isn&rsquo;t listed here yet?</p>
+            <ActionLink
+              variant="secondary"
+              to={`${organizationPath(view.organization.id, 'branches')}/new`}
+            >
+              <Plus aria-hidden="true" strokeWidth={2} className={styles.addBranchIcon} />
+              Add a new branch
+            </ActionLink>
+          </div>
+        ) : null}
       </div>
     </section>
   );

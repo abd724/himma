@@ -7,10 +7,21 @@ type FieldProps = {
   /** Inline validation error; associated via aria-describedby. */
   error?: string | null;
   hint?: string;
+  /** Visual `*` for the form-level "fields marked * are required" convention
+   *  (requiredness itself is conveyed via aria-required). */
+  requiredMark?: boolean;
 } & InputHTMLAttributes<HTMLInputElement>;
 
 /** Labeled input with accessible inline validation. */
-export function TextField({ label, error = null, hint, id, className: _cn, ...rest }: FieldProps) {
+export function TextField({
+  label,
+  error = null,
+  hint,
+  requiredMark = false,
+  id,
+  className: _cn,
+  ...rest
+}: FieldProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
   const errorId = `${inputId}-error`;
@@ -22,6 +33,12 @@ export function TextField({ label, error = null, hint, id, className: _cn, ...re
     <div className={styles.field}>
       <label className={styles.label} htmlFor={inputId}>
         {label}
+        {requiredMark ? (
+          <span className={styles.requiredMark} aria-hidden="true">
+            {' '}
+            *
+          </span>
+        ) : null}
       </label>
       <input
         {...rest}
@@ -45,7 +62,14 @@ export function TextField({ label, error = null, hint, id, className: _cn, ...re
 }
 
 /** Password input with an accessible visibility control. */
-export function PasswordField({ label, error = null, hint, id, ...rest }: FieldProps) {
+export function PasswordField({
+  label,
+  error = null,
+  hint,
+  requiredMark: _requiredMark,
+  id,
+  ...rest
+}: FieldProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
   const errorId = `${inputId}-error`;

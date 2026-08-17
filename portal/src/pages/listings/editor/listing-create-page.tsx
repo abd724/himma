@@ -13,7 +13,7 @@ import { usePageTitle } from '../../../hooks/use-page-title';
 import { organizationPath } from '../../../navigation/nav-items';
 import { useActiveOrganization } from '../../../organization/organization-context';
 import type { OrganizationView } from '../../../profile/contract';
-import type { ActivityTypeRecord } from '../../../taxonomy/contract';
+import type { ActivityTypeRecord, CategoryRecord } from '../../../taxonomy/contract';
 import {
   EDITOR_NO_ACCESS_COPY,
   SUSPENDED_EDITOR_COPY,
@@ -39,7 +39,7 @@ import styles from './editor.module.css';
 export function ListingCreatePage() {
   usePageTitle('Create listing');
   const organization = useActiveOrganization();
-  const { profilePort, activityTypePort } = usePortalPorts();
+  const { profilePort, activityTypePort, categoryPort } = usePortalPorts();
 
   const viewQuery = useQuery({
     queryKey: ['organizationView', organization.id],
@@ -48,6 +48,12 @@ export function ListingCreatePage() {
   const taxonomyQuery = useQuery({
     queryKey: ['activityTypes'],
     queryFn: () => activityTypePort.listActivityTypes(),
+  });
+  // Category context for the activity selector — non-blocking: the form
+  // works without it (labels render without category context).
+  const categoriesQuery = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoryPort.listCategories(),
   });
 
   return (
@@ -64,6 +70,9 @@ export function ListingCreatePage() {
         <CreateGate
           view={viewQuery.data.view}
           taxonomy={taxonomyQuery.data?.kind === 'loaded' ? taxonomyQuery.data.activityTypes : null}
+          categories={
+            categoriesQuery.data?.kind === 'loaded' ? categoriesQuery.data.categories : null
+          }
           onRetryTaxonomy={() => void taxonomyQuery.refetch()}
         />
       ) : (
@@ -83,10 +92,12 @@ export function ListingCreatePage() {
 function CreateGate({
   view,
   taxonomy,
+  categories,
   onRetryTaxonomy,
 }: {
   view: OrganizationView;
   taxonomy: readonly ActivityTypeRecord[] | null;
+  categories: readonly CategoryRecord[] | null;
   onRetryTaxonomy: () => void;
 }) {
   const authority = editorAuthority(view);
@@ -124,7 +135,7 @@ function CreateGate({
       </div>
     );
   }
-  return <CreateForm view={view} taxonomy={taxonomy} />;
+  return <CreateForm view={view} taxonomy={taxonomy} categories={categories} />;
 }
 
 type CreatePhase = { phase: 'idle' } | { phase: 'saving' } | { phase: 'error'; message: string };
@@ -132,9 +143,11 @@ type CreatePhase = { phase: 'idle' } | { phase: 'saving' } | { phase: 'error'; m
 function CreateForm({
   view,
   taxonomy,
+  categories,
 }: {
   view: OrganizationView;
   taxonomy: readonly ActivityTypeRecord[];
+  categories: readonly CategoryRecord[] | null;
 }) {
   const { listingEditorPort } = usePortalPorts();
   const queryClient = useQueryClient();
@@ -230,8 +243,8 @@ function CreateForm({
   return (
     <div className={styles.editorWrap}>
       <InlineAlert tone="info">
-        Drafts start private and can stay incomplete — add locations, pricing, photos, and offers
-        in the editor after creating it.
+        Start with the basics — drafts start private and can stay incomplete. You can add
+        locations, pricing, photos, and offers after creating the draft.
       </InlineAlert>
 
       <div ref={alertRef} tabIndex={-1} className={styles.alertFocus}>
@@ -239,7 +252,12 @@ function CreateForm({
       </div>
 
       <form onSubmit={(event) => void submit(event)} noValidate className={styles.form}>
-        <ProgramFormFields form={form} activityTypes={taxonomy} />
+        <ProgramFormFields
+          form={form}
+          activityTypes={taxonomy}
+          categories={categories}
+          supportPath={organizationPath(view.organization.id, 'support')}
+        />
         <div className={styles.saveArea}>
           <Button type="submit" busy={create.phase === 'saving'} busyLabel="Creating…">
             Create draft listing

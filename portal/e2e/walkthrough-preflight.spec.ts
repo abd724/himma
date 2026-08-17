@@ -95,10 +95,11 @@ test('Scenario A (Owner, tasks 1–11): dashboard → branch → scoped invite �
   // Task 4 — create the children's listing at the new branch.
   await openNav(page, 'Listings');
   await page.getByRole('link', { name: 'Create listing' }).click();
-  await page.getByLabel('Title (English)').fill('Kids Jumeirah Swim Starters');
-  await page.getByLabel('Activity type').selectOption({ label: 'Swimming' });
-  await page.getByLabel('Youngest age (optional)').fill('5');
-  await page.getByLabel('Oldest age (optional)').fill('10');
+  await page.getByLabel(/Listing title/).fill('Kids Jumeirah Swim Starters');
+  await page.getByRole('combobox', { name: /Activity type/ }).click();
+  await page.getByRole('option', { name: /^Swimming/ }).click();
+  await page.getByLabel('Youngest age').fill('5');
+  await page.getByLabel('Oldest age').fill('10');
   await page.getByRole('button', { name: 'Create draft listing' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Kids Jumeirah Swim Starters' })).toBeVisible();
   const locations = page.locator('section', { has: page.getByRole('heading', { name: 'Locations' }) });
@@ -113,7 +114,7 @@ test('Scenario A (Owner, tasks 1–11): dashboard → branch → scoped invite �
   await expect(pricing.getByText('AED 380')).toBeVisible();
   const offers = page.locator('section', { has: page.getByRole('heading', { name: 'Offers' }) });
   await offers.getByRole('button', { name: 'Add offer' }).click();
-  await offers.getByLabel('Kind').selectOption({ label: 'Paid trial' });
+  await offers.getByRole('radio', { name: 'Paid trial' }).check();
   await offers.getByLabel('Label').fill('Taster session');
   await offers.getByLabel('Trial price (AED)').fill('50');
   await offers.getByRole('button', { name: 'Save offer' }).click();
@@ -200,7 +201,7 @@ test('Scenario B (Listings Editor, tasks 14–17): workspace retry → changes-r
   // Task 15 — handle the changes-requested listing and resubmit.
   await clientGoto(page, `/o/${BLUE_WAVE_ID}/listings/${AQUA_THERAPY_ID}/edit`);
   await expect(page.getByText(/Himma asked for changes before this listing can be approved/)).toBeVisible();
-  await page.getByLabel('Title (English)').fill('Aqua Therapy Sessions Plus');
+  await page.getByLabel(/Listing title/).fill('Aqua Therapy Sessions Plus');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Changes saved.')).toBeVisible();
   await page.getByRole('link', { name: 'the listing page' }).click();

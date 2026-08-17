@@ -51,15 +51,16 @@ test('create flow: minimal structural draft → editor, then locations/pricing b
   await signInAs(page, 'owner@bluewave.demo');
   await clientGoto(page, `/o/${BLUE_WAVE_ID}/listings/new`);
   await expect(page.getByRole('heading', { level: 1, name: 'Create listing' })).toBeVisible();
-  await expect(page.getByText(/Drafts start private and can stay incomplete/)).toBeVisible();
+  await expect(page.getByText(/Start with the basics — drafts start private/)).toBeVisible();
   await noHorizontalOverflow(page);
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-create-form.png`),
     fullPage: true,
   });
 
-  await page.getByLabel('Title (English)').fill('Sunrise Paddle Club');
-  await page.getByLabel('Activity type').selectOption({ label: 'Swimming' });
+  await page.getByLabel(/Listing title/).fill('Sunrise Paddle Club');
+  await page.getByRole('combobox', { name: /Activity type/ }).click();
+  await page.getByRole('option', { name: /^Swimming/ }).click();
   await page.getByRole('radio', { name: 'Outdoor' }).check();
   await page.getByRole('button', { name: 'Create draft listing' }).click();
 
@@ -116,12 +117,12 @@ test('draft editor: direct save, stale-conflict reload keeps user values, archiv
   });
 
   // Direct dirty-field save.
-  await page.getByLabel('Title (English)').fill('Holiday Swim Camp Plus');
+  await page.getByLabel(/Listing title/).fill('Holiday Swim Camp Plus');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Changes saved.')).toBeVisible();
 
   // Stale conflict via the fixture concurrency control (another writer).
-  await page.getByLabel('Title (English)').fill('My Conflicted Title');
+  await page.getByLabel(/Listing title/).fill('My Conflicted Title');
   await page.evaluate(
     ([orgId, programId]) => {
       window.__himmaPortalAccessFixture?.simulateConcurrentListingEdit(orgId!, programId!);
@@ -137,7 +138,7 @@ test('draft editor: direct save, stale-conflict reload keeps user values, archiv
     fullPage: true,
   });
   await page.getByRole('button', { name: 'Reload latest version' }).click();
-  await expect(page.getByLabel('Title (English)')).toHaveValue('My Conflicted Title');
+  await expect(page.getByLabel(/Listing title/)).toHaveValue('My Conflicted Title');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Changes saved.')).toBeVisible();
 
@@ -169,7 +170,7 @@ test('review-gated editor: protected fields marked; a protected save goes to Him
     fullPage: true,
   });
 
-  await page.getByLabel('Description (English)').fill('Refined protected description.');
+  await page.getByLabel('Description', { exact: true }).fill('Refined protected description.');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText(/Sent to Himma for review: English description/)).toBeVisible();
   await page.screenshot({
@@ -181,7 +182,7 @@ test('review-gated editor: protected fields marked; a protected save goes to Him
   const offers = page.locator('section', { has: page.getByRole('heading', { name: 'Offers' }) });
   await offers.getByRole('button', { name: 'Add offer' }).click();
   await offers.getByLabel('Label').fill('Founding week promo');
-  await offers.getByLabel('Kind').selectOption({ label: 'Promotion' });
+  await offers.getByRole('radio', { name: 'Promotion' }).check();
   await offers.getByRole('button', { name: 'Save offer' }).click();
   await expect(page.getByText('Offer added.')).toBeVisible();
   await page.screenshot({

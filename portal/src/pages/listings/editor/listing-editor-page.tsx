@@ -9,7 +9,7 @@ import { usePageTitle } from '../../../hooks/use-page-title';
 import { organizationPath } from '../../../navigation/nav-items';
 import { useActiveOrganization } from '../../../organization/organization-context';
 import type { OrganizationView } from '../../../profile/contract';
-import type { ActivityTypeRecord } from '../../../taxonomy/contract';
+import type { ActivityTypeRecord, CategoryRecord } from '../../../taxonomy/contract';
 import { listingStateLabel, listingStateTone } from '../listing-domain';
 import { StateChip } from '../state-chip';
 import listingStyles from '../listings.module.css';
@@ -52,7 +52,7 @@ import styles from './editor.module.css';
 export function ListingEditorPage() {
   const organization = useActiveOrganization();
   const { programId } = useParams();
-  const { profilePort, listingsPort, activityTypePort } = usePortalPorts();
+  const { profilePort, listingsPort, activityTypePort, categoryPort } = usePortalPorts();
 
   const viewQuery = useQuery({
     queryKey: ['organizationView', organization.id],
@@ -71,6 +71,12 @@ export function ListingEditorPage() {
   const taxonomyQuery = useQuery({
     queryKey: ['activityTypes'],
     queryFn: () => activityTypePort.listActivityTypes(),
+    enabled: authority?.canManage === true,
+  });
+  // Category context for the activity selector — non-blocking read.
+  const categoriesQuery = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoryPort.listCategories(),
     enabled: authority?.canManage === true,
   });
 
@@ -114,6 +120,9 @@ export function ListingEditorPage() {
           program={program}
           taxonomy={
             taxonomyQuery.data?.kind === 'loaded' ? taxonomyQuery.data.activityTypes : []
+          }
+          categories={
+            categoriesQuery.data?.kind === 'loaded' ? categoriesQuery.data.categories : null
           }
         />
       ) : detailQuery.data?.kind === 'notFound' ? (
@@ -166,11 +175,13 @@ function EditorGate({
   authority,
   program,
   taxonomy,
+  categories,
 }: {
   view: OrganizationView;
   authority: EditorAuthority;
   program: ProgramDetailRecord;
   taxonomy: readonly ActivityTypeRecord[];
+  categories: readonly CategoryRecord[] | null;
 }) {
   const mode = editorModeOf(program.listingState);
 
@@ -255,6 +266,7 @@ function EditorGate({
         view={view}
         program={program}
         taxonomy={taxonomy}
+        categories={categories}
         reviewGated={reviewGated}
         revisionPending={revisionPending}
         readOnly={suspended}

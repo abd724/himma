@@ -10,6 +10,10 @@
   color: var(--hp-color-text-primary);
 }
 
+.requiredMark {
+  color: var(--hp-color-status-error);
+}
+
 .input {
   min-height: 44px;
   padding: var(--hp-space-sm) var(--hp-space-md);

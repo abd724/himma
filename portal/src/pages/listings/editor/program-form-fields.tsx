@@ -1,6 +1,7 @@
 import type { UseFormReturn } from 'react-hook-form';
-import { useId } from 'react';
-import type { ActivityTypeRecord } from '../../../taxonomy/contract';
+import { useId, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import type { ActivityTypeRecord, CategoryRecord } from '../../../taxonomy/contract';
 import { SelectField } from '../../../components/ui/select-field';
 import { TextAreaField } from '../../../components/ui/textarea-field';
 import { TextField } from '../../../components/ui/text-field';
@@ -9,26 +10,36 @@ import {
   PROGRAM_SETTINGS,
 } from '../../../catalogue/editor-contract';
 import { GENDER_LABELS, SETTING_LABELS, SKILL_LABELS } from '../listing-domain';
+import { ActivityTypeCombobox } from './activity-type-combobox';
 import type { ProgramFormValues } from './program-form';
 import styles from './editor.module.css';
 
 /**
  * The canonical provider-editable Program fields (create + edit), exactly
- * the real create/PATCH contract: English content first, Arabic optional,
- * DB-managed taxonomy select (ACTIVE rows only — an inactive historical
- * type stays visible but can't be newly chosen), the five-value gender
- * vocabulary, and age/skill eligibility independent of gender. Nothing
- * else — no price, no capacity, no schedule, no lifecycle control.
+ * the real create/PATCH contract — presented under the W2 interaction
+ * model: provider-AUTHORED content (title, description, eligibility notes)
+ * uses direct text inputs; Himma-MANAGED vocabulary (activity type) uses
+ * the searchable canonical selector, never free text; finite enumerations
+ * (setting, audience) use segmented/chip controls, not dropdowns. Arabic
+ * content is optional (English-only launch) and lives in a compact
+ * disclosure so it never competes with the required launch content.
+ * Nothing else — no price, no capacity, no schedule, no lifecycle control.
  */
 export function ProgramFormFields({
   form,
   activityTypes,
+  categories,
+  supportPath,
   currentActivityType,
   showSensitiveChip = false,
   sensitiveDisabled = false,
 }: {
   form: UseFormReturn<ProgramFormValues>;
   activityTypes: readonly ActivityTypeRecord[];
+  /** Category context for the activity selector (null degrades gracefully). */
+  categories: readonly CategoryRecord[] | null;
+  /** The organization's Support route — the truthful missing-taxonomy help. */
+  supportPath: string;
   /** The loaded listing's embedded activity type (edit only) — kept
    *  selectable as the CURRENT value even when no longer active. */
   currentActivityType?: { id: string; labelEn: string; active: boolean };
@@ -39,11 +50,19 @@ export function ProgramFormFields({
 }) {
   const errors = form.formState.errors;
   const allAges = form.watch('allAges');
+  const activityTypeId = form.watch('activityTypeId');
+  const titleAr = form.watch('titleAr');
+  const descriptionAr = form.watch('descriptionAr');
+  const hasArabicContent = titleAr.trim() !== '' || descriptionAr.trim() !== '';
+
   const settingGroupId = useId();
   const genderGroupId = useId();
+  const arabicRegionId = useId();
 
-  const historicalType =
-    currentActivityType !== undefined && !currentActivityType.active ? currentActivityType : null;
+  // The optional Arabic section starts open only when it already holds
+  // content; collapsing it never discards entered values (form state is
+  // kept — proven in tests).
+  const [arabicOpen, setArabicOpen] = useState(() => hasArabicContent);
 
   const sensitiveChip = showSensitiveChip ? (
     <span className={styles.reviewChip}>Needs Himma review</span>
@@ -51,46 +70,38 @@ export function ProgramFormFields({
 
   return (
     <>
+      <p className={styles.requiredNote}>
+        Fields marked <span aria-hidden="true">*</span>
+        <span className={styles.visuallyHiddenText}>with an asterisk</span> are required — you can
+        complete everything else later.
+      </p>
+
       <fieldset className={styles.formSection}>
-        <legend className={styles.formLegend}>Basics</legend>
+        <legend className={styles.formLegend}>Basic information</legend>
         <TextField
-          label="Title (English)"
+          label="Listing title"
           hint="How this listing appears across Himma, e.g. “Adult Beginner Swimming”."
+          requiredMark
           aria-required="true"
           error={errors.titleEn?.message ?? null}
           {...form.register('titleEn')}
         />
-        <TextField
-          label="Title (Arabic, optional)"
-          dir="auto"
-          error={errors.titleAr?.message ?? null}
-          {...form.register('titleAr')}
-        />
-        <SelectField
-          label="Activity type"
-          hint={
-            historicalType !== null
-              ? `“${historicalType.labelEn}” is no longer in the Himma catalogue. It stays until you choose a current activity type.`
-              : 'Activity types are managed by Himma. Customers browse and filter by them.'
+        <ActivityTypeCombobox
+          activityTypes={activityTypes}
+          categories={categories}
+          value={activityTypeId}
+          onSelect={(id) =>
+            form.setValue('activityTypeId', id, {
+              shouldDirty: true,
+              shouldValidate: true,
+              shouldTouch: true,
+            })
           }
-          aria-required="true"
           error={errors.activityTypeId?.message ?? null}
-          {...form.register('activityTypeId')}
-        >
-          <option value="" disabled>
-            Choose an activity type
-          </option>
-          {historicalType !== null ? (
-            <option value={historicalType.id}>
-              {historicalType.labelEn} (no longer in the catalogue)
-            </option>
-          ) : null}
-          {activityTypes.map((type) => (
-            <option key={type.id} value={type.id}>
-              {type.labelEn}
-            </option>
-          ))}
-        </SelectField>
+          {...(currentActivityType !== undefined ? { currentActivityType } : {})}
+          supportPath={supportPath}
+          requiredMark
+        />
         <div
           className={styles.radioGroup}
           role="radiogroup"
@@ -110,7 +121,7 @@ export function ProgramFormFields({
         </div>
         <div className={styles.fieldWithChip}>
           <TextAreaField
-            label="Description (English)"
+            label="Description"
             hint="What customers read on the listing. You can add this later."
             rows={5}
             error={errors.descriptionEn?.message ?? null}
@@ -119,27 +130,63 @@ export function ProgramFormFields({
           />
           {sensitiveChip}
         </div>
-        <TextAreaField
-          label="Description (Arabic, optional)"
-          dir="auto"
-          rows={3}
-          error={errors.descriptionAr?.message ?? null}
-          disabled={sensitiveDisabled}
-          {...form.register('descriptionAr')}
-        />
       </fieldset>
 
+      <div className={styles.disclosure}>
+        <button
+          type="button"
+          className={styles.disclosureButton}
+          aria-expanded={arabicOpen}
+          aria-controls={arabicRegionId}
+          onClick={() => setArabicOpen((wasOpen) => !wasOpen)}
+        >
+          {arabicOpen ? (
+            <ChevronDown aria-hidden="true" strokeWidth={2} className={styles.disclosureIcon} />
+          ) : (
+            <ChevronRight aria-hidden="true" strokeWidth={2} className={styles.disclosureIcon} />
+          )}
+          {arabicOpen ? 'Arabic content (optional)' : 'Add Arabic content (optional)'}
+        </button>
+        {!arabicOpen && hasArabicContent ? (
+          <p className={styles.disclosureNote}>
+            Your Arabic content is kept — expand this section to edit it.
+          </p>
+        ) : null}
+        {arabicOpen ? (
+          <div id={arabicRegionId} className={styles.disclosureBody}>
+            <p className={styles.disclosureNote}>
+              Himma launches in English first — Arabic is optional and never blocks your listing.
+            </p>
+            <TextField
+              label="Title (Arabic)"
+              dir="auto"
+              error={errors.titleAr?.message ?? null}
+              {...form.register('titleAr')}
+            />
+            <div className={styles.fieldWithChip}>
+              <TextAreaField
+                label="Description (Arabic)"
+                dir="auto"
+                rows={3}
+                error={errors.descriptionAr?.message ?? null}
+                disabled={sensitiveDisabled}
+                {...form.register('descriptionAr')}
+              />
+              {sensitiveChip}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       <fieldset className={styles.formSection}>
-        <legend className={styles.formLegend}>
-          Eligibility {sensitiveChip}
-        </legend>
+        <legend className={styles.formLegend}>Who can join {sensitiveChip}</legend>
         <div
           className={styles.radioGroup}
           role="radiogroup"
           aria-labelledby={`${genderGroupId}-label`}
         >
           <span id={`${genderGroupId}-label`} className={styles.radioGroupLabel}>
-            Who it&rsquo;s for
+            Who is this activity for?
           </span>
           <div className={styles.radioOptions}>
             {GENDER_ELIGIBILITY_VALUES.map((value) => (
@@ -167,14 +214,14 @@ export function ProgramFormFields({
         {!allAges ? (
           <div className={styles.ageRow}>
             <TextField
-              label="Youngest age (optional)"
+              label="Youngest age"
               inputMode="numeric"
               error={errors.minAge?.message ?? null}
               disabled={sensitiveDisabled}
               {...form.register('minAge')}
             />
             <TextField
-              label="Oldest age (optional)"
+              label="Oldest age"
               inputMode="numeric"
               error={errors.maxAge?.message ?? null}
               disabled={sensitiveDisabled}
@@ -183,7 +230,7 @@ export function ProgramFormFields({
           </div>
         ) : null}
         <SelectField
-          label="Skill level (optional)"
+          label="Skill level"
           error={errors.skillLevel?.message ?? null}
           disabled={sensitiveDisabled}
           {...form.register('skillLevel')}
@@ -196,7 +243,7 @@ export function ProgramFormFields({
           ))}
         </SelectField>
         <TextAreaField
-          label="Eligibility notes (optional)"
+          label="Eligibility notes"
           hint="Anything participants should know before joining — safety requirements, prerequisites."
           rows={3}
           error={errors.eligibilityNotes?.message ?? null}

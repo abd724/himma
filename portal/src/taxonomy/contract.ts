@@ -38,6 +38,30 @@ export interface ActivityTypeReadPort {
   listActivityTypes(): Promise<ActivityTypeListOutcome>;
 }
 
+/**
+ * Category taxonomy read — mirrors the REAL public taxonomy read
+ * `GET /catalogue/categories` field for field: ACTIVE admin-owned category
+ * rows in deterministic order, no admin/version metadata. The portal reads
+ * categories only to give activity types their catalogue context (e.g.
+ * "Swimming — Aquatics" in the activity-type selector); providers never
+ * create or edit categories.
+ */
+export interface CategoryRecord {
+  readonly id: string;
+  readonly slug: string;
+  readonly labelEn: string;
+  readonly labelAr: string | null;
+  readonly imageRef: string | null;
+}
+
+export type CategoryListOutcome =
+  | { readonly kind: 'loaded'; readonly categories: readonly CategoryRecord[] }
+  | { readonly kind: 'unavailable' };
+
+export interface CategoryReadPort {
+  listCategories(): Promise<CategoryListOutcome>;
+}
+
 export interface AreaRecord {
   readonly id: string;
   readonly slug: string;

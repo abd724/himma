@@ -9,7 +9,11 @@ import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
 import type { ProviderAccessPort } from '../provider-access/contract';
-import type { ActivityTypeReadPort, AreaReadPort } from '../taxonomy/contract';
+import type {
+  ActivityTypeReadPort,
+  AreaReadPort,
+  CategoryReadPort,
+} from '../taxonomy/contract';
 import type { TeamPort } from '../team/contract';
 
 /**
@@ -89,6 +93,12 @@ export function createUnconfiguredListingsPort(): ListingsReadPort {
 export function createUnconfiguredActivityTypePort(): ActivityTypeReadPort {
   return {
     listActivityTypes: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredCategoryPort(): CategoryReadPort {
+  return {
+    listCategories: async () => ({ kind: 'unavailable' }),
   };
 }
 

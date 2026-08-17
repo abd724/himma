@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBlocker } from 'react-router-dom';
 import { usePortalPorts } from '../../../app/ports-context';
+import { organizationPath } from '../../../navigation/nav-items';
 import type { ProgramDetailRecord } from '../../../catalogue/contract';
 import { Button } from '../../../components/ui/button';
 import { ConfirmDialog } from '../../../components/ui/confirm-dialog';
 import { InlineAlert } from '../../../components/ui/inline-alert';
 import type { OrganizationView } from '../../../profile/contract';
-import type { ActivityTypeRecord } from '../../../taxonomy/contract';
+import type { ActivityTypeRecord, CategoryRecord } from '../../../taxonomy/contract';
 import { commonMutationErrorCopy } from './editor-domain';
 import {
   buildProgramPatch,
@@ -54,6 +55,7 @@ export function ProgramDetailsSection({
   view,
   program,
   taxonomy,
+  categories,
   reviewGated,
   revisionPending,
   readOnly,
@@ -61,6 +63,7 @@ export function ProgramDetailsSection({
   view: OrganizationView;
   program: ProgramDetailRecord;
   taxonomy: readonly ActivityTypeRecord[];
+  categories: readonly CategoryRecord[] | null;
   reviewGated: boolean;
   revisionPending: boolean;
   readOnly: boolean;
@@ -234,6 +237,8 @@ export function ProgramDetailsSection({
             <ProgramFormFields
               form={form}
               activityTypes={taxonomy}
+              categories={categories}
+              supportPath={organizationPath(view.organization.id, 'support')}
               currentActivityType={program.activityType}
               showSensitiveChip={reviewGated}
               sensitiveDisabled={reviewGated && revisionPending}

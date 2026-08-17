@@ -8,7 +8,11 @@ import type { ListingLifecyclePort } from '../catalogue/lifecycle-contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
-import type { ActivityTypeReadPort, AreaReadPort } from '../taxonomy/contract';
+import type {
+  ActivityTypeReadPort,
+  AreaReadPort,
+  CategoryReadPort,
+} from '../taxonomy/contract';
 import type { TeamPort } from '../team/contract';
 
 /** Domain-port access for pages — composed by AppProviders from the runtime. */
@@ -25,6 +29,7 @@ export interface PortalPorts {
   readonly bulkImportPort: BulkImportPort;
   readonly listingCardPort: ListingCardPort;
   readonly activityTypePort: ActivityTypeReadPort;
+  readonly categoryPort: CategoryReadPort;
 }
 
 const PortsContext = createContext<PortalPorts | null>(null);

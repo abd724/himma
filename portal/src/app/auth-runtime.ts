@@ -7,6 +7,7 @@ import {
   createUnconfiguredAuthAdapter,
   createUnconfiguredBranchPort,
   createUnconfiguredBulkImportPort,
+  createUnconfiguredCategoryPort,
   createUnconfiguredListingCardPort,
   createUnconfiguredInvitationPort,
   createUnconfiguredListingEditorPort,
@@ -27,7 +28,11 @@ import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
 import type { ProviderAccessPort } from '../provider-access/contract';
-import type { ActivityTypeReadPort, AreaReadPort } from '../taxonomy/contract';
+import type {
+  ActivityTypeReadPort,
+  AreaReadPort,
+  CategoryReadPort,
+} from '../taxonomy/contract';
 import type { TeamPort } from '../team/contract';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
@@ -47,6 +52,7 @@ export interface AuthRuntime {
   readonly bulkImportPort: BulkImportPort;
   readonly listingCardPort: ListingCardPort;
   readonly activityTypePort: ActivityTypeReadPort;
+  readonly categoryPort: CategoryReadPort;
 }
 
 declare global {
@@ -88,6 +94,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       bulkImportPort: fixture.bulkImportPort,
       listingCardPort: fixture.listingCardPort,
       activityTypePort: fixture.activityTypePort,
+      categoryPort: fixture.categoryPort,
     };
   }
 
@@ -107,5 +114,6 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     bulkImportPort: createUnconfiguredBulkImportPort(),
     listingCardPort: createUnconfiguredListingCardPort(),
     activityTypePort: createUnconfiguredActivityTypePort(),
+    categoryPort: createUnconfiguredCategoryPort(),
   };
 }

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { usePortalPorts } from '../../../app/ports-context';
 import type { PriceOptionRecord, ProgramDetailRecord } from '../../../catalogue/contract';
 import { PRICE_OPTION_KINDS } from '../../../catalogue/contract';
@@ -8,7 +8,6 @@ import { filsToAedInput, parseAedToFils, parseSessionsCount } from '../../../cat
 import { Button } from '../../../components/ui/button';
 import { ConfirmDialog } from '../../../components/ui/confirm-dialog';
 import { InlineAlert } from '../../../components/ui/inline-alert';
-import { SelectField } from '../../../components/ui/select-field';
 import { TextField } from '../../../components/ui/text-field';
 import { VisuallyHidden } from '../../../components/ui/visually-hidden';
 import type { OrganizationView } from '../../../profile/contract';
@@ -493,6 +492,7 @@ function OptionForm({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const kindGroupId = useId();
   return (
     <form
       className={styles.inlineFormCard}
@@ -505,18 +505,30 @@ function OptionForm({
     >
       <p className={styles.inlineFormTitle}>{title}</p>
       {error !== null ? <InlineAlert tone="error">{error}</InlineAlert> : null}
-      <div className={styles.optionFieldRow}>
-        <SelectField
-          label="Kind"
-          value={formState.kind}
-          onChange={(event) => setFormState({ ...formState, kind: event.target.value })}
-        >
+      <div
+        className={styles.radioGroup}
+        role="radiogroup"
+        aria-labelledby={`${kindGroupId}-label`}
+      >
+        <span id={`${kindGroupId}-label`} className={styles.radioGroupLabel}>
+          Price option type
+        </span>
+        <div className={styles.radioOptions}>
           {PRICE_OPTION_KINDS.map((kind) => (
-            <option key={kind} value={kind}>
+            <label key={kind} className={styles.radioOption}>
+              <input
+                type="radio"
+                name={`${kindGroupId}-kind`}
+                value={kind}
+                checked={formState.kind === kind}
+                onChange={() => setFormState({ ...formState, kind })}
+              />
               {priceOptionKindLabel(kind)}
-            </option>
+            </label>
           ))}
-        </SelectField>
+        </div>
+      </div>
+      <div className={styles.optionFieldRow}>
         {formState.kind !== 'free' ? (
           <TextField
             label="Price (AED)"

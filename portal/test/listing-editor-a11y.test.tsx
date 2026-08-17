@@ -19,7 +19,28 @@ describe('listing editor accessibility (jest-axe, W2-8)', () => {
       asIdentity: 'owner@bluewave.demo',
       initialEntries: [`/o/${blueWave.organizationId}/listings/new`],
     });
-    await screen.findByLabelText('Title (English)');
+    await screen.findByLabelText(/Listing title/);
+    expect(await axe(page.container)).toHaveNoViolations();
+  });
+
+  test('create form with the activity combobox open (results and no-results states) and the Arabic disclosure expanded', async () => {
+    const user = userEvent.setup();
+    const page = renderPortal({
+      asIdentity: 'owner@bluewave.demo',
+      initialEntries: [`/o/${blueWave.organizationId}/listings/new`],
+    });
+    const combobox = await screen.findByRole('combobox', { name: /Activity type/ });
+    await user.click(combobox);
+    await screen.findByRole('listbox', { name: 'Activity types' });
+    expect(await axe(page.container)).toHaveNoViolations();
+
+    await user.type(combobox, 'zzz-no-such-activity');
+    await screen.findByText('No matching activity');
+    expect(await axe(page.container)).toHaveNoViolations();
+
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Add Arabic content (optional)' }));
+    await screen.findByLabelText('Title (Arabic)');
     expect(await axe(page.container)).toHaveNoViolations();
   });
 
@@ -96,7 +117,7 @@ describe('listing editor accessibility (jest-axe, W2-8)', () => {
       initialEntries: [editPath(fixtureListings.holidayCamp)],
     });
     await screen.findByRole('heading', { level: 1, name: 'Holiday Swim Camp' });
-    const title = screen.getByLabelText('Title (English)');
+    const title = screen.getByLabelText(/Listing title/);
     await user.clear(title);
     await user.type(title, 'Conflicted title');
     runtime.controls.simulateConcurrentListingEdit(

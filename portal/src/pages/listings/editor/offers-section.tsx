@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { usePortalPorts } from '../../../app/ports-context';
 import type { OfferRecord, ProgramDetailRecord } from '../../../catalogue/contract';
 import { OFFER_KINDS } from '../../../catalogue/contract';
@@ -8,7 +8,6 @@ import { filsToAedInput, parseAedToFils } from '../../../catalogue/money';
 import { Button } from '../../../components/ui/button';
 import { ConfirmDialog } from '../../../components/ui/confirm-dialog';
 import { InlineAlert } from '../../../components/ui/inline-alert';
-import { SelectField } from '../../../components/ui/select-field';
 import { TextField } from '../../../components/ui/text-field';
 import { VisuallyHidden } from '../../../components/ui/visually-hidden';
 import type { OrganizationView } from '../../../profile/contract';
@@ -365,6 +364,7 @@ function OfferForm({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const kindGroupId = useId();
   return (
     <form
       className={styles.inlineFormCard}
@@ -377,22 +377,37 @@ function OfferForm({
     >
       <p className={styles.inlineFormTitle}>{title}</p>
       {error !== null ? <InlineAlert tone="error">{error}</InlineAlert> : null}
-      <div className={styles.optionFieldRow}>
-        <SelectField
-          label="Kind"
-          value={formState.kind}
-          disabled={kindLocked}
-          {...(kindLocked
-            ? { hint: 'An offer keeps its kind — end it and add a new one to change.' }
-            : {})}
-          onChange={(event) => setFormState({ ...formState, kind: event.target.value })}
+      {kindLocked ? (
+        <p className={styles.sectionIntro}>
+          {offerKindLabel(formState.kind)} — an offer keeps its kind. End it and add a new one to
+          change the kind.
+        </p>
+      ) : (
+        <div
+          className={styles.radioGroup}
+          role="radiogroup"
+          aria-labelledby={`${kindGroupId}-label`}
         >
-          {OFFER_KINDS.map((kind) => (
-            <option key={kind} value={kind}>
-              {offerKindLabel(kind)}
-            </option>
-          ))}
-        </SelectField>
+          <span id={`${kindGroupId}-label`} className={styles.radioGroupLabel}>
+            Offer kind
+          </span>
+          <div className={styles.radioOptions}>
+            {OFFER_KINDS.map((kind) => (
+              <label key={kind} className={styles.radioOption}>
+                <input
+                  type="radio"
+                  name={`${kindGroupId}-kind`}
+                  value={kind}
+                  checked={formState.kind === kind}
+                  onChange={() => setFormState({ ...formState, kind })}
+                />
+                {offerKindLabel(kind)}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className={styles.optionFieldRow}>
         <TextField
           label="Label"
           hint="What customers read, e.g. “Free trial session”."
