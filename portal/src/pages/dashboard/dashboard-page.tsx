@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePortalPorts } from '../../app/ports-context';
-import type { ListingCardExtras } from '../../catalogue/card-contract';
 import type { ProgramSummaryRecord } from '../../catalogue/contract';
 import type { StaffInvitationRecord, StaffLoadOutcome } from '../../team/contract';
 import { Button } from '../../components/ui/button';
@@ -39,8 +38,8 @@ import styles from './dashboard.module.css';
  *   Himma" (submitted/in-review listings, organization verification);
  * - a concise organization/storefront status;
  * - a compact catalogue overview by REAL lifecycle state;
- * - recently updated listings (thumbnails via the ListingCardPort
- *   projection — no contract widened for this).
+ * - recently updated listings (thumbnails from the W2-12C1 list-card
+ *   projection each summary row carries — no extra read for this).
  *
  * DELIBERATELY ABSENT (no authoritative backend exists — recorded future
  * dashboard requirements, never faked): bookings, participants (bookings ≠
@@ -53,7 +52,7 @@ import styles from './dashboard.module.css';
 export function DashboardPage() {
   usePageTitle('Dashboard');
   const organization = useActiveOrganization();
-  const { profilePort, listingsPort, listingCardPort, teamPort } = usePortalPorts();
+  const { profilePort, listingsPort, teamPort } = usePortalPorts();
 
   const viewQuery = useQuery({
     queryKey: ['organizationView', organization.id],
@@ -71,18 +70,6 @@ export function DashboardPage() {
   });
   const rows: readonly ProgramSummaryRecord[] =
     catalogueQuery.data?.kind === 'loaded' ? catalogueQuery.data.programs : [];
-
-  const extrasQuery = useQuery({
-    queryKey: ['listingCardExtras', organization.id, 'dashboard', rows.map((row) => row.id).join(',')],
-    queryFn: () =>
-      listingCardPort.loadCardExtras(
-        organization.id,
-        rows.map((row) => row.id),
-      ),
-    enabled: rows.length > 0,
-  });
-  const extras: Readonly<Record<string, ListingCardExtras>> =
-    extrasQuery.data?.kind === 'loaded' ? extrasQuery.data.extras : {};
 
   const staffQuery = useQuery({
     queryKey: ['staff', organization.id],
@@ -116,7 +103,6 @@ export function DashboardPage() {
           canReadCatalogue={canReadCatalogue}
           canReadStaff={canReadStaff}
           rows={rows}
-          extras={extras}
           catalogueState={
             !canReadCatalogue
               ? 'hidden'
@@ -140,7 +126,6 @@ function DashboardBody({
   canReadCatalogue,
   canReadStaff,
   rows,
-  extras,
   catalogueState,
   onRetryCatalogue,
   staffQuery,
@@ -150,7 +135,6 @@ function DashboardBody({
   canReadCatalogue: boolean;
   canReadStaff: boolean;
   rows: readonly ProgramSummaryRecord[];
-  extras: Readonly<Record<string, ListingCardExtras>>;
   catalogueState: 'hidden' | 'loading' | 'loaded' | 'failed';
   onRetryCatalogue: () => void;
   staffQuery: { isPending: boolean; data?: StaffLoadOutcome | undefined; refetch: () => Promise<unknown> };
@@ -160,7 +144,6 @@ function DashboardBody({
   const counts = catalogueCounts(rows);
   const attention = attentionItems({
     rows,
-    extras,
     canPublish,
     organizationVerificationState: view.organization.verificationState,
   });
@@ -228,7 +211,7 @@ function DashboardBody({
             awaiting={awaiting}
           />
           {canReadCatalogue && catalogueState === 'loaded' && rows.length > 0 ? (
-            <RecentSection organizationId={organizationId} rows={rows} extras={extras} />
+            <RecentSection organizationId={organizationId} rows={rows} />
           ) : null}
         </div>
 
@@ -534,11 +517,9 @@ function CatalogueOverviewSection({
 function RecentSection({
   organizationId,
   rows,
-  extras,
 }: {
   organizationId: string;
   rows: readonly ProgramSummaryRecord[];
-  extras: Readonly<Record<string, ListingCardExtras>>;
 }) {
   const recent = recentListings(rows);
   return (
@@ -549,7 +530,7 @@ function RecentSection({
       <div className={styles.sectionCard}>
         <ul className={styles.recentList}>
           {recent.map((row) => {
-            const thumbnailUrl = extras[row.id]?.thumbnailUrl ?? null;
+            const thumbnailUrl = row.thumbnailUrl;
             return (
               <li key={row.id}>
                 <Link

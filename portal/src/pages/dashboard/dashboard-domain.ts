@@ -1,4 +1,3 @@
-import type { ListingCardExtras } from '../../catalogue/card-contract';
 import type {
   ListingState,
   ListingsReadPort,
@@ -89,7 +88,8 @@ export function listingCountLabel(count: number): string {
 
 /**
  * The EXACT needs-attention rule (documented + test-locked; role-aware;
- * derived only from the caller's reachable rows and the card projection):
+ * derived only from the caller's reachable rows — since W2-12C1 each row
+ * carries its own card projection):
  *
  * A listing needs the provider's attention when it is
  * 1. `changes_requested` (Himma asked for corrections), or
@@ -121,7 +121,6 @@ export type AttentionItem =
 
 export function attentionItems(input: {
   readonly rows: readonly ProgramSummaryRecord[];
-  readonly extras: Readonly<Record<string, ListingCardExtras>>;
   readonly canPublish: boolean;
   readonly organizationVerificationState: string;
 }): AttentionItem[] {
@@ -139,10 +138,8 @@ export function attentionItems(input: {
       continue;
     }
     if (row.listingState === 'draft') {
-      const extras = input.extras[row.id];
-      if (extras === undefined) continue;
-      const missingOption = extras.priceSummary.kind === 'none';
-      const missingBranch = extras.branchSummary.activeCount === 0;
+      const missingOption = row.priceSummary.kind === 'none';
+      const missingBranch = row.branchSummary.activeCount === 0;
       if (missingOption || missingBranch) {
         const reason =
           missingOption && missingBranch

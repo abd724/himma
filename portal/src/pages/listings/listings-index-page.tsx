@@ -1,9 +1,8 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ClipboardList, Image as ImageIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortalPorts } from '../../app/ports-context';
-import type { ListingCardExtras } from '../../catalogue/card-contract';
 import type { ProgramListPage, ProgramSummaryRecord } from '../../catalogue/contract';
 import { LISTING_STATES } from '../../catalogue/contract';
 import { ActionLink } from '../../components/ui/action-link';
@@ -33,14 +32,16 @@ import styles from './listings.module.css';
  * Listings index (docs/29 §6 route `/o/:organizationId/listings`) — the
  * catalogue workspace over the REAL provider-private list read
  * (`GET /provider/organizations/:orgId/listings`, capability
- * `catalogue.read`). The list contract returns EXACTLY seven summary fields
- * per listing — so the index truthfully shows title, lifecycle state,
- * activity type (labelled via the public taxonomy read), and last-update
- * context, and nothing else: no bookings, capacity, sessions, ratings,
- * revenue, or price summaries exist on any backend read for this surface.
- * Status filtering and title search are CLIENT-SIDE over the loaded rows
- * (the real list API has no filter/search parameters); pagination mirrors
- * the real opaque-cursor keyset contract.
+ * `catalogue.read`). Since W2-12C1 each summary row IS the list-card
+ * projection — title, lifecycle state, activity display, thumbnail, the
+ * derived D-S4-1 price summary, and the branch summary all arrive on the
+ * ONE authoritative page read, so the index issues no per-row detail or
+ * taxonomy requests. Nothing else is shown: no bookings, capacity,
+ * sessions, ratings, or revenue exist on any backend read for this
+ * surface. Status filtering and title search are CLIENT-SIDE over the
+ * loaded rows (the real list API has no filter/search parameters — the
+ * summary line says so truthfully); pagination mirrors the real
+ * opaque-cursor keyset contract.
  */
 const LISTINGS_PAGE_SIZE = 10;
 
@@ -95,7 +96,7 @@ function CatalogueNoAccess() {
 }
 
 function ListingsContent({ view }: { view: OrganizationView }) {
-  const { listingsPort, activityTypePort, listingCardPort } = usePortalPorts();
+  const { listingsPort } = usePortalPorts();
   const authority = catalogueAuthority(view);
   const organizationId = view.organization.id;
 
@@ -115,39 +116,6 @@ function ListingsContent({ view }: { view: OrganizationView }) {
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     retry: false,
   });
-
-  // Labels for the summary rows' activityTypeId — the public taxonomy read.
-  // If it is unavailable the rows still render (their own truth is primary);
-  // labels simply stay absent until a refetch succeeds.
-  const taxonomyQuery = useQuery({
-    queryKey: ['activityTypes'],
-    queryFn: () => activityTypePort.listActivityTypes(),
-  });
-  const activityTypeLabels = useMemo(() => {
-    const labels = new Map<string, string>();
-    if (taxonomyQuery.data?.kind === 'loaded') {
-      for (const type of taxonomyQuery.data.activityTypes) {
-        labels.set(type.id, type.labelEn);
-      }
-    }
-    return labels;
-  }, [taxonomyQuery.data]);
-
-  // Row extras (thumbnail · price summary · branch summary) — the
-  // presentation projection composed from the shared catalogue truth. Rows
-  // are primary and render without it; extras fill in as they resolve. The
-  // real list wire cannot serve these fields yet (recorded W2-12
-  // list-projection requirement in card-contract.ts).
-  const loadedIds = (listQuery.data?.pages.flatMap((page) => page.programs) ?? []).map(
-    (row) => row.id,
-  );
-  const extrasQuery = useQuery({
-    queryKey: ['listingCardExtras', organizationId, loadedIds.join(',')],
-    queryFn: () => listingCardPort.loadCardExtras(organizationId, loadedIds),
-    enabled: loadedIds.length > 0,
-  });
-  const cardExtras: Readonly<Record<string, ListingCardExtras>> =
-    extrasQuery.data?.kind === 'loaded' ? extrasQuery.data.extras : {};
 
   const [stateFilter, setStateFilter] = useState('all');
   const [titleSearch, setTitleSearch] = useState('');
@@ -278,13 +246,7 @@ function ListingsContent({ view }: { view: OrganizationView }) {
       ) : (
         <ul className={styles.listingList} aria-label="Listings">
           {filtered.map((row) => (
-            <ListingRow
-              key={row.id}
-              row={row}
-              organizationId={organizationId}
-              activityTypeLabel={activityTypeLabels.get(row.activityTypeId) ?? null}
-              extras={cardExtras[row.id] ?? null}
-            />
+            <ListingRow key={row.id} row={row} organizationId={organizationId} />
           ))}
         </ul>
       )}
@@ -314,17 +276,17 @@ function ListingsContent({ view }: { view: OrganizationView }) {
  *  option shows "Free"; otherwise "From" the LOWEST active option; no
  *  active option shows the honest readiness state. Never a Program.price,
  *  never a range, never an average. */
-function priceSummaryLabel(extras: ListingCardExtras): string {
-  if (extras.priceSummary.kind === 'free') return 'Free';
-  if (extras.priceSummary.kind === 'from') {
-    return `From ${formatAedFromFils(extras.priceSummary.amountFils)}`;
+function priceSummaryLabel(row: ProgramSummaryRecord): string {
+  if (row.priceSummary.kind === 'free') return 'Free';
+  if (row.priceSummary.kind === 'from') {
+    return `From ${formatAedFromFils(row.priceSummary.amountFils)}`;
   }
   return 'No pricing yet';
 }
 
 /** Concise branch summary ("Marina" / "Marina + 2 more" / not placed yet). */
-function branchSummaryLabel(extras: ListingCardExtras): string {
-  const { firstLabel, activeCount } = extras.branchSummary;
+function branchSummaryLabel(row: ProgramSummaryRecord): string {
+  const { firstLabel, activeCount } = row.branchSummary;
   if (activeCount === 0 || firstLabel === null) return 'No branch yet';
   return activeCount === 1 ? firstLabel : `${firstLabel} + ${activeCount - 1} more`;
 }
@@ -332,25 +294,17 @@ function branchSummaryLabel(extras: ListingCardExtras): string {
 function ListingRow({
   row,
   organizationId,
-  activityTypeLabel,
-  extras,
 }: {
   row: ProgramSummaryRecord;
   organizationId: string;
-  activityTypeLabel: string | null;
-  extras: ListingCardExtras | null;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const thumbnailUrl = extras?.thumbnailUrl ?? null;
+  const thumbnailUrl = row.thumbnailUrl;
   const showImage = thumbnailUrl !== null && !imageFailed;
-  const contextLine = [
-    ...(activityTypeLabel !== null ? [activityTypeLabel] : []),
-    ...(extras !== null ? [branchSummaryLabel(extras)] : []),
-  ].join(' · ');
-  const commerceLine = [
-    ...(extras !== null ? [priceSummaryLabel(extras)] : []),
-    `Updated ${formatListingDate(row.updatedAt)}`,
-  ].join(' · ');
+  const contextLine = [row.activityType.labelEn, branchSummaryLabel(row)].join(' · ');
+  const commerceLine = [priceSummaryLabel(row), `Updated ${formatListingDate(row.updatedAt)}`].join(
+    ' · ',
+  );
 
   return (
     <li className={styles.listingRow}>

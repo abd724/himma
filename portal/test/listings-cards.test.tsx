@@ -92,33 +92,29 @@ describe('listings index cards (W2-11 owner visual correction)', () => {
     expect(row.querySelector('a')).toBeNull();
   });
 
-  test('the card-extras port respects read authority: no catalogue read → forbidden; a Branch Manager resolves only the reachable set', async () => {
+  test('card truth rides the authoritative list read itself: no catalogue read → forbidden; a Branch Manager receives only reachable rows, each carrying its card', async () => {
     const runtime = createFixtureAuthRuntime();
     runtime.seedSession('finance@bluewave.demo');
     expect(
-      (
-        await runtime.listingCardPort.loadCardExtras(blueWave.organizationId, [
-          fixtureListings.adultSwimming,
-        ])
-      ).kind,
+      (await runtime.listingsPort.listListings(blueWave.organizationId)).kind,
     ).toBe('forbidden');
 
     runtime.seedSession('manager@bluewave.demo');
-    const scoped = await runtime.listingCardPort.loadCardExtras(blueWave.organizationId, [
-      fixtureListings.adultSwimming, // reachable (Marina + Bay, some-rule)
-      fixtureListings.privateCoaching, // Bay-only — NOT reachable for Marina scope
-    ]);
+    const scoped = await runtime.listingsPort.listListings(blueWave.organizationId);
     if (scoped.kind !== 'loaded') throw new Error(scoped.kind);
-    expect(scoped.extras[fixtureListings.adultSwimming]).toBeDefined();
-    expect(scoped.extras[fixtureListings.privateCoaching]).toBeUndefined();
+    const ids = scoped.page.programs.map((row) => row.id);
+    expect(ids).toContain(fixtureListings.adultSwimming); // reachable (Marina + Bay)
+    expect(ids).not.toContain(fixtureListings.privateCoaching); // Bay-only — out of Marina scope
+    for (const row of scoped.page.programs) {
+      expect(row.priceSummary.kind).toMatch(/^(free|from|none)$/);
+      expect(typeof row.branchSummary.activeCount).toBe('number');
+      expect(typeof row.activityType.labelEn).toBe('string');
+    }
   });
 
   test('the unconfigured production port resolves nothing (placeholders everywhere, fail closed)', async () => {
-    const { createUnconfiguredListingCardPort } = await import('../src/auth/unconfigured-adapter');
-    const outcome = await createUnconfiguredListingCardPort().loadCardExtras(
-      blueWave.organizationId,
-      [fixtureListings.adultSwimming],
-    );
+    const { createUnconfiguredListingsPort } = await import('../src/auth/unconfigured-adapter');
+    const outcome = await createUnconfiguredListingsPort().listListings(blueWave.organizationId);
     expect(outcome.kind).toBe('unavailable');
   });
 

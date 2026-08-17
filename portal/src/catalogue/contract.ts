@@ -1,8 +1,9 @@
 /**
  * Provider catalogue READ seam — mirrors the two REAL provider-private
  * catalogue read routes (backend/src/modules/catalogue/http/
- * catalogue-routes.ts) field for field. W2-12 implements this port over the
- * live API; until then the semantic fixture stands behind the same contract.
+ * catalogue-routes.ts) field for field. W2-12C1 implements this port over
+ * the live API; the semantic fixture stands behind the same contract for
+ * fixture mode.
  *
  * - `listListings` ⇄ `GET /provider/organizations/:orgId/listings`
  *   (capability `catalogue.read` — owner, org_manager, branch_manager,
@@ -16,8 +17,11 @@
  *   (drafts not yet placed anywhere) or at least one active association to
  *   one of the caller's assigned ACTIVE branches. Inaccessible listings
  *   never consume page slots; the cursor walks the reachable ordered set.
- *   The summary row carries EXACTLY the real seven fields — no price,
- *   branch, media, offer, or revision data exists on the list contract.
+ *   Since W2-12C1 the summary row IS the list-card projection: identity/
+ *   lifecycle plus activity display info, the derived D-S4-1 price
+ *   summary, the branch summary, and thumbnail metadata ride the ONE
+ *   authoritative page query — no offer or revision data exists on the
+ *   list contract, and the index never issues per-row detail reads.
  * - `loadListing` ⇄ `GET .../listings/:programId` (same capability). The
  *   detail read shares the SAME branch-scope reachability rule as the
  *   list (one canonical predicate in the backend): an in-organization but
@@ -57,15 +61,54 @@ export type PriceOptionKind = (typeof PRICE_OPTION_KINDS)[number];
 export const OFFER_KINDS = ['freeTrial', 'paidTrial', 'discount', 'promo'] as const;
 export type OfferKind = (typeof OFFER_KINDS)[number];
 
-/** The real list-row projection — seven fields, nothing more. */
+/**
+ * Derived row price display under the binding D-S4-1 semantics: an active
+ * free option wins, otherwise `from` the LOWEST active option amount,
+ * otherwise the honest `none` readiness state. Never a stored
+ * Program.price, never a range, never an average; several options remain
+ * ONE listing. (Integer fils; AED formatting stays presentation-side.)
+ */
+export type ListingPriceSummary =
+  | { readonly kind: 'free' }
+  | { readonly kind: 'from'; readonly amountFils: number }
+  | { readonly kind: 'none' };
+
+/** Concise branch truth: the earliest ACTIVE association's branch label
+ *  (the same association order the detail lists) plus how many active
+ *  associations exist. Zero = not placed anywhere yet. */
+export interface ListingBranchSummary {
+  readonly firstLabel: string | null;
+  readonly activeCount: number;
+}
+
+/**
+ * The real list-row LIST-CARD projection (W2-12C1) — the provider list
+ * read serves one bounded management row per Program: identity/lifecycle
+ * plus activity display info, the derived price summary, the branch
+ * summary, and thumbnail presentation. The wire carries thumbnail
+ * METADATA only (`mediaRef` + alt text — media binaries/storage remain
+ * the carried gap, so no real resolvable URL exists); `thumbnailUrl` is
+ * the port-resolved presentation value — fixture mode resolves checked-in
+ * demo assets, live mode truthfully resolves null (placeholder) until a
+ * media URL source exists.
+ */
 export interface ProgramSummaryRecord {
   readonly id: string;
   readonly titleEn: string;
   readonly listingState: string;
-  readonly activityTypeId: string;
+  /** Canonical activity relationship — provider-friendly label plus the
+   *  truthful active flag (a historical inactive type stays representable). */
+  readonly activityType: {
+    readonly id: string;
+    readonly labelEn: string;
+    readonly active: boolean;
+  };
   readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly priceSummary: ListingPriceSummary;
+  readonly branchSummary: ListingBranchSummary;
+  readonly thumbnailUrl: string | null;
 }
 
 export interface ProgramListPage {

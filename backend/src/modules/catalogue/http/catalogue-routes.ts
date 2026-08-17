@@ -271,14 +271,42 @@ export function registerCatalogueRoutes(
         response: {
           200: Type.Object({
             programs: Type.Array(
+              // W2-12C1 list-card projection: one bounded management-row
+              // summary (activity display · derived D-S4-1 price summary ·
+              // branch summary · thumbnail METADATA — never a fabricated
+              // URL) so the provider index needs no per-row detail reads.
               Type.Object({
                 id: Uuid,
                 titleEn: Type.String(),
                 listingState: Type.String(),
-                activityTypeId: Uuid,
+                activityType: Type.Object({
+                  id: Uuid,
+                  labelEn: Type.String(),
+                  active: Type.Boolean(),
+                }),
                 version: Type.Integer(),
                 createdAt: Type.String(),
                 updatedAt: Type.String(),
+                priceSummary: Type.Union([
+                  Type.Object({ kind: Type.Literal('free') }),
+                  Type.Object({
+                    kind: Type.Literal('from'),
+                    amountFils: Type.Integer(),
+                    currency: Type.Literal('AED'),
+                  }),
+                  Type.Object({ kind: Type.Literal('none') }),
+                ]),
+                branchSummary: Type.Object({
+                  firstLabel: Type.Union([Type.String(), Type.Null()]),
+                  activeCount: Type.Integer(),
+                }),
+                thumbnail: Type.Union([
+                  Type.Object({
+                    mediaRef: Uuid,
+                    altTextEn: Type.Union([Type.String(), Type.Null()]),
+                  }),
+                  Type.Null(),
+                ]),
               }),
             ),
             nextCursor: Type.Union([Uuid, Type.Null()]),

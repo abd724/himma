@@ -3,7 +3,6 @@ import type { BranchPort } from '../branches/contract';
 import type { ListingsReadPort } from '../catalogue/contract';
 import type { ListingEditorPort } from '../catalogue/editor-contract';
 import type { BulkImportPort } from '../catalogue/import-contract';
-import type { ListingCardPort } from '../catalogue/card-contract';
 import type { ListingLifecyclePort } from '../catalogue/lifecycle-contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
@@ -27,7 +26,6 @@ export interface PortalPorts {
   readonly listingEditorPort: ListingEditorPort;
   readonly listingLifecyclePort: ListingLifecyclePort;
   readonly bulkImportPort: BulkImportPort;
-  readonly listingCardPort: ListingCardPort;
   readonly activityTypePort: ActivityTypeReadPort;
   readonly categoryPort: CategoryReadPort;
 }

@@ -61,21 +61,32 @@ describe('provider dashboard (W2-11 owner correction)', () => {
   });
 
   test('the needs-attention rule is exact and role-aware (domain-level lock)', () => {
+    // Since W2-12C1 each summary row carries its own card projection.
+    const completeCard = {
+      priceSummary: { kind: 'from', amountFils: 100 },
+      branchSummary: { firstLabel: 'B', activeCount: 1 },
+      thumbnailUrl: null,
+    } as const;
+    const activityType = { id: 't', labelEn: 'Type', active: true } as const;
+    const base = { activityType, version: 1, createdAt: '1', updatedAt: '1', ...completeCard } as const;
     const rows = [
-      { id: 'a', titleEn: 'CR', listingState: 'changes_requested', activityTypeId: 't', version: 1, createdAt: '1', updatedAt: '1' },
-      { id: 'b', titleEn: 'Approved', listingState: 'approved', activityTypeId: 't', version: 1, createdAt: '1', updatedAt: '1' },
-      { id: 'c', titleEn: 'Draft incomplete', listingState: 'draft', activityTypeId: 't', version: 1, createdAt: '1', updatedAt: '1' },
-      { id: 'd', titleEn: 'Draft complete', listingState: 'draft', activityTypeId: 't', version: 1, createdAt: '1', updatedAt: '1' },
-      { id: 'e', titleEn: 'Submitted', listingState: 'submitted', activityTypeId: 't', version: 1, createdAt: '1', updatedAt: '1' },
-      { id: 'f', titleEn: 'Archived', listingState: 'archived', activityTypeId: 't', version: 1, createdAt: '1', updatedAt: '1' },
-      { id: 'g', titleEn: 'Published', listingState: 'published', activityTypeId: 't', version: 1, createdAt: '1', updatedAt: '1' },
+      { ...base, id: 'a', titleEn: 'CR', listingState: 'changes_requested' },
+      { ...base, id: 'b', titleEn: 'Approved', listingState: 'approved' },
+      {
+        ...base,
+        id: 'c',
+        titleEn: 'Draft incomplete',
+        listingState: 'draft',
+        priceSummary: { kind: 'none' } as const,
+        branchSummary: { firstLabel: null, activeCount: 0 },
+      },
+      { ...base, id: 'd', titleEn: 'Draft complete', listingState: 'draft' },
+      { ...base, id: 'e', titleEn: 'Submitted', listingState: 'submitted' },
+      { ...base, id: 'f', titleEn: 'Archived', listingState: 'archived' },
+      { ...base, id: 'g', titleEn: 'Published', listingState: 'published' },
     ] as const;
-    const extras = {
-      c: { thumbnailUrl: null, priceSummary: { kind: 'none' as const }, branchSummary: { firstLabel: null, activeCount: 0 } },
-      d: { thumbnailUrl: null, priceSummary: { kind: 'from' as const, amountFils: 100 }, branchSummary: { firstLabel: 'B', activeCount: 1 } },
-    };
 
-    const publisher = attentionItems({ rows, extras, canPublish: true, organizationVerificationState: 'live' });
+    const publisher = attentionItems({ rows, canPublish: true, organizationVerificationState: 'live' });
     expect(publisher.map((item) => item.kind)).toEqual([
       'changesRequested',
       'approvedReadyToPublish',
@@ -83,15 +94,15 @@ describe('provider dashboard (W2-11 owner correction)', () => {
     ]);
 
     // Without publication authority, approved is NOT the caller's action.
-    const editor = attentionItems({ rows, extras, canPublish: false, organizationVerificationState: 'live' });
+    const editor = attentionItems({ rows, canPublish: false, organizationVerificationState: 'live' });
     expect(editor.map((item) => item.kind)).toEqual(['changesRequested', 'draftIncomplete']);
 
     // Organization setup counts once for draft/rejected states only.
     expect(
-      attentionItems({ rows: [], extras: {}, canPublish: true, organizationVerificationState: 'rejected' })[0],
+      attentionItems({ rows: [], canPublish: true, organizationVerificationState: 'rejected' })[0],
     ).toEqual({ kind: 'organizationSetup', verificationState: 'rejected' });
     expect(
-      attentionItems({ rows: [], extras: {}, canPublish: true, organizationVerificationState: 'submitted' }),
+      attentionItems({ rows: [], canPublish: true, organizationVerificationState: 'submitted' }),
     ).toHaveLength(0);
 
     // Awaiting Himma: submitted/in_review listings + org verification.

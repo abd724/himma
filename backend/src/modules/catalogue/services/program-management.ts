@@ -474,18 +474,81 @@ export async function listProviderPrograms(
 ): Promise<{ programs: ProgramSummaryView[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
   return withTransaction(deps.db, async (trx) => {
+    // W2-12C1 list-card projection: the card aggregates ride the ONE
+    // authoritative page query as correlated scalar subselects, so the row
+    // count can never multiply (each subselect yields one value) and the
+    // statement count stays constant regardless of page size — no per-row
+    // detail/price/branch follow-ups exist anywhere on this read.
     let query = trx
       .selectFrom('program')
-      .select([
-        'id',
-        'title_en',
-        'listing_state',
-        'activity_type_id',
-        'version',
-        'created_at',
-        'updated_at',
+      .innerJoin('activity_type', 'activity_type.id', 'program.activity_type_id')
+      .select((eb) => [
+        'program.id as id',
+        'program.title_en as title_en',
+        'program.listing_state as listing_state',
+        'program.version as version',
+        'program.created_at as created_at',
+        'program.updated_at as updated_at',
+        'activity_type.id as activity_type_id',
+        'activity_type.label_en as activity_type_label_en',
+        'activity_type.active as activity_type_active',
+        // D-S4-1 price summary inputs — ACTIVE options only; archived
+        // options never participate.
+        eb
+          .exists(
+            eb
+              .selectFrom('program_price_option')
+              .select('program_price_option.id')
+              .whereRef('program_price_option.program_id', '=', 'program.id')
+              .where('program_price_option.state', '=', 'active')
+              .where('program_price_option.kind', '=', 'free'),
+          )
+          .as('has_free_option'),
+        eb
+          .selectFrom('program_price_option')
+          .select((sub) => sub.fn.min('program_price_option.amount_fils').as('m'))
+          .whereRef('program_price_option.program_id', '=', 'program.id')
+          .where('program_price_option.state', '=', 'active')
+          .as('min_active_amount_fils'),
+        // Branch summary — ACTIVE associations, earliest-association order
+        // (the order the detail view lists; branch_id breaks exact ties).
+        eb
+          .selectFrom('program_branch')
+          .select((sub) => sub.fn.count('program_branch.branch_id').as('n'))
+          .whereRef('program_branch.program_id', '=', 'program.id')
+          .where('program_branch.active', '=', true)
+          .as('active_branch_count'),
+        eb
+          .selectFrom('program_branch')
+          .innerJoin('branch', 'branch.id', 'program_branch.branch_id')
+          .select('branch.label')
+          .whereRef('program_branch.program_id', '=', 'program.id')
+          .where('program_branch.active', '=', true)
+          .orderBy('program_branch.created_at')
+          .orderBy('program_branch.branch_id')
+          .limit(1)
+          .as('first_branch_label'),
+        // Thumbnail metadata — first ACTIVE media by (sort_hint, id).
+        eb
+          .selectFrom('program_media')
+          .select('program_media.media_ref')
+          .whereRef('program_media.program_id', '=', 'program.id')
+          .where('program_media.active', '=', true)
+          .orderBy('program_media.sort_hint')
+          .orderBy('program_media.id')
+          .limit(1)
+          .as('thumbnail_media_ref'),
+        eb
+          .selectFrom('program_media')
+          .select('program_media.alt_text_en')
+          .whereRef('program_media.program_id', '=', 'program.id')
+          .where('program_media.active', '=', true)
+          .orderBy('program_media.sort_hint')
+          .orderBy('program_media.id')
+          .limit(1)
+          .as('thumbnail_alt_text_en'),
       ])
-      .where('organization_id', '=', scope.organizationId);
+      .where('program.organization_id', '=', scope.organizationId);
     // Branch-scoped staff see only listings they can reach (branchless
     // drafts or ≥1 active association in scope) — the shared canonical
     // rule participates in the authoritative query BEFORE ordering, cursor
@@ -507,21 +570,46 @@ export async function listProviderPrograms(
         // the anchor timestamp into JS would truncate `created_at` to
         // millisecond Date precision and let the anchor row re-qualify.
         query = query.where(
-          sql<SqlBool>`(created_at, id) > (SELECT created_at, id FROM program WHERE id = ${input.cursor})`,
+          sql<SqlBool>`(program.created_at, program.id) > (SELECT created_at, id FROM program WHERE id = ${input.cursor})`,
         );
       }
     }
-    const rows = await query.orderBy('created_at').orderBy('id').limit(limit + 1).execute();
+    const rows = await query
+      .orderBy('program.created_at')
+      .orderBy('program.id')
+      .limit(limit + 1)
+      .execute();
     const page = rows.slice(0, limit);
     return {
       programs: page.map((row) => ({
         id: row.id,
         titleEn: row.title_en,
         listingState: row.listing_state,
-        activityTypeId: row.activity_type_id,
+        activityType: {
+          id: row.activity_type_id,
+          labelEn: row.activity_type_label_en,
+          active: row.activity_type_active,
+        },
         version: row.version,
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString(),
+        priceSummary: row.has_free_option
+          ? ({ kind: 'free' } as const)
+          : row.min_active_amount_fils !== null
+            ? ({
+                kind: 'from',
+                amountFils: Number(row.min_active_amount_fils),
+                currency: 'AED',
+              } as const)
+            : ({ kind: 'none' } as const),
+        branchSummary: {
+          firstLabel: row.first_branch_label,
+          activeCount: Number(row.active_branch_count),
+        },
+        thumbnail:
+          row.thumbnail_media_ref === null
+            ? null
+            : { mediaRef: row.thumbnail_media_ref, altTextEn: row.thumbnail_alt_text_en },
       })),
       nextCursor: rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
     };

@@ -8,7 +8,6 @@ import {
   createUnconfiguredBranchPort,
   createUnconfiguredBulkImportPort,
   createUnconfiguredCategoryPort,
-  createUnconfiguredListingCardPort,
   createUnconfiguredInvitationPort,
   createUnconfiguredListingEditorPort,
   createUnconfiguredListingLifecyclePort,
@@ -22,7 +21,6 @@ import type { BranchPort } from '../branches/contract';
 import type { ListingsReadPort } from '../catalogue/contract';
 import type { ListingEditorPort } from '../catalogue/editor-contract';
 import type { BulkImportPort } from '../catalogue/import-contract';
-import type { ListingCardPort } from '../catalogue/card-contract';
 import type { ListingLifecyclePort } from '../catalogue/lifecycle-contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
@@ -35,6 +33,7 @@ import type {
 } from '../taxonomy/contract';
 import type { TeamPort } from '../team/contract';
 import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
+import { createLiveCatalogueReadPorts } from '../services/live/live-catalogue-ports';
 import { createLiveDomainPorts } from '../services/live/live-domain-ports';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
@@ -52,7 +51,6 @@ export interface AuthRuntime {
   readonly listingEditorPort: ListingEditorPort;
   readonly listingLifecyclePort: ListingLifecyclePort;
   readonly bulkImportPort: BulkImportPort;
-  readonly listingCardPort: ListingCardPort;
   readonly activityTypePort: ActivityTypeReadPort;
   readonly categoryPort: CategoryReadPort;
 }
@@ -89,13 +87,16 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     const live = createLiveAuthRuntime(liveConfig);
     // W2-12B: the provider ORGANIZATION domains run LIVE over the
     // authenticated transport (onboarding · profile/storefront · branches
-    // + the area read they require · team/invitations). The CATALOGUE
-    // domain (listings, editor, lifecycle, import, cards, activity-type
-    // and category taxonomy) is deliberately NOT live-integrated yet —
-    // those ports stay fail-closed unconfigured until W2-12C, so live mode
-    // renders their surfaces as truthfully unavailable rather than mixing
-    // real branches with fake listings.
+    // + the area read they require · team/invitations).
+    // W2-12C1: the catalogue READS run LIVE too — the provider listings
+    // index/detail (each list row IS the real list-card projection) and
+    // the activity-type/category taxonomy behind the selector. Catalogue
+    // MUTATIONS (editor, lifecycle, import) are deliberately NOT
+    // live-integrated yet — those ports stay fail-closed unconfigured
+    // until W2-12C2, so live mode renders real listing truth while every
+    // save/action surface stays truthfully unavailable.
     const domain = createLiveDomainPorts(live.transport);
+    const catalogue = createLiveCatalogueReadPorts(live.transport);
     return {
       mode,
       adapter: live.adapter,
@@ -106,13 +107,12 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       branchPort: domain.branchPort,
       areaPort: domain.areaPort,
       teamPort: domain.teamPort,
-      listingsPort: createUnconfiguredListingsPort(),
+      listingsPort: catalogue.listingsPort,
       listingEditorPort: createUnconfiguredListingEditorPort(),
       listingLifecyclePort: createUnconfiguredListingLifecyclePort(),
       bulkImportPort: createUnconfiguredBulkImportPort(),
-      listingCardPort: createUnconfiguredListingCardPort(),
-      activityTypePort: createUnconfiguredActivityTypePort(),
-      categoryPort: createUnconfiguredCategoryPort(),
+      activityTypePort: catalogue.activityTypePort,
+      categoryPort: catalogue.categoryPort,
     };
   }
 
@@ -135,7 +135,6 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       listingEditorPort: fixture.listingEditorPort,
       listingLifecyclePort: fixture.listingLifecyclePort,
       bulkImportPort: fixture.bulkImportPort,
-      listingCardPort: fixture.listingCardPort,
       activityTypePort: fixture.activityTypePort,
       categoryPort: fixture.categoryPort,
     };
@@ -181,7 +180,6 @@ function unconfiguredRuntime(): AuthRuntime {
     listingEditorPort: createUnconfiguredListingEditorPort(),
     listingLifecyclePort: createUnconfiguredListingLifecyclePort(),
     bulkImportPort: createUnconfiguredBulkImportPort(),
-    listingCardPort: createUnconfiguredListingCardPort(),
     activityTypePort: createUnconfiguredActivityTypePort(),
     categoryPort: createUnconfiguredCategoryPort(),
   };

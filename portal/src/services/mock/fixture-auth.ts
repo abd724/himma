@@ -52,6 +52,7 @@ import type {
 import { BRANCH_FIELD_LIMITS } from '../../branches/contract';
 import type {
   ListingDetailOutcome,
+  ListingPriceSummary,
   ListingsReadPort,
   ListListingsOutcome,
   OfferRecord,
@@ -94,12 +95,6 @@ import type {
   SubmitProgramOutcome,
 } from '../../catalogue/lifecycle-contract';
 import type { BulkImportPort, DryRunOutcome, ImportRowInput } from '../../catalogue/import-contract';
-import type {
-  ListingCardExtras,
-  ListingCardExtrasOutcome,
-  ListingCardPort,
-  ListingPriceSummary,
-} from '../../catalogue/card-contract';
 import { validateImportRows, type ImportReferenceData } from '../../catalogue/import-validation';
 import type { InvitationAcceptOutcome, InvitationPort } from '../../invitations/contract';
 import type {
@@ -1433,7 +1428,6 @@ export interface FixtureAuthRuntime {
   listingEditorPort: ListingEditorPort;
   listingLifecyclePort: ListingLifecyclePort;
   bulkImportPort: BulkImportPort;
-  listingCardPort: ListingCardPort;
   activityTypePort: ActivityTypeReadPort;
   categoryPort: CategoryReadPort;
   controls: FixtureAccessControls;
@@ -2435,16 +2429,69 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
-  /** Exactly the real seven-field list row — nothing else is projected. */
-  const projectProgramSummary = (row: FixtureProgramState): ProgramSummaryRecord => ({
-    id: row.id,
-    titleEn: row.titleEn,
-    listingState: row.listingState,
-    activityTypeId: row.activityTypeId,
-    version: row.version,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  });
+  /**
+   * Exactly the real W2-12C1 list-card row: identity/lifecycle plus the
+   * card projection (activity display · derived D-S4-1 price summary ·
+   * branch summary · thumbnail) composed from the SAME shared catalogue
+   * truth the detail serves — mirroring the ONE-query backend projection.
+   * Thumbnails resolve to checked-in demo assets (media binaries stay the
+   * carried gap; the live port truthfully resolves null instead).
+   */
+  const projectProgramSummary = (
+    organization: FixtureOrganizationState,
+    row: FixtureProgramState,
+  ): ProgramSummaryRecord => {
+    const activityType = activityTypes.find((type) => type.id === row.activityTypeId);
+    if (!activityType) {
+      throw new Error(`fixture program ${row.id} references an unknown activity type`);
+    }
+
+    const activeMedia = [...row.media]
+      .filter((entry) => entry.active)
+      .sort((a, b) => a.sortHint - b.sortHint || (a.id < b.id ? -1 : 1));
+    const firstRef = activeMedia[0]?.mediaRef;
+    const thumbnailUrl = firstRef !== undefined ? (FIXTURE_MEDIA_PREVIEWS[firstRef] ?? null) : null;
+
+    const activeOptions = row.priceOptions.filter((option) => option.state === 'active');
+    let priceSummary: ListingPriceSummary;
+    if (activeOptions.some((option) => option.kind === 'free')) {
+      priceSummary = { kind: 'free' };
+    } else {
+      const amounts = activeOptions
+        .map((option) => option.amountFils)
+        .filter((amount): amount is number => amount !== null);
+      priceSummary =
+        amounts.length > 0 ? { kind: 'from', amountFils: Math.min(...amounts) } : { kind: 'none' };
+    }
+
+    const activeAssociations = row.branchAssociations.filter((entry) => entry.active);
+    const firstBranch =
+      activeAssociations.length > 0
+        ? organization.branches.find(
+            (candidate) => candidate.id === activeAssociations[0]!.branchId,
+          )
+        : undefined;
+
+    return {
+      id: row.id,
+      titleEn: row.titleEn,
+      listingState: row.listingState,
+      activityType: {
+        id: activityType.id,
+        labelEn: activityType.labelEn,
+        active: activityType.active,
+      },
+      version: row.version,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      priceSummary,
+      branchSummary: {
+        firstLabel: firstBranch?.label ?? null,
+        activeCount: activeAssociations.length,
+      },
+      thumbnailUrl,
+    };
+  };
 
   const projectProgramDetail = (
     organization: FixtureOrganizationState,
@@ -2614,7 +2661,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       return {
         kind: 'loaded',
         page: {
-          programs: page.map(projectProgramSummary),
+          programs: page.map((row) => projectProgramSummary(organization, row)),
           nextCursor: rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
         },
       };
@@ -3737,79 +3784,6 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     },
   };
 
-  // -- W2-11 listing-card presentation projection (READ-only) ---------------
-
-  /**
-   * Composes the owner-approved Listings-index row extras (thumbnail ·
-   * derived price summary · branch summary) from the SAME shared catalogue
-   * truth, under the caller's exact read authority: `catalogue.read`
-   * required, and only ids the caller's branch scope can READ resolve —
-   * everything else is silently absent (no enumeration, no scope leak).
-   * See card-contract.ts for the recorded W2-12 list-projection gap.
-   */
-  const listingCardPort: ListingCardPort = {
-    async loadCardExtras(organizationId, programIds): Promise<ListingCardExtrasOutcome> {
-      const caller = store.current;
-      if (!caller) {
-        return { kind: 'unavailable' };
-      }
-      const organization = organizations.get(organizationId);
-      const seatEntry = caller.memberships.find(
-        (candidate) => candidate.organizationId === organizationId,
-      );
-      if (!organization || !seatEntry || organization.verificationState === 'offboarded') {
-        return { kind: 'notFound' };
-      }
-      if (!ROLE_CAPABILITIES[seatEntry.role].includes('catalogue.read')) {
-        return { kind: 'forbidden' };
-      }
-      const extras: Record<string, ListingCardExtras> = {};
-      for (const programId of programIds) {
-        const row = organization.programs.find((candidate) => candidate.id === programId);
-        if (row === undefined || !programReachableForSeat(organization, seatEntry, row)) {
-          continue;
-        }
-        const activeMedia = [...row.media]
-          .filter((entry) => entry.active)
-          .sort((a, b) => a.sortHint - b.sortHint || (a.id < b.id ? -1 : 1));
-        const firstRef = activeMedia[0]?.mediaRef;
-        const thumbnailUrl =
-          firstRef !== undefined ? (FIXTURE_MEDIA_PREVIEWS[firstRef] ?? null) : null;
-
-        const activeOptions = row.priceOptions.filter((option) => option.state === 'active');
-        let priceSummary: ListingPriceSummary;
-        if (activeOptions.some((option) => option.kind === 'free')) {
-          priceSummary = { kind: 'free' };
-        } else {
-          const amounts = activeOptions
-            .map((option) => option.amountFils)
-            .filter((amount): amount is number => amount !== null);
-          priceSummary =
-            amounts.length > 0
-              ? { kind: 'from', amountFils: Math.min(...amounts) }
-              : { kind: 'none' };
-        }
-
-        const activeAssociations = row.branchAssociations.filter((entry) => entry.active);
-        const firstBranch =
-          activeAssociations.length > 0
-            ? organization.branches.find(
-                (candidate) => candidate.id === activeAssociations[0]!.branchId,
-              )
-            : undefined;
-        extras[programId] = {
-          thumbnailUrl,
-          priceSummary,
-          branchSummary: {
-            firstLabel: firstBranch?.label ?? null,
-            activeCount: activeAssociations.length,
-          },
-        };
-      }
-      return { kind: 'loaded', extras };
-    },
-  };
-
   const controls: FixtureAccessControls = {
     expireSession() {
       store.current = null;
@@ -3961,7 +3935,6 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     listingEditorPort,
     listingLifecyclePort,
     bulkImportPort,
-    listingCardPort,
     activityTypePort,
     categoryPort,
     controls,

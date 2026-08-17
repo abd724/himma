@@ -175,14 +175,34 @@ export interface OpenRevisionView {
   version: number;
 }
 
+/** Derived D-S4-1 row price display: an active free option wins, otherwise
+ *  the LOWEST active amount, otherwise the honest `none` readiness state.
+ *  Never a stored Program.price, never a range, never an average. */
+export type ProgramPriceSummary =
+  | { kind: 'free' }
+  | { kind: 'from'; amountFils: number; currency: 'AED' }
+  | { kind: 'none' };
+
+/**
+ * W2-12C1 list-card projection: the provider listings index renders one
+ * management row (activity display · price summary · branch summary ·
+ * thumbnail metadata) from this single read — never from N+1 detail,
+ * price, or branch requests. Thumbnails stay real METADATA (mediaRef +
+ * alt text); no URL is fabricated while media binaries remain pending.
+ */
 export interface ProgramSummaryView {
   id: string;
   titleEn: string;
   listingState: string;
-  activityTypeId: string;
+  activityType: { id: string; labelEn: string; active: boolean };
   version: number;
   createdAt: string;
   updatedAt: string;
+  priceSummary: ProgramPriceSummary;
+  /** ACTIVE associations only, named by the earliest one — the same
+   *  association order the detail view lists. */
+  branchSummary: { firstLabel: string | null; activeCount: number };
+  thumbnail: { mediaRef: string; altTextEn: string | null } | null;
 }
 
 export interface ProgramDetailView {

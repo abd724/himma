@@ -38,7 +38,6 @@ function renderWithClient(runtime: ReturnType<typeof createFixtureAuthRuntime>) 
     listingEditorPort: runtime.listingEditorPort,
     listingLifecyclePort: runtime.listingLifecyclePort,
     bulkImportPort: runtime.bulkImportPort,
-    listingCardPort: runtime.listingCardPort,
     activityTypePort: runtime.activityTypePort,
     categoryPort: runtime.categoryPort,
   };

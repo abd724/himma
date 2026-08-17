@@ -57,20 +57,36 @@ describe('createAuthRuntime live-mode composition (fail-closed)', () => {
     }
   });
 
-  test('live mode NEVER falls back to fixtures: no fixture controls are installed and every domain port stays fail-closed', async () => {
-    const runtime = createAuthRuntime(LIVE_ENV);
-    expect(window.__himmaPortalAccessFixture).toBeUndefined();
-    // Domain ports are NOT wired in W2-12A (auth/access only) — they must
-    // remain the fail-closed unconfigured implementations in live mode.
-    await expect(runtime.profilePort.loadOrganizationView('any')).resolves.toEqual({
-      kind: 'unavailable',
-    });
-    await expect(runtime.categoryPort.listCategories()).resolves.toEqual({
-      kind: 'unavailable',
-    });
-    await expect(
-      runtime.listingsPort.listListings('any', { limit: 10 }),
-    ).resolves.toEqual({ kind: 'unavailable' });
+  test('live mode NEVER falls back to fixtures: no fixture controls are installed and every port fails closed without a backend', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new TypeError('network unreachable'));
+    try {
+      const runtime = createAuthRuntime(LIVE_ENV);
+      expect(window.__himmaPortalAccessFixture).toBeUndefined();
+      // Authorized domain reads without a session resolve unavailable
+      // without ever fetching; the PUBLIC taxonomy reads (live since
+      // W2-12C1) reach the network and fail closed to unavailable when the
+      // backend is unreachable — never to fixture data.
+      await expect(runtime.profilePort.loadOrganizationView('any')).resolves.toEqual({
+        kind: 'unavailable',
+      });
+      await expect(runtime.categoryPort.listCategories()).resolves.toEqual({
+        kind: 'unavailable',
+      });
+      await expect(runtime.activityTypePort.listActivityTypes()).resolves.toEqual({
+        kind: 'unavailable',
+      });
+      await expect(
+        runtime.listingsPort.listListings('any', { limit: 10 }),
+      ).resolves.toEqual({ kind: 'unavailable' });
+      // Catalogue MUTATION seams stay unconfigured until W2-12C2.
+      await expect(
+        runtime.listingLifecyclePort.submitProgram('any', 'p', 1),
+      ).resolves.toEqual({ kind: 'unavailable' });
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   test('the unconfigured runtime bootstrap stays fail-closed (no session can ever be granted)', async () => {

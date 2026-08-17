@@ -65,18 +65,26 @@ describe('listings read port (fixture semantics, W2-7)', () => {
     expect((await runtimeAs('finance@bluewave.demo').listingsPort.loadListing(blueWave, target)).kind).toBe('forbidden');
   });
 
-  test('the list row carries EXACTLY the real seven fields — no price, branch, media, offer, revision, or operational data', async () => {
+  test('the list row carries EXACTLY the real list-card projection fields — no offer, revision, or operational data', async () => {
     const page = await pageOf(runtimeAs('owner@bluewave.demo'), blueWave);
     const first = page.programs[0]!;
+    // Since W2-12C1 the row IS the list-card projection: identity/lifecycle
+    // plus activity display, the derived D-S4-1 price summary, the branch
+    // summary, and the port-resolved thumbnail presentation.
     expect(Object.keys(first).sort()).toEqual([
-      'activityTypeId',
+      'activityType',
+      'branchSummary',
       'createdAt',
       'id',
       'listingState',
+      'priceSummary',
+      'thumbnailUrl',
       'titleEn',
       'updatedAt',
       'version',
     ]);
+    expect(Object.keys(first.activityType).sort()).toEqual(['active', 'id', 'labelEn']);
+    expect(Object.keys(first.branchSummary).sort()).toEqual(['activeCount', 'firstLabel']);
   });
 
   test('the detail record carries EXACTLY the real ProgramDetailView fields', async () => {

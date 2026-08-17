@@ -109,7 +109,6 @@ export function renderPortal({
     listingEditorPort: fixture.listingEditorPort,
     listingLifecyclePort: fixture.listingLifecyclePort,
     bulkImportPort: fixture.bulkImportPort,
-    listingCardPort: fixture.listingCardPort,
     activityTypePort: fixture.activityTypePort,
     categoryPort: fixture.categoryPort,
   };
