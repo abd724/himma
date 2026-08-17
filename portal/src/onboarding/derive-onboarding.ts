@@ -112,10 +112,13 @@ export function deriveOnboarding(snapshot: OnboardingSnapshot): OnboardingView {
     },
   ];
 
-  if (stage === 'live') {
+  // A null count means the catalogue is UNREADABLE for this member (no
+  // `catalogue.read`) or not yet live-integrated (W2-12C wires the real
+  // listings read) — the step is omitted rather than fabricated as zero.
+  if (stage === 'live' && snapshot.listingCount !== null) {
     items.push({
       id: 'firstListing',
-      state: (snapshot.listingCount ?? 0) > 0 ? 'complete' : 'actionRequired',
+      state: snapshot.listingCount > 0 ? 'complete' : 'actionRequired',
       actionable: capabilities.has('listings.manage'),
     });
   }

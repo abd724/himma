@@ -35,6 +35,7 @@ import type {
 } from '../taxonomy/contract';
 import type { TeamPort } from '../team/contract';
 import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
+import { createLiveDomainPorts } from '../services/live/live-domain-ports';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
 export interface AuthRuntime {
@@ -86,19 +87,25 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       return unconfiguredRuntime();
     }
     const live = createLiveAuthRuntime(liveConfig);
+    // W2-12B: the provider ORGANIZATION domains run LIVE over the
+    // authenticated transport (onboarding · profile/storefront · branches
+    // + the area read they require · team/invitations). The CATALOGUE
+    // domain (listings, editor, lifecycle, import, cards, activity-type
+    // and category taxonomy) is deliberately NOT live-integrated yet —
+    // those ports stay fail-closed unconfigured until W2-12C, so live mode
+    // renders their surfaces as truthfully unavailable rather than mixing
+    // real branches with fake listings.
+    const domain = createLiveDomainPorts(live.transport);
     return {
       mode,
       adapter: live.adapter,
       accessPort: live.accessPort,
-      // W2-12A integrates auth/session/provider-access ONLY (task §14):
-      // every domain port stays the fail-closed unconfigured implementation
-      // until its own W2-12B+ slice wires the real read/mutation contracts.
-      invitationPort: createUnconfiguredInvitationPort(),
-      onboardingPort: createUnconfiguredOnboardingPort(),
-      profilePort: createUnconfiguredProfilePort(),
-      branchPort: createUnconfiguredBranchPort(),
-      areaPort: createUnconfiguredAreaPort(),
-      teamPort: createUnconfiguredTeamPort(),
+      invitationPort: domain.invitationPort,
+      onboardingPort: domain.onboardingPort,
+      profilePort: domain.profilePort,
+      branchPort: domain.branchPort,
+      areaPort: domain.areaPort,
+      teamPort: domain.teamPort,
       listingsPort: createUnconfiguredListingsPort(),
       listingEditorPort: createUnconfiguredListingEditorPort(),
       listingLifecyclePort: createUnconfiguredListingLifecyclePort(),

@@ -56,6 +56,8 @@ export interface ContractHarness {
   readonly idAdapter: FakeAuthProviderAdapter;
   readonly mfaProvider: FakeMfaProvider;
   readonly refresher: FakeTokenRefresher;
+  /** Captured outbound mail (invitation tokens travel ONLY here). */
+  readonly mail: CaptureMailSender;
   /** The simulated browser cookie jar (auth-path cookies only). */
   readonly cookieJar: Map<string, string>;
   readonly fetchImpl: FetchLike;
@@ -80,12 +82,13 @@ export async function createContractHarness(): Promise<ContractHarness> {
   const idAdapter = new FakeAuthProviderAdapter();
   const mfaProvider = new FakeMfaProvider();
   const refresher = new FakeTokenRefresher();
+  const mail = new CaptureMailSender();
   const app = buildApp({
     identity: {
       db: testDb.db,
       accessTokenVerifier: verifier,
       idTokenAdapter: idAdapter,
-      mailSender: new CaptureMailSender(),
+      mailSender: mail,
       rateLimiterStore: new InMemoryRateLimiterStore(),
       mfaProvider,
       mfaConfig: parseMfaConfig('test', {}),
@@ -279,6 +282,7 @@ export async function createContractHarness(): Promise<ContractHarness> {
     idAdapter,
     mfaProvider,
     refresher,
+    mail,
     cookieJar,
     fetchImpl,
     registerUser(username, user) {

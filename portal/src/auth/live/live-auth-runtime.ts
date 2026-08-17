@@ -1,4 +1,9 @@
-import { createApiClient, type ApiClient, type FetchLike } from '../../api/client';
+import {
+  createApiClient,
+  type ApiClient,
+  type ApiJsonResponse,
+  type FetchLike,
+} from '../../api/client';
 import type {
   BootstrapOutcome,
   MfaChallengeOutcome,
@@ -66,9 +71,34 @@ export interface LiveAuthConfig {
   readonly fetchImpl?: FetchLike;
 }
 
+/**
+ * Authorized transport handed to the LIVE domain ports (W2-12B): domain
+ * code gets the CAPABILITY to make authenticated Himma calls — never the
+ * token itself, which stays inside this module's closure. A dead session
+ * (401 sessionExpired/invalidAccessToken) is handled here once: tokens
+ * drop, the canonical interrupt fires, and the caller sees the response.
+ */
+export interface LiveTransport {
+  /** Bearer-authenticated Himma API call; null when no session is held. */
+  authorizedRequest(
+    path: string,
+    options?: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown },
+  ): Promise<ApiJsonResponse | null>;
+  /** Unauthenticated Himma API call (public reads such as areas). */
+  publicRequest(path: string): Promise<ApiJsonResponse>;
+  /**
+   * The caller's effective access may have changed (own membership
+   * revoked, organization state moved, invitation accepted, shell display
+   * identity edited) — pushes the W2-2 `accessChanged` interrupt so the
+   * session layer re-resolves `/provider/me` authoritatively (task §18).
+   */
+  notifyAccessChanged(): void;
+}
+
 export interface LiveAuthRuntime {
   readonly adapter: PortalAuthAdapter;
   readonly accessPort: ProviderAccessPort;
+  readonly transport: LiveTransport;
 }
 
 interface HeldSession {
@@ -178,7 +208,7 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
    *  pushes the one canonical interrupt (docs/26: revocation ⇒ sessionExpired). */
   const authorizedRequest = async (
     path: string,
-    options: { method?: 'GET' | 'POST'; body?: unknown } = {},
+    options: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
   ) => {
     if (held === null) {
       return null;
@@ -485,5 +515,11 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
     },
   };
 
-  return { adapter, accessPort };
+  const transport: LiveTransport = {
+    authorizedRequest,
+    publicRequest: (path) => api.request(path),
+    notifyAccessChanged: () => notify({ kind: 'accessChanged' }),
+  };
+
+  return { adapter, accessPort, transport };
 }
