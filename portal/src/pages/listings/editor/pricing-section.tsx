@@ -86,6 +86,9 @@ export function PricingSection({
     await queryClient.invalidateQueries({
       queryKey: ['listing', view.organization.id, program.id],
     });
+    // The index list-card carries the derived price summary (W2-12C1) —
+    // refresh it so the row reflects the option change.
+    await queryClient.invalidateQueries({ queryKey: ['listings', view.organization.id] });
   };
 
   const announce = (tone: 'success' | 'info' | 'error', text: string) => {

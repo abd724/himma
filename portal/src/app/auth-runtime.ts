@@ -35,6 +35,7 @@ import type { TeamPort } from '../team/contract';
 import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
 import { createLiveCatalogueReadPorts } from '../services/live/live-catalogue-ports';
 import { createLiveDomainPorts } from '../services/live/live-domain-ports';
+import { createLiveListingEditorPort } from '../services/live/live-listing-editor-port';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
 export interface AuthRuntime {
@@ -88,13 +89,15 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     // W2-12B: the provider ORGANIZATION domains run LIVE over the
     // authenticated transport (onboarding · profile/storefront · branches
     // + the area read they require · team/invitations).
-    // W2-12C1: the catalogue READS run LIVE too — the provider listings
+    // W2-12C1: the catalogue READS run LIVE — the provider listings
     // index/detail (each list row IS the real list-card projection) and
-    // the activity-type/category taxonomy behind the selector. Catalogue
-    // MUTATIONS (editor, lifecycle, import) are deliberately NOT
-    // live-integrated yet — those ports stay fail-closed unconfigured
-    // until W2-12C2, so live mode renders real listing truth while every
-    // save/action surface stays truthfully unavailable.
+    // the activity-type/category taxonomy behind the selector.
+    // W2-12C2: the W2-8 EDITOR mutations run LIVE too (create · CAS edit
+    // with the backend's automatic protected-edit ProgramRevision routing
+    // · branch associations · price options · media metadata · offers).
+    // LIFECYCLE actions (submit/publish/pause/archive) and bulk import
+    // stay fail-closed unconfigured until W2-12C3+ — those surfaces stay
+    // truthfully unavailable in live mode.
     const domain = createLiveDomainPorts(live.transport);
     const catalogue = createLiveCatalogueReadPorts(live.transport);
     return {
@@ -108,7 +111,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       areaPort: domain.areaPort,
       teamPort: domain.teamPort,
       listingsPort: catalogue.listingsPort,
-      listingEditorPort: createUnconfiguredListingEditorPort(),
+      listingEditorPort: createLiveListingEditorPort(live.transport),
       listingLifecyclePort: createUnconfiguredListingLifecyclePort(),
       bulkImportPort: createUnconfiguredBulkImportPort(),
       activityTypePort: catalogue.activityTypePort,

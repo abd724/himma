@@ -126,7 +126,9 @@ function summaryRecordFrom(raw: unknown): ProgramSummaryRecord | null {
   };
 }
 
-function priceOptionFrom(raw: unknown): PriceOptionRecord | null {
+/** Shared with the W2-12C2 live editor port — the SAME fail-closed DTO
+ *  validators verify mutation responses (option/media/offer echoes). */
+export function priceOptionFrom(raw: unknown): PriceOptionRecord | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const row = raw as Record<string, unknown>;
   if (
@@ -178,7 +180,7 @@ function programBranchFrom(raw: unknown): ProgramBranchRecord | null {
   };
 }
 
-function programMediaFrom(raw: unknown): ProgramMediaRecord | null {
+export function programMediaFrom(raw: unknown): ProgramMediaRecord | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const row = raw as Record<string, unknown>;
   if (
@@ -203,7 +205,7 @@ function programMediaFrom(raw: unknown): ProgramMediaRecord | null {
   };
 }
 
-function offerFrom(raw: unknown): OfferRecord | null {
+export function offerFrom(raw: unknown): OfferRecord | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const row = raw as Record<string, unknown>;
   if (

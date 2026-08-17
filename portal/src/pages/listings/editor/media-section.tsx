@@ -51,6 +51,9 @@ export function MediaSection({
     await queryClient.invalidateQueries({
       queryKey: ['listing', view.organization.id, program.id],
     });
+    // The index list-card carries the thumbnail summary (W2-12C1) —
+    // refresh it so the row reflects the metadata change.
+    await queryClient.invalidateQueries({ queryKey: ['listings', view.organization.id] });
   };
 
   const announce = (tone: 'success' | 'error', text: string) => {
