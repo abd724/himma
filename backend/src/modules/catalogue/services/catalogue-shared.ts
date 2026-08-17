@@ -33,6 +33,19 @@ export interface CatalogueActor {
   userId: string;
 }
 
+/** docs/24 §5.3 — the exact Program lifecycle vocabulary (canonical
+ *  identifiers; the provider list status filter accepts ONLY these). */
+export const LISTING_STATES = [
+  'draft',
+  'submitted',
+  'in_review',
+  'approved',
+  'changes_requested',
+  'published',
+  'paused',
+  'archived',
+] as const;
+
 /** docs/24 §5.3 states in which the provider edits content DIRECTLY. */
 const DIRECT_EDIT_STATES = ['draft', 'changes_requested'] as const;
 /** States in which sensitive edits must route through a revision

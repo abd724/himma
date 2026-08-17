@@ -47,7 +47,6 @@
   color: var(--hp-color-text-secondary);
 }
 
-.filterNote,
 .emptyNote {
   font: var(--hp-type-supporting);
   color: var(--hp-color-text-secondary);

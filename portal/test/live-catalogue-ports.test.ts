@@ -228,6 +228,43 @@ describe('live listings index (the W2-12C1 list-card projection)', () => {
     ]);
   });
 
+  test('search/status are sent as AUTHORITATIVE server predicates — with the cursor when paging a filtered walk', async () => {
+    const { transport, calls } = makeTransport(() => ({
+      status: 200,
+      body: { programs: [], nextCursor: null },
+    }));
+    const { listingsPort } = createLiveCatalogueReadPorts(transport);
+    await listingsPort.listListings(ORG, { limit: 10, q: 'swim', status: 'published' });
+    expect(calls[0]!.path).toBe(
+      `/provider/organizations/${ORG}/listings?limit=10&q=swim&status=published`,
+    );
+    // A next-page request of the same filtered walk carries the SAME
+    // filters plus the cursor — the walk never drops its predicates.
+    await listingsPort.listListings(ORG, {
+      limit: 10,
+      cursor: PROGRAM,
+      q: 'swim',
+      status: 'published',
+    });
+    expect(calls[1]!.path).toBe(
+      `/provider/organizations/${ORG}/listings?limit=10&cursor=${PROGRAM}&q=swim&status=published`,
+    );
+  });
+
+  test('blank/whitespace search is NO predicate and search text is URL-encoded', async () => {
+    const { transport, calls } = makeTransport(() => ({
+      status: 200,
+      body: { programs: [], nextCursor: null },
+    }));
+    const { listingsPort } = createLiveCatalogueReadPorts(transport);
+    await listingsPort.listListings(ORG, { q: '   ' });
+    expect(calls[0]!.path).toBe(`/provider/organizations/${ORG}/listings`);
+    await listingsPort.listListings(ORG, { q: '100% fun & games' });
+    expect(calls[1]!.path).toBe(
+      `/provider/organizations/${ORG}/listings?q=100%25+fun+%26+games`,
+    );
+  });
+
   test('omitted pagination params produce the bare collection path', async () => {
     const { transport, calls } = makeTransport(() => ({
       status: 200,

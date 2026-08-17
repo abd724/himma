@@ -11,6 +11,7 @@ import { InlineAlert } from '../../components/ui/inline-alert';
 import { PageHeader } from '../../components/ui/page-header';
 import { SelectField } from '../../components/ui/select-field';
 import { TextField } from '../../components/ui/text-field';
+import { useDebouncedValue } from '../../hooks/use-debounced-value';
 import { usePageTitle } from '../../hooks/use-page-title';
 import { organizationPath } from '../../navigation/nav-items';
 import { useActiveOrganization } from '../../organization/organization-context';
@@ -21,6 +22,7 @@ import {
   catalogueAuthority,
   formatAedFromFils,
   formatListingDate,
+  isListingState,
   LISTING_STATE_LABELS,
   listingStateLabel,
   listingStateTone,
@@ -38,10 +40,12 @@ import styles from './listings.module.css';
  * ONE authoritative page read, so the index issues no per-row detail or
  * taxonomy requests. Nothing else is shown: no bookings, capacity,
  * sessions, ratings, or revenue exist on any backend read for this
- * surface. Status filtering and title search are CLIENT-SIDE over the
- * loaded rows (the real list API has no filter/search parameters — the
- * summary line says so truthfully); pagination mirrors the real
- * opaque-cursor keyset contract.
+ * surface. Status filtering and title search are AUTHORITATIVE
+ * server-side predicates (W2-12C1 final correction): the backend applies
+ * them to the complete authorized set BEFORE pagination, so a match on
+ * any later page is found; changing either filter starts a fresh walk
+ * from the first page, and every next-page request carries the same
+ * filters. Pagination mirrors the real opaque-cursor keyset contract.
  */
 const LISTINGS_PAGE_SIZE = 10;
 
@@ -100,13 +104,28 @@ function ListingsContent({ view }: { view: OrganizationView }) {
   const authority = catalogueAuthority(view);
   const organizationId = view.organization.id;
 
+  const [stateFilter, setStateFilter] = useState('all');
+  const [titleSearch, setTitleSearch] = useState('');
+  // The search box drives an AUTHORITATIVE server query (W2-12C1 final
+  // correction) — keystrokes settle briefly before a request fires.
+  const debouncedSearch = useDebouncedValue(titleSearch.trim());
+  const statusFilter = isListingState(stateFilter) ? stateFilter : undefined;
+
+  // Search/status live in the query key: changing either starts a FRESH
+  // authoritative walk from the first page (cursor state resets), and
+  // every next-page request carries the same filters — the backend
+  // filters the complete authorized set BEFORE pagination, so a match on
+  // any later page is found. Previous rows stay rendered while the new
+  // page resolves (no flicker; the field keeps focus).
   const listQuery = useInfiniteQuery({
-    queryKey: ['listings', organizationId],
+    queryKey: ['listings', organizationId, debouncedSearch, statusFilter ?? 'all'],
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }): Promise<ProgramListPage> => {
       const outcome = await listingsPort.listListings(organizationId, {
         limit: LISTINGS_PAGE_SIZE,
         ...(pageParam === null ? {} : { cursor: pageParam }),
+        ...(debouncedSearch === '' ? {} : { q: debouncedSearch }),
+        ...(statusFilter === undefined ? {} : { status: statusFilter }),
       });
       if (outcome.kind !== 'loaded') {
         throw new Error(outcome.kind);
@@ -114,11 +133,11 @@ function ListingsContent({ view }: { view: OrganizationView }) {
       return outcome.page;
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+    placeholderData: (previous) => previous,
     retry: false,
   });
 
-  const [stateFilter, setStateFilter] = useState('all');
-  const [titleSearch, setTitleSearch] = useState('');
+  const filtering = statusFilter !== undefined || debouncedSearch !== '';
 
   if (listQuery.isPending) {
     return (
@@ -144,7 +163,7 @@ function ListingsContent({ view }: { view: OrganizationView }) {
     );
   }
 
-  if (loadedRows.length === 0) {
+  if (loadedRows.length === 0 && !filtering) {
     return (
       <div className={styles.contentWrap}>
         {authority.suspended ? (
@@ -174,13 +193,6 @@ function ListingsContent({ view }: { view: OrganizationView }) {
     );
   }
 
-  const trimmedSearch = titleSearch.trim().toLowerCase();
-  const filtered = loadedRows.filter(
-    (row) =>
-      (stateFilter === 'all' || row.listingState === stateFilter) &&
-      (trimmedSearch === '' || row.titleEn.toLowerCase().includes(trimmedSearch)),
-  );
-  const filtering = stateFilter !== 'all' || trimmedSearch !== '';
   const hasMore = listQuery.hasNextPage;
 
   return (
@@ -232,20 +244,15 @@ function ListingsContent({ view }: { view: OrganizationView }) {
 
       <p className={styles.summary} role="status">
         {filtering
-          ? `Showing ${filtered.length} of ${loadedRows.length} loaded ${loadedRows.length === 1 ? 'listing' : 'listings'}`
+          ? `${loadedRows.length} matching ${loadedRows.length === 1 ? 'listing' : 'listings'}${hasMore ? ' loaded so far' : ''}`
           : `${loadedRows.length} ${loadedRows.length === 1 ? 'listing' : 'listings'}${hasMore ? ' loaded so far' : ''}`}
       </p>
-      {filtering && hasMore ? (
-        <p className={styles.filterNote}>
-          Filters apply to the listings loaded so far — load more below to include the rest.
-        </p>
-      ) : null}
 
-      {filtered.length === 0 ? (
-        <p className={styles.emptyNote}>No loaded listings match your filters.</p>
+      {loadedRows.length === 0 ? (
+        <p className={styles.emptyNote}>No listings match your filters.</p>
       ) : (
         <ul className={styles.listingList} aria-label="Listings">
-          {filtered.map((row) => (
+          {loadedRows.map((row) => (
             <ListingRow key={row.id} row={row} organizationId={organizationId} />
           ))}
         </ul>

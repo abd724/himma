@@ -223,9 +223,23 @@ export type ListingDetailOutcome =
   | { readonly kind: 'unavailable' };
 
 export interface ListingsReadPort {
+  /**
+   * `q`/`status` (W2-12C1 final correction) are AUTHORITATIVE server-side
+   * predicates applied to the complete authorized set BEFORE pagination —
+   * `q` is a bounded case-insensitive title-substring search (blank = no
+   * predicate; wildcards are literal text), `status` is one canonical
+   * docs/24 §5.3 lifecycle value. The cursor is a pure (createdAt, id)
+   * position: a pagination walk MUST hold its filters constant (changing
+   * either filter starts a fresh walk from the first page).
+   */
   listListings(
     organizationId: string,
-    params?: { readonly limit?: number; readonly cursor?: string },
+    params?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly q?: string;
+      readonly status?: ListingState;
+    },
   ): Promise<ListListingsOutcome>;
   loadListing(organizationId: string, programId: string): Promise<ListingDetailOutcome>;
 }

@@ -467,10 +467,23 @@ export async function loadProgramDetailInTrx(
     };
 }
 
+/**
+ * Bounded management search (W2-12C1 final correction): case-insensitive
+ * substring over the English title with LIKE wildcards escaped so user
+ * input is always literal text; internal whitespace runs collapse to one
+ * space; blank means NO predicate. Deliberately not marketplace search —
+ * no ranking, no fuzziness, no index.
+ */
+function titleSearchPattern(q: string | undefined): string | null {
+  const normalized = (q ?? '').trim().replace(/\s+/g, ' ');
+  if (normalized === '') return null;
+  return `%${normalized.replace(/[\\%_]/g, (wildcard) => `\\${wildcard}`)}%`;
+}
+
 export async function listProviderPrograms(
   deps: CatalogueServiceDeps,
   scope: OrgScope,
-  input: { limit?: number; cursor?: string },
+  input: { limit?: number; cursor?: string; q?: string; status?: string },
 ): Promise<{ programs: ProgramSummaryView[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
   return withTransaction(deps.db, async (trx) => {
@@ -557,6 +570,23 @@ export async function listProviderPrograms(
     if (scope.branchScope !== 'all') {
       const branchScope = scope.branchScope;
       query = query.where((eb) => programReadableInBranchScope(eb, branchScope));
+    }
+    // Authoritative filtering (W2-12C1 final correction): the supported
+    // search/status predicates join the SAME query, AFTER the scope rules
+    // above and BEFORE ordering, cursor continuation, and the LIMIT
+    // window — so filters see the complete authorized set and a match on
+    // any later page is found. The route schema owns the canonical status
+    // vocabulary; the cursor stays a pure (created_at, id) position, so a
+    // walk holds its filters constant and a cursor replayed under other
+    // filters deterministically continues that filter's ordered set.
+    if (input.status !== undefined) {
+      query = query.where('program.listing_state', '=', input.status);
+    }
+    const searchPattern = titleSearchPattern(input.q);
+    if (searchPattern !== null) {
+      query = query.where(
+        sql<SqlBool>`program.title_en ILIKE ${searchPattern} ESCAPE ${'\\'}`,
+      );
     }
     if (input.cursor !== undefined) {
       const anchor = await trx

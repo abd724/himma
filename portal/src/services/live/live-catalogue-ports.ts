@@ -365,6 +365,12 @@ export function createLiveCatalogueReadPorts(transport: LiveTransport): LiveCata
       const search = new URLSearchParams();
       if (params?.limit !== undefined) search.set('limit', String(params.limit));
       if (params?.cursor !== undefined) search.set('cursor', params.cursor);
+      // Authoritative server-side filtering (W2-12C1 final correction):
+      // search/status go to the backend, which applies them to the
+      // complete authorized set BEFORE pagination — never client-filtered
+      // over a loaded page. Blank search is no predicate.
+      if (params?.q !== undefined && params.q.trim() !== '') search.set('q', params.q.trim());
+      if (params?.status !== undefined) search.set('status', params.status);
       const encoded = search.toString();
       const query = encoded === '' ? '' : `?${encoded}`;
       const response = await transport.authorizedRequest(

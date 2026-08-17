@@ -2608,7 +2608,11 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
      * corrected service, where the shared rule sits inside the
      * authoritative query ahead of ordering, cursor continuation, and
      * `LIMIT` — so inaccessible listings never consume page slots and the
-     * cursor walks the reachable ordered set.
+     * cursor walks the reachable ordered set. The W2-12C1 `q`/`status`
+     * predicates apply the same way (scope → filter → order → window):
+     * `q` is the real case-insensitive, whitespace-normalized title
+     * substring (blank = no predicate), `status` is canonical equality —
+     * a filtered walk pages the filtered set, matching the live contract.
      */
     async listListings(organizationId, params): Promise<ListListingsOutcome> {
       const caller = store.current;
@@ -2629,10 +2633,18 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         return { kind: 'forbidden' };
       }
       const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
-      // Reachability filters the AUTHORITATIVE ordered set before any
-      // windowing, mirroring the corrected SQL query shape.
+      const normalizedSearch = (params?.q ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+      const status = params?.status;
+      // Reachability, then the authoritative filter predicates, order the
+      // COMPLETE authorized set before any windowing — mirroring the
+      // corrected SQL query shape.
       const sorted = [...organization.programs]
         .filter((row) => programReachableForSeat(organization, seatEntry, row))
+        .filter((row) => status === undefined || row.listingState === status)
+        .filter(
+          (row) =>
+            normalizedSearch === '' || row.titleEn.toLowerCase().includes(normalizedSearch),
+        )
         .sort((a, b) =>
           a.createdAt < b.createdAt
             ? -1

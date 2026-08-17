@@ -77,34 +77,52 @@ describe('listings index (W2-7)', () => {
     expect(screen.queryByRole('button', { name: 'Load more listings' })).not.toBeInTheDocument();
   });
 
-  test('status filtering and title search are honestly client-side over the loaded rows', async () => {
+  test('status filtering and title search are AUTHORITATIVE: the server filters the complete set before pagination (W2-12C1 final correction)', async () => {
     const user = userEvent.setup();
     renderPortal({ asIdentity: 'owner@bluewave.demo', initialEntries: [listingsPath(blueWave)] });
     const list = await screen.findByRole('list', { name: 'Listings' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(10);
 
-    // Filter while a further page exists: the honesty note appears.
-    await user.selectOptions(screen.getByLabelText('Filter by status'), 'published');
-    expect(
-      screen.getByText(
-        'Filters apply to the listings loaded so far — load more below to include the rest.',
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Showing 3 of 10 loaded listings/)).toBeInTheDocument();
+    // Status filter resets pagination and returns the FULL matching set —
+    // the draft filter finds Synchro Performance Squad and Aqua Fitness
+    // Express, which sit BEYOND the first unfiltered page, without any
+    // "Load more". A cursor from the unfiltered walk is never reused.
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'draft');
+    await screen.findByText('3 matching listings');
+    expect(within(list).getByText('Holiday Swim Camp')).toBeInTheDocument();
+    expect(within(list).getByText('Synchro Performance Squad')).toBeInTheDocument();
+    expect(within(list).getByText('Aqua Fitness Express')).toBeInTheDocument();
     expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(list).getAllByText('Draft')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: 'Load more listings' })).not.toBeInTheDocument();
+    // The partial-page disclaimer is gone — filtering is authoritative.
+    expect(screen.queryByText(/loaded so far — load more below/)).not.toBeInTheDocument();
 
-    // Search composes with the filter.
+    // Search is authoritative too: "aqua" matches a second-page listing.
     await user.selectOptions(screen.getByLabelText('Filter by status'), 'all');
     await user.type(screen.getByLabelText('Search by title'), 'aqua');
-    const filtered = within(list).getAllByRole('listitem');
-    expect(filtered).toHaveLength(2);
+    await within(list).findByText('Aqua Fitness Express');
     expect(within(list).getByText('Ladies Aqua Fitness')).toBeInTheDocument();
     expect(within(list).getByText('Aqua Therapy Sessions')).toBeInTheDocument();
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
 
-    // A filter with no loaded matches states so without pretending emptiness.
+    // Search + status compose conjunctively on the server.
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'published');
+    await screen.findByText('1 matching listing');
+    expect(within(list).getByText('Ladies Aqua Fitness')).toBeInTheDocument();
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+
+    // A search with no match anywhere is the truthful authoritative
+    // empty state — not the "No listings yet" onboarding card.
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'all');
     await user.clear(screen.getByLabelText('Search by title'));
     await user.type(screen.getByLabelText('Search by title'), 'zumba');
-    expect(screen.getByText('No loaded listings match your filters.')).toBeInTheDocument();
+    expect(await screen.findByText('No listings match your filters.')).toBeInTheDocument();
     expect(screen.queryByText('No listings yet')).not.toBeInTheDocument();
+
+    // Clearing the search restores the unfiltered first page.
+    await user.clear(screen.getByLabelText('Search by title'));
+    await screen.findByText('10 listings loaded so far');
   });
 
   test.each([

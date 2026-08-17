@@ -420,6 +420,111 @@ describe('Listings index — the list-card projection (§26)', () => {
   });
 });
 
+describe('authoritative search & status filtering (W2-12C1 final correction)', () => {
+  async function publish(orgId: string, programId: string): Promise<void> {
+    for (const step of ['submitted', 'in_review', 'approved'] as const) {
+      await sql`UPDATE program SET listing_state = ${step} WHERE id = ${programId}`.execute(
+        harness.testDb.db,
+      );
+    }
+    await sql`UPDATE program SET listing_state = 'published', published_at = now()
+              WHERE id = ${programId}`.execute(harness.testDb.db);
+  }
+
+  test('THE original defect is gone: a matching listing beyond the first unfiltered page is found by authoritative server search', async () => {
+    const typeId = await insertActivityType({ label: 'Contract Search' });
+    const { session, orgId } = await provisionOrgWithRole('owner');
+    for (let i = 0; i < 4; i += 1) {
+      await seedProgram(orgId, { title: `Search Filler ${i}`, activityTypeId: typeId });
+    }
+    const lateMatch = await seedProgram(orgId, {
+      title: 'Late Kayaking Adventure',
+      activityTypeId: typeId,
+    });
+
+    // The first unfiltered page (limit 3) can never contain the late row…
+    const unfiltered = await session.ports.listingsPort.listListings(orgId, { limit: 3 });
+    if (unfiltered.kind !== 'loaded') throw new Error(unfiltered.kind);
+    expect(unfiltered.page.programs.map((row) => row.id)).not.toContain(lateMatch);
+
+    // …the authoritative search returns it on ITS first page — the old
+    // client-side filter would have said it does not exist.
+    const searched = await session.ports.listingsPort.listListings(orgId, {
+      limit: 3,
+      q: 'kayaking',
+    });
+    if (searched.kind !== 'loaded') throw new Error(searched.kind);
+    expect(searched.page.programs.map((row) => row.id)).toEqual([lateMatch]);
+    expect(searched.page.nextCursor).toBeNull();
+  });
+
+  test('status-filtered pagination walks the filtered set with stable cursors; search+status compose conjunctively', async () => {
+    const typeId = await insertActivityType({ label: 'Contract Status' });
+    const { session, orgId } = await provisionOrgWithRole('owner');
+    const published: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const match = await seedProgram(orgId, { title: `Live Row ${i}`, activityTypeId: typeId });
+      await publish(orgId, match);
+      published.push(match);
+      await seedProgram(orgId, { title: `Draft Row ${i}`, activityTypeId: typeId });
+    }
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await session.ports.listingsPort.listListings(orgId, {
+        limit: 2,
+        status: 'published',
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      if (page.kind !== 'loaded') throw new Error(page.kind);
+      seen.push(...page.page.programs.map((row) => row.id));
+      for (const row of page.page.programs) expect(row.listingState).toBe('published');
+      if (page.page.nextCursor === null) break;
+      cursor = page.page.nextCursor;
+    }
+    expect(seen).toEqual(published);
+
+    const combined = await session.ports.listingsPort.listListings(orgId, {
+      q: 'row 1',
+      status: 'published',
+    });
+    if (combined.kind !== 'loaded') throw new Error(combined.kind);
+    expect(combined.page.programs.map((row) => row.id)).toEqual([published[1]]);
+  });
+
+  test('a Branch Manager searching cannot discover an unreachable matching listing, and foreign rows never appear', async () => {
+    const typeId = await insertActivityType({ label: 'Contract Hidden' });
+    const { session, orgId, branchIds } = await provisionOrgWithRole('branch_manager', {
+      scoped: true,
+    });
+    const reachable = await seedProgram(orgId, {
+      title: 'Hidden Search Reachable',
+      activityTypeId: typeId,
+    });
+    await addProgramBranch(serviceDeps(), scopeFor(orgId), actor, {
+      programId: reachable,
+      branchId: branchIds[0]!,
+    });
+    const hidden = await seedProgram(orgId, {
+      title: 'Hidden Search Sealed',
+      activityTypeId: typeId,
+    });
+    await addProgramBranch(serviceDeps(), scopeFor(orgId), actor, {
+      programId: hidden,
+      branchId: branchIds[1]!,
+    });
+    const foreign = await createProviderOrg(harness.testDb.db);
+    await seedProgram(foreign.orgId, { title: 'Hidden Search Foreign', activityTypeId: typeId });
+
+    const outcome = await session.ports.listingsPort.listListings(orgId, { q: 'hidden search' });
+    if (outcome.kind !== 'loaded') throw new Error(outcome.kind);
+    expect(outcome.page.programs.map((row) => row.id)).toEqual([reachable]);
+    expect(outcome.page.nextCursor).toBeNull();
+    expect(JSON.stringify(outcome)).not.toContain('Sealed');
+    expect(JSON.stringify(outcome)).not.toContain('Foreign');
+  });
+});
+
 describe('listing detail (§27)', () => {
   test('authorized detail is the real ProgramDetailView: price options, associations, media metadata, offers, lifecycle — and NOTHING fabricated', async () => {
     const typeId = await insertActivityType({ label: 'Contract Detail' });

@@ -16,6 +16,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 
 import type { Db } from '../../../db/kysely';
+import { LISTING_STATES } from '../services/catalogue-shared';
 import { requireOrgScope, requirePrincipal } from '../../identity/http/auth-plugin';
 import { sendOutcome, type HttpOutcomeName } from '../../identity/http/http-outcomes';
 import {
@@ -267,6 +268,15 @@ export function registerCatalogueRoutes(
         querystring: Type.Object({
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
           cursor: Type.Optional(Uuid),
+          /** Bounded management title search (W2-12C1 final correction) —
+           *  applied server-side to the complete authorized set BEFORE
+           *  pagination; blank means no predicate. */
+          q: Type.Optional(Type.String({ maxLength: 160 })),
+          /** Canonical docs/24 §5.3 lifecycle value only — anything else
+           *  is the normal schema validation refusal. */
+          status: Type.Optional(
+            Type.Union(LISTING_STATES.map((state) => Type.Literal(state))),
+          ),
         }),
         response: {
           200: Type.Object({

@@ -77,17 +77,28 @@ test('owner journey: populated index → filters → pagination → multi-option
     fullPage: true,
   });
 
-  // Client-side status filter + title search with the honesty note.
-  await page.getByLabel('Filter by status').selectOption('published');
-  await expect(page.getByText(/Showing 3 of 10 loaded listings/)).toBeVisible();
-  await expect(
-    page.getByText('Filters apply to the listings loaded so far — load more below to include the rest.'),
-  ).toBeVisible();
+  // AUTHORITATIVE server-side filtering (W2-12C1 final correction): the
+  // draft filter returns the COMPLETE matching set — including listings
+  // beyond the first unfiltered page — with no partial-page disclaimer.
+  await page.getByLabel('Filter by status').selectOption('draft');
+  await expect(page.getByText('3 matching listings')).toBeVisible();
+  await expect(list.getByText('Aqua Fitness Express')).toBeVisible();
+  await expect(list.getByText('Synchro Performance Squad')).toBeVisible();
+  await expect(page.getByText(/loaded so far — load more below/)).toHaveCount(0);
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-listings-filtered.png`),
     fullPage: true,
   });
+  // Authoritative search finds a second-page listing directly, and an
+  // unmatched search is the truthful empty state.
   await page.getByLabel('Filter by status').selectOption('all');
+  await page.getByLabel('Search by title').fill('aqua');
+  await expect(page.getByText('3 matching listings')).toBeVisible();
+  await expect(list.getByText('Aqua Fitness Express')).toBeVisible();
+  await page.getByLabel('Search by title').fill('zumba');
+  await expect(page.getByText('No listings match your filters.')).toBeVisible();
+  await page.getByLabel('Search by title').fill('');
+  await expect(page.getByText('10 listings loaded so far')).toBeVisible();
 
   // Opaque-cursor pagination.
   await page.getByRole('button', { name: 'Load more listings' }).click();
