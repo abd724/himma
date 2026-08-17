@@ -15,6 +15,14 @@ export interface CognitoAdapterConfig {
   issuer: string;
   /** Accepted app-client ids (id token `aud` / access token `client_id`). */
   clientIds: string[];
+  /**
+   * The PUBLIC app client the browser portal authenticates with — the one
+   * whose refresh tokens the §14.E server-mediated refresh presents
+   * (REFRESH_TOKEN_AUTH is client-bound). Defaults to the sole clientIds
+   * entry; REQUIRED explicitly (COGNITO_REFRESH_CLIENT_ID) when several
+   * accepted clients exist. Always a member of `clientIds`.
+   */
+  refreshClientId?: string;
   /** Overrides the derived `<issuer>/.well-known/jwks.json` when set. */
   jwksUri?: string;
   /** Bounded exp/nbf clock-skew tolerance (0–300 s; verifier default 30 s). */
@@ -46,6 +54,12 @@ export function parseCognitoConfig(
   if (clientIds.length === 0) {
     throw new CognitoConfigError('COGNITO_CLIENT_IDS must list at least one app client id.');
   }
+  const refreshClientId = env.COGNITO_REFRESH_CLIENT_ID?.trim();
+  if (refreshClientId !== undefined && refreshClientId !== '' && !clientIds.includes(refreshClientId)) {
+    throw new CognitoConfigError(
+      'COGNITO_REFRESH_CLIENT_ID must be one of the accepted COGNITO_CLIENT_IDS.',
+    );
+  }
   const jwksUri = env.COGNITO_JWKS_URI?.trim();
   const rawTolerance = env.COGNITO_CLOCK_TOLERANCE_SECONDS?.trim();
   let clockToleranceSeconds: number | undefined;
@@ -64,9 +78,29 @@ export function parseCognitoConfig(
   return {
     issuer,
     clientIds,
+    ...(refreshClientId !== undefined && refreshClientId !== ''
+      ? { refreshClientId }
+      : {}),
     ...(jwksUri !== undefined && jwksUri !== '' ? { jwksUri } : {}),
     ...(clockToleranceSeconds !== undefined ? { clockToleranceSeconds } : {}),
   };
+}
+
+/**
+ * The app client id the server-mediated refresh presents to Cognito.
+ * Fails closed when several accepted clients exist and none is explicitly
+ * designated — never guesses.
+ */
+export function refreshClientIdOf(config: CognitoAdapterConfig): string {
+  if (config.refreshClientId !== undefined) {
+    return config.refreshClientId;
+  }
+  if (config.clientIds.length === 1 && config.clientIds[0] !== undefined) {
+    return config.clientIds[0];
+  }
+  throw new CognitoConfigError(
+    'COGNITO_REFRESH_CLIENT_ID is required when several app client ids are accepted.',
+  );
 }
 
 /** Fails closed: a verifier can never be built without its trust anchors. */
