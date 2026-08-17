@@ -27,6 +27,15 @@ export interface ApiRequestOptions {
   readonly body?: unknown;
   /** Bearer ACCESS token for authenticated calls — header-only, never URL. */
   readonly accessToken?: string;
+  /**
+   * Cookie-channel call (docs/26 §4.7(9) session continuity): sends the
+   * browser's HttpOnly auth-path cookies with the request. Used ONLY by
+   * the auth boundary (/auth/session, /auth/csrf, /auth/refresh,
+   * /auth/logout) — domain calls stay bearer-only.
+   */
+  readonly withCredentials?: boolean;
+  /** Double-submit CSRF value echoed as the x-csrf-token header. */
+  readonly csrfToken?: string;
 }
 
 export interface ApiClient {
@@ -66,11 +75,15 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       if (requestOptions.accessToken !== undefined) {
         headers.authorization = `Bearer ${requestOptions.accessToken}`;
       }
+      if (requestOptions.csrfToken !== undefined) {
+        headers['x-csrf-token'] = requestOptions.csrfToken;
+      }
       let response: Response;
       try {
         response = await fetchImpl(`${root}${path}`, {
           method: requestOptions.method ?? 'GET',
           headers,
+          ...(requestOptions.withCredentials === true ? { credentials: 'include' } : {}),
           ...(requestOptions.body !== undefined
             ? { body: JSON.stringify(requestOptions.body) }
             : {}),

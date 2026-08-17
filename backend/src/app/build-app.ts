@@ -20,7 +20,9 @@ import type { NodeEnv } from '../config/env';
 import type { MailSender } from '../modules/identity/mail/mail-sender';
 import type { AuthProviderAdapter } from '../modules/identity/providers/adapter';
 import type { AccessTokenVerifier } from '../modules/identity/providers/access-token';
+import type { ProviderTokenRefresher } from '../modules/identity/providers/refresh';
 import type { ProviderSessionRevoker } from '../modules/identity/providers/revocation';
+import type { AuthCookieConfig } from '../modules/identity/http/auth-session-cookies';
 import type { MfaProviderPort } from '../modules/identity/providers/mfa';
 import type { MfaConfig } from '../modules/identity/services/mfa-config';
 import type { StaffInvitationConfig } from '../modules/provider/staff-invitation-config';
@@ -76,6 +78,16 @@ export interface IdentityHttpOptions {
   idTokenAdapter: AuthProviderAdapter;
   mailSender: MailSender;
   providerRevoker?: ProviderSessionRevoker;
+  /**
+   * docs/26 §4.7(9)/§14.E browser session-continuity channel (W2-12A
+   * correction): the HttpOnly auth-path refresh cookie, double-submit
+   * CSRF, and the server-mediated `POST /auth/refresh`. Absent → the
+   * channel does not exist (fail-closed 404) and behavior is unchanged.
+   */
+  sessionContinuity?: {
+    cookieConfig: AuthCookieConfig;
+    tokenRefresher: ProviderTokenRefresher;
+  };
   /** MFA routes register when both provider port and config are supplied. */
   mfaProvider?: MfaProviderPort;
   mfaConfig?: MfaConfig;
@@ -191,6 +203,35 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       stepUpMaxAgeSeconds: identity.stepUpMaxAgeSeconds ?? DEFAULT_STEP_UP_MAX_AGE_SECONDS,
       now: identity.now ?? (() => Date.now()),
     });
+    // Browser CORS for the configured portal origins (credentialed auth
+    // channel + future domain calls; docs/23 §18 deployment topology stays
+    // open — origins are pure configuration, nothing hardcoded).
+    if (
+      identity.sessionContinuity !== undefined &&
+      identity.sessionContinuity.cookieConfig.allowedOrigins.length > 0
+    ) {
+      const allowed = identity.sessionContinuity.cookieConfig.allowedOrigins;
+      app.addHook('onRequest', async (request, reply) => {
+        const origin = request.headers.origin;
+        if (typeof origin !== 'string' || !allowed.includes(origin)) return;
+        void reply.header('access-control-allow-origin', origin);
+        void reply.header('access-control-allow-credentials', 'true');
+        void reply.header('vary', 'origin');
+        if (request.method === 'OPTIONS') {
+          void reply.header(
+            'access-control-allow-methods',
+            'GET,POST,PATCH,DELETE,OPTIONS',
+          );
+          void reply.header(
+            'access-control-allow-headers',
+            'authorization,content-type,x-csrf-token',
+          );
+          void reply.header('access-control-max-age', '600');
+          return reply.status(204).send();
+        }
+        return;
+      });
+    }
     registerIdentityRoutes(app, {
       db: identity.db,
       accessTokenVerifier: identity.accessTokenVerifier,
@@ -198,6 +239,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       mailSender: identity.mailSender,
       ...(identity.providerRevoker !== undefined
         ? { providerRevoker: identity.providerRevoker }
+        : {}),
+      ...(identity.sessionContinuity !== undefined
+        ? { sessionContinuity: identity.sessionContinuity }
         : {}),
       rateLimiter,
       rules,

@@ -71,7 +71,23 @@ const cognitoTokens = (overrides: Record<string, unknown> = {}) => ({
   },
 });
 
+const CSRF_1 = 'csrf-value-0001';
+const CSRF_2 = 'csrf-value-0002';
+const REFRESHED_ACCESS = 'cognito-access-token-2';
+
 const himmaSessionOk = {
+  status: 200,
+  body: {
+    status: 'authenticated',
+    userId: '018f0000-0000-7000-8000-000000000001',
+    session: { id: '018f0000-0000-7000-8000-000000000002', expiresAt: '2026-08-17T12:00:00Z' },
+    csrfToken: CSRF_1,
+  },
+};
+
+/** Legacy-shaped /auth/session response (backend WITHOUT the §14.E
+ *  channel) — the pre-correction pass-through behavior must survive. */
+const himmaSessionLegacy = {
   status: 200,
   body: {
     status: 'authenticated',
@@ -92,13 +108,33 @@ function runtimeWith(respond: Responder) {
 }
 
 /** The happy default transport: password auth succeeds, Himma session
- *  establishes, /provider/me returns one owner membership. */
+ *  establishes (cookie channel engaged), the §14.E bootstrap works, and
+ *  /provider/me returns one owner membership. */
 function defaultResponder(call: RecordedCall): { status: number; body: unknown } | 'network' {
   if (call.target === 'AWSCognitoIdentityProviderService.InitiateAuth') {
     return cognitoTokens();
   }
   if (call.url.startsWith(API_BASE) && call.url.endsWith('/auth/session')) {
     return himmaSessionOk;
+  }
+  if (call.url.startsWith(API_BASE) && call.url.endsWith('/auth/csrf')) {
+    return { status: 200, body: { status: 'ok', csrfToken: CSRF_1 } };
+  }
+  if (call.url.startsWith(API_BASE) && call.url.endsWith('/auth/refresh')) {
+    if (call.headers['x-csrf-token'] !== CSRF_1) {
+      return { status: 403, body: { code: 'csrfRejected', message: 'refused' } };
+    }
+    return {
+      status: 200,
+      body: {
+        status: 'authenticated',
+        accessToken: REFRESHED_ACCESS,
+        idToken: ID_TOKEN,
+        assurance: 'mfa',
+        expiresAt: '2026-08-17T13:00:00Z',
+        csrfToken: CSRF_2,
+      },
+    };
   }
   if (call.url.startsWith(API_BASE) && call.url.endsWith('/provider/me')) {
     return {
@@ -120,9 +156,42 @@ function defaultResponder(call: RecordedCall): { status: number; body: unknown }
 }
 
 describe('live auth runtime — semantic outcome mapping', () => {
-  test('bootstrap is memory-only truth: no persisted session can exist at load', async () => {
-    const { adapter } = runtimeWith(defaultResponder);
+  test('hard-reload bootstrap: GET /auth/csrf → POST /auth/refresh re-establishes a usable in-memory session', async () => {
+    const { adapter, accessPort, calls } = runtimeWith(defaultResponder);
+    await expect(adapter.bootstrap()).resolves.toEqual({
+      kind: 'session',
+      assurance: 'mfa',
+      identity: { email: 'rana@bluewave.test', displayName: 'Rana Haddad' },
+    });
+    // The refresh ran over the cookie channel with the double-submit header.
+    const refresh = calls.find((call) => call.url.endsWith('/auth/refresh'));
+    expect(refresh?.headers['x-csrf-token']).toBe(CSRF_1);
+    // The refreshed ACCESS token is the working bearer afterwards.
+    await accessPort.resolveAccess();
+    const me = calls.find((call) => call.url.endsWith('/provider/me'));
+    expect(me?.headers.authorization).toBe(`Bearer ${REFRESHED_ACCESS}`);
+  });
+
+  test('with no continuity cookie the bootstrap is a SINGLE attempt landing signed out — no refresh loop', async () => {
+    const { adapter, calls } = runtimeWith((call) => {
+      if (call.url.endsWith('/auth/csrf')) {
+        return { status: 401, body: { code: 'sessionExpired', message: 'signed out' } };
+      }
+      return defaultResponder(call);
+    });
     await expect(adapter.bootstrap()).resolves.toEqual({ kind: 'noSession' });
+    expect(calls).toHaveLength(1); // exactly the one csrf probe, nothing else
+  });
+
+  test('a refused refresh (revoked Himma session) is a SINGLE attempt landing signed out', async () => {
+    const { adapter, calls } = runtimeWith((call) => {
+      if (call.url.endsWith('/auth/refresh')) {
+        return { status: 401, body: { code: 'sessionExpired', message: 'revoked' } };
+      }
+      return defaultResponder(call);
+    });
+    await expect(adapter.bootstrap()).resolves.toEqual({ kind: 'noSession' });
+    expect(calls.filter((call) => call.url.endsWith('/auth/refresh'))).toHaveLength(1);
   });
 
   test('sign-in without an MFA challenge: Cognito tokens → Himma session → signedIn single_factor with claim-derived display identity', async () => {
@@ -300,7 +369,7 @@ describe('live provider-access bootstrap (GET /provider/me)', () => {
 });
 
 describe('live logout and step-up', () => {
-  test('signOut revokes the Himma session (refresh token via the documented ephemeral pass-through) and clears memory', async () => {
+  test('with the cookie channel engaged, sign-in hands the refresh token to /auth/session ONCE and drops it from JS memory — logout carries no token material', async () => {
     const { adapter, accessPort, calls } = runtimeWith((call) => {
       if (call.url.endsWith('/auth/logout')) {
         return { status: 200, body: { status: 'loggedOut' } };
@@ -308,21 +377,33 @@ describe('live logout and step-up', () => {
       return defaultResponder(call);
     });
     await adapter.signIn({ email: 'rana@bluewave.test', password: 'pw-1' });
-    await adapter.signOut();
+    // Exactly one presentation of the refresh token: the session leg.
+    const session = calls.find((call) => call.url.endsWith('/auth/session'));
+    expect(JSON.parse(session?.body ?? '{}')).toMatchObject({ refreshToken: REFRESH_TOKEN });
 
+    await adapter.signOut();
     const logout = calls.find((call) => call.url.endsWith('/auth/logout'));
     expect(logout?.headers.authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
-    expect(JSON.parse(logout?.body ?? '{}')).toEqual({ refreshToken: REFRESH_TOKEN });
+    // The refresh token is server-owned now — logout sends NO token body
+    // and needs no direct provider revocation from the browser.
+    expect(JSON.parse(logout?.body ?? '{}')).toEqual({});
+    expect(
+      calls.find((call) => call.target === 'AWSCognitoIdentityProviderService.RevokeToken'),
+    ).toBeUndefined();
     await expect(accessPort.resolveAccess()).resolves.toEqual({ kind: 'unavailable' });
   });
 
-  test('when Himma is unreachable at logout, provider revocation still runs and the local session still ends', async () => {
-    const { adapter, accessPort, calls } = runtimeWith((call) => {
+  test('legacy backend WITHOUT the cookie channel: the documented ephemeral pass-through and outage fallback still work', async () => {
+    const legacyResponder = (call: RecordedCall) => {
+      if (call.url.endsWith('/auth/session')) {
+        return himmaSessionLegacy;
+      }
       if (call.url.endsWith('/auth/logout')) {
-        return 'network';
+        return 'network' as const;
       }
       return defaultResponder(call);
-    });
+    };
+    const { adapter, accessPort, calls } = runtimeWith(legacyResponder);
     await adapter.signIn({ email: 'rana@bluewave.test', password: 'pw-1' });
     await adapter.signOut();
     const revoke = calls.find(

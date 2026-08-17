@@ -52,6 +52,11 @@ export const HTTP_OUTCOMES = {
     code: 'mfaRequired',
     message: 'Multi-factor authentication is required for this action.',
   },
+  csrfRejected: {
+    statusCode: 403,
+    code: 'csrfRejected',
+    message: 'The request could not be verified as coming from the Himma portal.',
+  },
   dualControlViolation: {
     statusCode: 409,
     code: 'dualControlViolation',

@@ -41,16 +41,21 @@ import {
  * 4. Provider access comes ONLY from `GET /provider/me` (Himma
  *    `staff_membership` truth) — Cognito claims never grant anything.
  *
- * TOKEN OWNERSHIP: all token material lives in this module's closure, in
- * memory only — never localStorage/sessionStorage, never React state,
- * never URLs, never logs, and nothing token-shaped crosses the adapter
- * boundary. The docs/26 §4.7(9) refresh-token cookie channel needs the
- * §14.E backend cookie/CSRF wiring, which does not exist yet — until it
- * does, a hard reload simply starts signed out (fail-closed, recorded as
- * an operational dependency). The refresh token is held ONLY so logout can
- * pass it to `POST /auth/logout` for provider-side revocation (the route's
- * documented ephemeral pass-through) — the portal never runs its own
- * refresh flow and no second refresh mechanism exists.
+ * TOKEN OWNERSHIP (docs/26 §4.7(9) — the §14.E channel is now REAL):
+ * - The ACCESS (and display ID) token live in this module's closure, in
+ *   memory only — never localStorage/sessionStorage, never React state,
+ *   never URLs, never logs.
+ * - The REFRESH token is presented EXACTLY ONCE to `POST /auth/session`,
+ *   which moves it into the server-set Secure/HttpOnly/SameSite=Strict
+ *   auth-path cookie; after that, browser JavaScript neither holds nor can
+ *   read it (it is dropped from memory the moment the cookie channel
+ *   engages). Session continuity across hard reloads is the server-mediated
+ *   `GET /auth/csrf` → `POST /auth/refresh` bootstrap — Himma's
+ *   `login_session` liveness remains the authority a still-valid provider
+ *   refresh token can never bypass.
+ * - CSRF: the double-submit value from the session/refresh responses is
+ *   held in memory and echoed as the `x-csrf-token` header on every
+ *   cookie-authenticated call. It is channel binding, never a credential.
  */
 
 export interface LiveAuthConfig {
@@ -71,6 +76,13 @@ interface HeldSession {
   readonly assurance: 'single_factor' | 'mfa';
   readonly identity: SessionIdentity;
 }
+
+/** Display fallback when a refreshed session carries no parseable ID
+ *  token — semantic placeholder only, replaced on the next full sign-in. */
+const FALLBACK_IDENTITY: SessionIdentity = {
+  email: '',
+  displayName: 'Provider account',
+};
 
 interface PendingChallenge {
   readonly session: string;
@@ -147,6 +159,8 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
 
   let held: HeldSession | null = null;
   let pendingChallenge: PendingChallenge | null = null;
+  /** Double-submit CSRF value for the cookie channel (memory-only). */
+  let csrfToken: string | null = null;
   const listeners = new Set<(interrupt: SessionInterrupt) => void>();
 
   const notify = (interrupt: SessionInterrupt) => {
@@ -157,6 +171,7 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
 
   const dropSession = () => {
     held = null;
+    csrfToken = null;
   };
 
   /** Authorized Himma API call; a dead session clears held tokens and
@@ -182,7 +197,12 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
     return response;
   };
 
-  /** Present a fresh Cognito token pair to the REAL Himma session route. */
+  /**
+   * Present a fresh Cognito token pair to the REAL Himma session route.
+   * The refresh token rides along EXACTLY ONCE so the server can move it
+   * into the HttpOnly cookie; when the response confirms the channel
+   * (csrfToken present), the refresh token is dropped from JS memory.
+   */
   const establishHimmaSession = async (
     tokens: CognitoTokens,
     assurance: 'single_factor' | 'mfa',
@@ -190,9 +210,11 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
   ): Promise<SignInOutcome> => {
     const response = await api.request('/auth/session', {
       method: 'POST',
+      withCredentials: true,
       body: {
         accessToken: tokens.accessToken,
         ...(tokens.idToken !== null ? { idToken: tokens.idToken } : {}),
+        ...(tokens.refreshToken !== null ? { refreshToken: tokens.refreshToken } : {}),
         deviceLabel: 'Himma Provider Portal',
       },
     });
@@ -201,7 +223,14 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
     }
     if (response.status === 200) {
       const identity = identityFrom(tokens.idToken, email);
-      held = { tokens, assurance, identity };
+      const issuedCsrf = (response.body as { csrfToken?: unknown } | null)?.csrfToken;
+      if (typeof issuedCsrf === 'string') {
+        // Cookie channel engaged: the server owns the refresh token now.
+        csrfToken = issuedCsrf;
+        held = { tokens: { ...tokens, refreshToken: null }, assurance, identity };
+      } else {
+        held = { tokens, assurance, identity };
+      }
       return { kind: 'signedIn', assurance, identity };
     }
     switch (response.code) {
@@ -220,13 +249,49 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
 
   const adapter: PortalAuthAdapter = {
     /**
-     * Memory-only session ownership: no persisted token can exist at load,
-     * so bootstrap truthfully reports no session. Reload-surviving sessions
-     * arrive with the docs/26 §14.E refresh-cookie channel (backend work,
-     * recorded as pending) — never with browser token storage.
+     * Hard-reload bootstrap over the §14.E cookie channel: obtain the
+     * double-submit value (`GET /auth/csrf`), then perform the
+     * server-mediated refresh (`POST /auth/refresh`). ONE attempt, no
+     * loops: any refusal — no cookie, revoked/expired Himma session,
+     * invalid provider refresh, outage — lands signed out and the W2-2
+     * sign-in UX takes over. No token ever touches browser storage.
      */
     async bootstrap(): Promise<BootstrapOutcome> {
-      return { kind: 'noSession' };
+      const csrf = await api.request('/auth/csrf', { withCredentials: true });
+      const issued = (csrf.body as { csrfToken?: unknown } | null)?.csrfToken;
+      if (csrf.status !== 200 || typeof issued !== 'string') {
+        return { kind: 'noSession' };
+      }
+      const refreshed = await api.request('/auth/refresh', {
+        method: 'POST',
+        withCredentials: true,
+        csrfToken: issued,
+        body: {},
+      });
+      if (refreshed.status !== 200) {
+        return { kind: 'noSession' };
+      }
+      const body = refreshed.body as {
+        accessToken?: unknown;
+        idToken?: unknown;
+        assurance?: unknown;
+        csrfToken?: unknown;
+      } | null;
+      if (body === null || typeof body.accessToken !== 'string') {
+        return { kind: 'noSession' };
+      }
+      const assurance = body.assurance === 'mfa' ? 'mfa' : 'single_factor';
+      const idToken = typeof body.idToken === 'string' ? body.idToken : null;
+      const parsed = identityFrom(idToken, '');
+      const identity =
+        parsed.email === '' && parsed.displayName === '' ? FALLBACK_IDENTITY : parsed;
+      csrfToken = typeof body.csrfToken === 'string' ? body.csrfToken : csrfToken;
+      held = {
+        tokens: { accessToken: body.accessToken, idToken, refreshToken: null },
+        assurance,
+        identity,
+      };
+      return { kind: 'session', assurance, identity };
     },
 
     async signIn(input): Promise<SignInOutcome> {
@@ -355,11 +420,12 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
     },
 
     /**
-     * Logout: revoke the Himma session-of-record (`POST /auth/logout`,
-     * passing the refresh token through the route's documented EPHEMERAL
-     * provider-revocation channel), fall back to direct provider
-     * revocation if Himma was unreachable, and ALWAYS land signed out
-     * locally with every token dropped from memory.
+     * Final §14.E logout: `POST /auth/logout` revokes the Himma
+     * session-of-record, clears the HttpOnly refresh + CSRF cookies
+     * server-side, and performs provider revocation from the cookie
+     * channel. The legacy in-memory refresh pass-through (with a direct
+     * provider-revocation fallback) remains only for a backend WITHOUT the
+     * cookie channel. Always lands signed out locally, tokens dropped.
      */
     async signOut(): Promise<void> {
       const session = held;
@@ -370,6 +436,7 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
       const response = await api
         .request('/auth/logout', {
           method: 'POST',
+          withCredentials: true,
           accessToken: session.tokens.accessToken,
           body:
             session.tokens.refreshToken !== null

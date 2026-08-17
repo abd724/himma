@@ -20,11 +20,13 @@ import type { AddressInfo } from 'node:net';
 
 import { buildApp } from '../../../backend/src/app/build-app';
 import { newId } from '../../../backend/src/db/ids';
+import { parseAuthCookieConfig } from '../../../backend/src/modules/identity/http/auth-session-cookies';
 import { InMemoryRateLimiterStore } from '../../../backend/src/modules/identity/http/rate-limiter';
 import { CaptureMailSender } from '../../../backend/src/modules/identity/mail/mail-sender';
 import { FakeAccessTokenVerifier } from '../../../backend/src/modules/identity/providers/fake/fake-access-token-verifier';
 import { FakeAuthProviderAdapter } from '../../../backend/src/modules/identity/providers/fake/fake-adapter';
 import { FakeMfaProvider } from '../../../backend/src/modules/identity/providers/fake/fake-mfa-provider';
+import { FakeTokenRefresher } from '../../../backend/src/modules/identity/providers/fake/fake-token-refresher';
 import { parseMfaConfig } from '../../../backend/src/modules/identity/services/mfa-config';
 import { parseStaffInvitationConfig } from '../../../backend/src/modules/provider/staff-invitation-config';
 import {
@@ -36,6 +38,7 @@ import type { FetchLike } from '../../src/api/client';
 export const CONTRACT_ISSUER = 'https://cognito.test/portal-contract-pool';
 export const CONTRACT_CLIENT_ID = 'portal-contract-client';
 export const VALID_TOTP = '246810';
+export const PORTAL_ORIGIN = 'https://portal.himma.test';
 
 export interface FakeCognitoUser {
   readonly password: string;
@@ -52,6 +55,9 @@ export interface ContractHarness {
   readonly verifier: FakeAccessTokenVerifier;
   readonly idAdapter: FakeAuthProviderAdapter;
   readonly mfaProvider: FakeMfaProvider;
+  readonly refresher: FakeTokenRefresher;
+  /** The simulated browser cookie jar (auth-path cookies only). */
+  readonly cookieJar: Map<string, string>;
   readonly fetchImpl: FetchLike;
   registerUser(username: string, user: FakeCognitoUser): void;
   /** Mints a bearer directly (bypassing the sign-in flow) for negative
@@ -73,6 +79,7 @@ export async function createContractHarness(): Promise<ContractHarness> {
   const verifier = new FakeAccessTokenVerifier();
   const idAdapter = new FakeAuthProviderAdapter();
   const mfaProvider = new FakeMfaProvider();
+  const refresher = new FakeTokenRefresher();
   const app = buildApp({
     identity: {
       db: testDb.db,
@@ -83,6 +90,15 @@ export async function createContractHarness(): Promise<ContractHarness> {
       mfaProvider,
       mfaConfig: parseMfaConfig('test', {}),
       staffInvitationConfig: parseStaffInvitationConfig('test', {}),
+      // Contract runs establish/refresh many sessions from one IP; the
+      // rule stays ACTIVE but roomy (production default stays 10/min).
+      rateLimits: { sessionEstablishment: { limit: 1000, windowMs: 60_000 } },
+      sessionContinuity: {
+        cookieConfig: parseAuthCookieConfig('test', {
+          PORTAL_ALLOWED_ORIGINS: PORTAL_ORIGIN,
+        }),
+        tokenRefresher: refresher,
+      },
     },
   });
   await app.listen({ port: 0, host: '127.0.0.1' });
@@ -108,20 +124,44 @@ export async function createContractHarness(): Promise<ContractHarness> {
       authTime: new Date(),
     });
 
-  const mintTokenPair = (user: FakeCognitoUser, assurance: 'single_factor' | 'mfa') => ({
-    AccessToken: mintAccessToken({ subject: user.subject, assurance }),
-    IdToken: idAdapter.issueToken({
-      provider: 'email',
+  /** One SIGN-IN mints one provider session: the access token, ID token,
+   *  and refresh token share ONE origin_jti (Cognito keeps `origin_jti`
+   *  stable across refreshes of the same session — the Himma liveness
+   *  key), and the refresh token is registered with the fake refresher to
+   *  mint future same-session access tokens. */
+  const mintTokenPair = (user: FakeCognitoUser, assurance: 'single_factor' | 'mfa') => {
+    const originJti = `origin-${newId()}`;
+    const evidence = () => ({
       issuer: CONTRACT_ISSUER,
       subject: user.subject,
-      email: user.email,
-      emailVerified: true,
-      isPrivateRelay: false,
+      originJti,
+      scopes: [],
       assurance,
-      displayName: user.displayName,
-    }),
-    RefreshToken: `fake-refresh-${newId()}`,
-  });
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      authTime: new Date(),
+    });
+    const mintIdToken = () =>
+      idAdapter.issueToken({
+        provider: 'email',
+        issuer: CONTRACT_ISSUER,
+        subject: user.subject,
+        email: user.email,
+        emailVerified: true,
+        isPrivateRelay: false,
+        assurance,
+        displayName: user.displayName,
+      });
+    const refreshToken = `fake-refresh-${newId()}`;
+    refresher.register(refreshToken, () => ({
+      accessToken: verifier.issueToken(evidence()),
+      idToken: mintIdToken(),
+    }));
+    return {
+      AccessToken: verifier.issueToken(evidence()),
+      IdToken: mintIdToken(),
+      RefreshToken: refreshToken,
+    };
+  };
 
   const cognitoError = (type: string) =>
     jsonResponse(400, { __type: type, message: type });
@@ -184,9 +224,49 @@ export async function createContractHarness(): Promise<ContractHarness> {
     return cognitoError('UnknownOperationException');
   };
 
+  /** Browser-style transport: requests to the fake Cognito origin hit the
+   *  fake pool; credentialed API requests carry the simulated cookie jar +
+   *  portal Origin (like a real browser), and Set-Cookie responses are
+   *  absorbed into the jar — HttpOnly enforcement is a browser guarantee,
+   *  proven here through the exact Set-Cookie attributes (backend suite)
+   *  while the portal code path never attempts to read the jar. */
+  const cookieJar = new Map<string, string>();
+  const absorbSetCookies = (response: Response) => {
+    for (const cookie of response.headers.getSetCookie()) {
+      const [pair, ...attributes] = cookie.split(';').map((part) => part.trim());
+      const separator = (pair ?? '').indexOf('=');
+      if (pair === undefined || separator <= 0) continue;
+      const name = pair.slice(0, separator);
+      const value = pair.slice(separator + 1);
+      const maxAge = attributes.find((attribute) =>
+        attribute.toLowerCase().startsWith('max-age='),
+      );
+      if (maxAge !== undefined && Number(maxAge.split('=')[1]) <= 0) {
+        cookieJar.delete(name);
+      } else if (value !== '') {
+        cookieJar.set(name, value);
+      }
+    }
+  };
   const fetchImpl: FetchLike = async (input, init) => {
     if (input.startsWith(new URL(CONTRACT_ISSUER).origin)) {
       return fakeCognitoFetch(init);
+    }
+    if (init.credentials === 'include') {
+      const headers = {
+        ...(init.headers as Record<string, string> | undefined),
+        origin: PORTAL_ORIGIN,
+        ...(cookieJar.size > 0
+          ? {
+              cookie: [...cookieJar.entries()]
+                .map(([name, value]) => `${name}=${value}`)
+                .join('; '),
+            }
+          : {}),
+      };
+      const response = await globalThis.fetch(input, { ...init, headers });
+      absorbSetCookies(response);
+      return response;
     }
     return globalThis.fetch(input, init);
   };
@@ -198,6 +278,8 @@ export async function createContractHarness(): Promise<ContractHarness> {
     verifier,
     idAdapter,
     mfaProvider,
+    refresher,
+    cookieJar,
     fetchImpl,
     registerUser(username, user) {
       users.set(username, user);
