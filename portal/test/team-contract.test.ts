@@ -633,12 +633,17 @@ describe('team port (fixture semantics, W2-6)', () => {
       grep('\\bfetch\\(|XMLHttpRequest|axios|new WebSocket', 'src/team src/pages/team'),
     ).toBe('');
     // Business authority never comes from Cognito groups/claims: outside
-    // documentation comments, no code line touches Cognito vocabulary
-    // (capabilities arrive from the backend-shaped organization view alone).
+    // documentation comments, no DOMAIN code line touches Cognito
+    // vocabulary (capabilities arrive from the backend-shaped organization
+    // view alone). W2-12A narrowing: the dedicated auth boundary — the live
+    // Cognito adapter, its composition, and the env config — legitimately
+    // names the provider now; every other module remains claims-free.
+    const AUTH_BOUNDARY = ['src/auth/live/', 'src/app/auth-runtime.ts', 'src/api/env.ts'];
     const cognitoCodeLines = grep('cognito|custom:group', 'src')
       .split('\n')
       .filter(Boolean)
-      .filter((line) => !/^\S+:\d+:\s*(\*|\/\/|\/\*)/.test(line));
+      .filter((line) => !/^\S+:\d+:\s*(\*|\/\/|\/\*)/.test(line))
+      .filter((line) => !AUTH_BOUNDARY.some((boundary) => line.startsWith(boundary)));
     expect(cognitoCodeLines).toEqual([]);
   });
 

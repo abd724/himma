@@ -22,17 +22,23 @@ function codeLines(grepOutput: string): string[] {
     .filter((line) => !/^\S+:\d+:\s*(\*|\/\/|\/\*)/.test(line));
 }
 
-describe('fixture and token-handling safety (task §4, §16, §25)', () => {
-  test('no JWT/bearer/token strings exist anywhere in portal source', () => {
-    // Semantic outcomes only: no fake tokens, no bearer handling, no JWT
-    // material anywhere in the frontend (the adapter owns all of it later).
+describe('fixture and token-handling safety (task §4, §16, §25; W2-12A boundary)', () => {
+  test('bearer/JWT handling exists ONLY at the one API-transport boundary', () => {
+    // No embedded JWT material anywhere, ever.
     expect(grepSrc('eyJ[A-Za-z0-9]')).toBe('');
     expect(codeLines(grepSrc('jwt'))).toEqual([]);
-    expect(codeLines(grepSrc('bearer'))).toEqual([]);
+    // W2-12A narrowing (was: no bearer handling at all): the live adapter
+    // path exists now, and the Authorization header may be constructed in
+    // EXACTLY ONE place — the central API client. Everything else still
+    // sees semantic outcomes only.
+    const bearerLines = codeLines(grepSrc('bearer'));
+    expect(bearerLines).toHaveLength(1);
+    expect(bearerLines[0]).toContain('src/api/client.ts');
   });
 
   test('no web-storage or indexeddb auth persistence exists in portal source', () => {
-    expect(grepSrc('localStorage|sessionStorage|indexedDB')).toBe('');
+    // Comments may document the prohibition; no CODE line may touch storage.
+    expect(codeLines(grepSrc('localStorage|sessionStorage|indexedDB'))).toEqual([]);
   });
 
   test('no password literal is stored anywhere except the one documented demo constant', () => {

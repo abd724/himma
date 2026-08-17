@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "jest"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "kysely": [
+        "../backend/node_modules/kysely"
+      ],
+      "fastify": [
+        "../backend/node_modules/fastify"
+      ]
+    }
+  },
+  "include": [
+    "test-contract",
+    "src"
+  ]
+}

@@ -2,7 +2,7 @@
   "name": "@himma/portal",
   "version": "0.1.0",
   "private": true,
-  "description": "Himma provider portal (W2) — responsive web application for provider organizations. W2-1: application foundation, responsive shell, navigation, design-system baseline.",
+  "description": "Himma provider portal (W2) \u2014 responsive web application for provider organizations. W2-1: application foundation, responsive shell, navigation, design-system baseline.",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "jest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test:contract": "jest --config jest.contract.config.cjs --runInBand",
+    "typecheck:contract": "tsc --noEmit -p tsconfig.contract.json"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.2.0",

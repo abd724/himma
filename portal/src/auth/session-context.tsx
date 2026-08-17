@@ -7,6 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { PortalAuthAdapter, StepUpOutcome } from './adapter';
 import {
   initialSessionState,
@@ -53,6 +54,10 @@ export function SessionProvider({
   );
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Session end (sign-out OR expiry/revocation) clears every cached domain
+  // read — no stale organization/provider data survives the session that
+  // loaded it (W2-12A §10/§11; applies identically in fixture and live mode).
+  const queryClient = useQueryClient();
 
   // Bootstrap while the machine is in its initial state (skipped when a
   // test provided a state). Guarded by the STATE, not a ref: bootstrap is a
@@ -95,6 +100,7 @@ export function SessionProvider({
   useEffect(() => {
     return adapter.subscribe((interrupt) => {
       if (interrupt.kind === 'sessionExpired') {
+        queryClient.clear();
         dispatch({ type: 'SESSION_INTERRUPTED', interrupt });
         return;
       }
@@ -102,7 +108,7 @@ export function SessionProvider({
         dispatch({ type: 'ACCESS_RESULT', outcome });
       });
     });
-  }, [adapter, accessPort]);
+  }, [adapter, accessPort, queryClient]);
 
   const actions = useMemo<SessionActions>(() => {
     return {
@@ -132,6 +138,7 @@ export function SessionProvider({
       },
       async signOut() {
         await adapter.signOut();
+        queryClient.clear();
         dispatch({ type: 'SIGN_OUT_COMPLETED' });
       },
       async completeStepUpTotp(code) {
@@ -149,7 +156,7 @@ export function SessionProvider({
         return outcome;
       },
     };
-  }, [adapter]);
+  }, [adapter, queryClient]);
 
   return (
     <SessionStateContext.Provider value={state}>

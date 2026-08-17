@@ -34,10 +34,11 @@ import type {
   CategoryReadPort,
 } from '../taxonomy/contract';
 import type { TeamPort } from '../team/contract';
+import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
 export interface AuthRuntime {
-  readonly mode: 'fixture' | 'unconfigured';
+  readonly mode: 'fixture' | 'live' | 'unconfigured';
   readonly adapter: PortalAuthAdapter;
   readonly accessPort: ProviderAccessPort;
   readonly invitationPort: InvitationPort;
@@ -64,14 +65,49 @@ declare global {
 
 /**
  * Composes the auth adapter + provider-access port for this environment.
- * Fail-closed by construction: anything but an explicit fixture resolution
- * yields the unconfigured pair, which can never grant access (task §25).
+ * Fail-closed by construction (task §25 + W2-12A §4): anything but an
+ * explicit, COMPLETE resolution yields the unconfigured pair, which can
+ * never grant access. Live mode (explicit `VITE_PORTAL_AUTH_MODE=live`)
+ * wires the real Cognito/Himma auth + provider-access bootstrap ONLY —
+ * every domain port stays fail-closed until its own W2-12B+ integration,
+ * and no fixture identity can ever appear in a live composition.
  */
 export function createAuthRuntime(env: PortalEnv): AuthRuntime {
   const mode = resolveAuthMode({
     configuredMode: env.authModeSetting,
     isProduction: env.isProduction,
   });
+
+  if (mode === 'live') {
+    const liveConfig = resolveLiveConfig(env);
+    if (liveConfig === null) {
+      // Missing/invalid live configuration NEVER falls back to fixtures —
+      // the portal renders the safe unavailable state instead.
+      return unconfiguredRuntime();
+    }
+    const live = createLiveAuthRuntime(liveConfig);
+    return {
+      mode,
+      adapter: live.adapter,
+      accessPort: live.accessPort,
+      // W2-12A integrates auth/session/provider-access ONLY (task §14):
+      // every domain port stays the fail-closed unconfigured implementation
+      // until its own W2-12B+ slice wires the real read/mutation contracts.
+      invitationPort: createUnconfiguredInvitationPort(),
+      onboardingPort: createUnconfiguredOnboardingPort(),
+      profilePort: createUnconfiguredProfilePort(),
+      branchPort: createUnconfiguredBranchPort(),
+      areaPort: createUnconfiguredAreaPort(),
+      teamPort: createUnconfiguredTeamPort(),
+      listingsPort: createUnconfiguredListingsPort(),
+      listingEditorPort: createUnconfiguredListingEditorPort(),
+      listingLifecyclePort: createUnconfiguredListingLifecyclePort(),
+      bulkImportPort: createUnconfiguredBulkImportPort(),
+      listingCardPort: createUnconfiguredListingCardPort(),
+      activityTypePort: createUnconfiguredActivityTypePort(),
+      categoryPort: createUnconfiguredCategoryPort(),
+    };
+  }
 
   if (mode === 'fixture') {
     const fixture = createFixtureAuthRuntime();
@@ -98,8 +134,34 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     };
   }
 
+  return unconfiguredRuntime();
+}
+
+/** Every value the live path requires, validated together — any gap fails
+ *  the WHOLE composition closed (no partial live wiring). */
+function resolveLiveConfig(env: PortalEnv): {
+  apiBaseUrl: string;
+  cognitoIssuer: string;
+  cognitoClientId: string;
+} | null {
+  if (
+    env.apiBaseUrl === null ||
+    env.cognitoIssuer === null ||
+    env.cognitoClientId === null ||
+    !env.cognitoIssuer.startsWith('https://')
+  ) {
+    return null;
+  }
   return {
-    mode,
+    apiBaseUrl: env.apiBaseUrl,
+    cognitoIssuer: env.cognitoIssuer,
+    cognitoClientId: env.cognitoClientId,
+  };
+}
+
+function unconfiguredRuntime(): AuthRuntime {
+  return {
+    mode: 'unconfigured',
     adapter: createUnconfiguredAuthAdapter(),
     accessPort: createUnconfiguredAccessPort(),
     invitationPort: createUnconfiguredInvitationPort(),
