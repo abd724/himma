@@ -1,0 +1,27 @@
+import type { AdminAuthAdapter } from './adapter';
+import type { AdminAccessPort } from '../access/contract';
+
+/**
+ * FAIL-CLOSED default: a production build with no configured authentication
+ * renders the safe unavailable state and can never grant admin access.
+ * Every operation resolves to the least-capable outcome — an unconfigured
+ * production deployment cannot become a fake administrator.
+ */
+export function createUnconfiguredAuthAdapter(): AdminAuthAdapter {
+  return {
+    bootstrap: async () => ({ kind: 'unavailable' }),
+    signIn: async () => ({ kind: 'failure' }),
+    completeMfaChallenge: async () => ({ kind: 'failure' }),
+    cancelMfaChallenge: async () => {},
+    completeStepUpTotp: async () => ({ kind: 'failure' }),
+    completeStepUpRecoveryCode: async () => ({ kind: 'failure' }),
+    signOut: async () => {},
+    subscribe: () => () => {},
+  };
+}
+
+export function createUnconfiguredAccessPort(): AdminAccessPort {
+  return {
+    resolveAccess: async () => ({ kind: 'unavailable' }),
+  };
+}

@@ -22,6 +22,10 @@ import {
   type ProcessRoleResult,
 } from '../services/admin-roles';
 import { ADMIN_ROLES } from '../persistence/admin-role-repository';
+import {
+  ADMIN_CAPABILITIES,
+  capabilitiesForAdminRoles,
+} from '../services/admin-capabilities';
 import { requirePrincipal } from './auth-plugin';
 import { sendOutcome, type HttpOutcomeName } from './http-outcomes';
 
@@ -71,6 +75,57 @@ function processOutcomeName(kind: Exclude<ProcessRoleResult['kind'], 'roleActiva
 export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db }): void {
   const app = instance.withTypeProvider<TypeBoxTypeProvider>();
   const serviceDeps = { db: deps.db };
+
+  // ---------------------------------------------------------------------
+  // GET /admin/me — the Admin Portal bootstrap (W3-1). The `admin` policy
+  // has already refused everyone without a live session + Himma MFA
+  // assurance + ≥1 ACTIVE PostgreSQL admin role (non-admins learn nothing
+  // beyond `forbidden`; Cognito claims grant no role). The response is the
+  // SAFE access projection the frontend needs and nothing more: display
+  // identity, the active canonical roles, and the centralized capability
+  // projection (admin-capabilities.ts) — no session internals, no
+  // assignment audit fields, no provider/customer data.
+  // ---------------------------------------------------------------------
+  app.get(
+    '/admin/me',
+    {
+      config: { authPolicy: 'admin' },
+      schema: {
+        response: {
+          200: Type.Object({
+            user: Type.Object({
+              id: Uuid,
+              displayName: Type.String(),
+            }),
+            roles: Type.Array(
+              Type.Union(ADMIN_ROLES.map((role) => Type.Literal(role))),
+            ),
+            capabilities: Type.Array(
+              Type.Union(ADMIN_CAPABILITIES.map((capability) => Type.Literal(capability))),
+            ),
+          }),
+          ...ADMIN_ERRORS,
+        },
+      },
+    },
+    async (request) => {
+      const principal = requirePrincipal(request.principal);
+      const account = await serviceDeps.db
+        .selectFrom('customer_account')
+        .select(['display_name'])
+        .where('user_id', '=', principal.userId)
+        .executeTakeFirst();
+      const roles = principal.adminRoles ?? [];
+      return {
+        user: {
+          id: principal.userId,
+          displayName: String(account?.display_name ?? 'Himma administrator'),
+        },
+        roles: [...roles],
+        capabilities: [...capabilitiesForAdminRoles(roles)],
+      };
+    },
+  );
 
   app.get(
     '/admin/role-assignments',

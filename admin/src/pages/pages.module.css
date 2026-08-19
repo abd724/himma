@@ -1,0 +1,59 @@
+.pageTitle {
+  margin: 0 0 var(--hp-space-sm);
+  font-size: 1.5rem;
+  color: var(--hp-color-text-primary);
+}
+
+.lead {
+  margin: 0 0 var(--hp-space-lg);
+  color: var(--hp-color-text-secondary);
+  line-height: 1.55;
+  max-width: 64ch;
+}
+
+.panel {
+  background: var(--hp-color-background-elevated);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  padding: var(--hp-space-lg);
+  max-width: 720px;
+}
+
+.panelTitle {
+  margin: 0 0 var(--hp-space-sm);
+  font-size: 1.05rem;
+  color: var(--hp-color-text-primary);
+}
+
+.panelBody {
+  margin: 0;
+  color: var(--hp-color-text-secondary);
+  line-height: 1.55;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--hp-space-md);
+  max-width: 980px;
+}
+
+.toolCard {
+  background: var(--hp-color-background-elevated);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-card);
+  padding: var(--hp-space-md);
+}
+
+.toolName {
+  margin: 0 0 var(--hp-space-xs);
+  font-weight: 700;
+  color: var(--hp-color-text-primary);
+}
+
+.toolNote {
+  margin: 0;
+  color: var(--hp-color-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}

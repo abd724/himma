@@ -44,3 +44,7 @@ example
 
 # Playwright artifacts
 .playwright-mcp/
+
+# Playwright outputs
+test-results/
+playwright-report/

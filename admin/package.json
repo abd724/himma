@@ -1,0 +1,53 @@
+{
+  "name": "@himma/admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Himma internal Admin Portal (W3) — staff-facing operations console. W3-1: foundation, authentication/access bootstrap, responsive shell.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "jest",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource/manrope": "^5.2.0",
+    "@tanstack/react-query": "^5.90.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.62.1",
+    "@swc/core": "^1.13.0",
+    "@swc/jest": "^0.2.39",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.9.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.0",
+    "@types/jest": "^30.0.0",
+    "@types/jest-axe": "^3.5.9",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-jsx-a11y": "^6.10.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^30.0.0",
+    "jest-axe": "^9.0.0",
+    "jest-environment-jsdom": "^30.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.40.0",
+    "undici": "^7.29.0",
+    "vite": "^7.0.0"
+  }
+}

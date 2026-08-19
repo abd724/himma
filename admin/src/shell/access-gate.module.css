@@ -1,0 +1,131 @@
+.frame {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hp-space-xl);
+  background: var(--hp-color-background-main);
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--hp-color-background-elevated);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-panel);
+  box-shadow: var(--hp-shadow-card);
+  padding: var(--hp-space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-md);
+}
+
+.brand {
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--hp-color-brand-primary);
+  margin: 0;
+}
+
+.brandTag {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--hp-color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-left: var(--hp-space-xs);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--hp-color-text-primary);
+}
+
+.body,
+.status {
+  margin: 0;
+  color: var(--hp-color-text-secondary);
+  line-height: 1.5;
+}
+
+.notice {
+  margin: 0;
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  border-radius: var(--hp-radius-control);
+  background: var(--hp-color-brand-primary-soft);
+  color: var(--hp-color-text-primary);
+}
+
+.error {
+  margin: 0;
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  border-radius: var(--hp-radius-control);
+  background: var(--hp-color-status-error-soft);
+  color: var(--hp-color-status-error);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+}
+
+.label {
+  font-weight: 600;
+  color: var(--hp-color-text-primary);
+  font-size: 0.9rem;
+}
+
+.input {
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-control);
+  background: var(--hp-color-background-main);
+  color: var(--hp-color-text-primary);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: 1px;
+}
+
+.primary {
+  font: inherit;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: var(--hp-radius-button);
+  background: var(--hp-color-brand-primary);
+  color: var(--hp-color-text-inverse);
+  cursor: pointer;
+  margin-top: var(--hp-space-xs);
+}
+
+.primary:hover {
+  background: var(--hp-color-brand-primary-pressed);
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid var(--hp-color-brand-primary);
+  outline-offset: 2px;
+}
+
+.secondary {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: var(--hp-radius-button);
+  background: transparent;
+  color: var(--hp-color-text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+}
