@@ -80,10 +80,15 @@ describe('createAuthRuntime live-mode composition (fail-closed)', () => {
       await expect(
         runtime.listingsPort.listListings('any', { limit: 10 }),
       ).resolves.toEqual({ kind: 'unavailable' });
-      // Catalogue MUTATION seams stay unconfigured until W2-12C2.
+      // The live lifecycle port (W2-12C3) is session-gated: without a
+      // held session it resolves unavailable and never fetches.
       await expect(
         runtime.listingLifecyclePort.submitProgram('any', 'p', 1),
       ).resolves.toEqual({ kind: 'unavailable' });
+      // Bulk import stays fail-closed unconfigured (a later task).
+      await expect(runtime.bulkImportPort.dryRun('any', [])).resolves.toEqual({
+        kind: 'unavailable',
+      });
     } finally {
       fetchSpy.mockRestore();
     }
