@@ -60,6 +60,18 @@ describe('provider dashboard (W2-11 owner correction)', () => {
     expect(await kpiValue('Team members')).toBe('8');
   });
 
+  test('W2-12D: an exhausted catalogue walk is honestly UNAVAILABLE — never a silently truncated count presented as complete', async () => {
+    const { loadCatalogueSummary } = await import('../src/pages/dashboard/dashboard-domain');
+    const endless = {
+      listListings: async () => ({
+        kind: 'loaded' as const,
+        page: { programs: [], nextCursor: 'always-more' },
+      }),
+      loadListing: async () => ({ kind: 'unavailable' as const }),
+    };
+    await expect(loadCatalogueSummary(endless, 'org')).resolves.toEqual({ kind: 'unavailable' });
+  });
+
   test('the needs-attention rule is exact and role-aware (domain-level lock)', () => {
     // Since W2-12C1 each summary row carries its own card projection.
     const completeCard = {

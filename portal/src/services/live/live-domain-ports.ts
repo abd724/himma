@@ -286,18 +286,45 @@ export function createLiveDomainPorts(transport: LiveTransport): LiveDomainPorts
     },
   };
 
+  /**
+   * The organization's REAL listing count via the same bounded
+   * authoritative page walk the Dashboard uses (no aggregate read exists —
+   * recorded gap). Null means the count is truthfully UNKNOWN: the member
+   * lacks `catalogue.read` (mirroring the fixture's capability rule), the
+   * read failed, or the defensive bound exhausted — never a fabricated
+   * zero (derive-onboarding omits the first-listing step on null).
+   */
+  const countListings = async (organizationId: string): Promise<number | null> => {
+    let count = 0;
+    let cursor: string | undefined;
+    for (let page = 0; page < 100; page += 1) {
+      const query = cursor === undefined ? '?limit=100' : `?limit=100&cursor=${cursor}`;
+      const response = await transport.authorizedRequest(
+        orgPath(organizationId, `/listings${query}`),
+      );
+      if (response === null || response.networkFailure || response.status !== 200) return null;
+      const body = response.body as { programs?: unknown; nextCursor?: unknown } | null;
+      if (body === null || !Array.isArray(body.programs)) return null;
+      count += body.programs.length;
+      if (body.nextCursor === null) return count;
+      if (typeof body.nextCursor !== 'string') return null;
+      cursor = body.nextCursor;
+    }
+    return null;
+  };
+
   const onboardingPort: OnboardingPort = {
     /**
-     * The documented COMPOSITION over the org view. `listingCount` stays
-     * null in W2-12B: the provider listings read is deliberately NOT
-     * integrated yet (task §24) — the count wires up with the W2-12C
-     * catalogue integration, and a null count renders as "unknown", never
-     * as a fabricated zero.
+     * The documented COMPOSITION over the org view, plus the real listing
+     * count (W2-12D closeout — the C1 listings read made it computable).
      */
     async loadSnapshot(organizationId): Promise<OnboardingSnapshotOutcome> {
       const outcome = await loadOrganizationView(organizationId);
       if (outcome.kind !== 'loaded') return { kind: outcome.kind };
       const view = outcome.view;
+      const listingCount = view.membership.capabilities.includes('catalogue.read')
+        ? await countListings(organizationId)
+        : null;
       return {
         kind: 'loaded',
         snapshot: {
@@ -320,7 +347,7 @@ export function createLiveDomainPorts(transport: LiveTransport): LiveDomainPorts
             role: view.membership.role,
             capabilities: view.membership.capabilities,
           },
-          listingCount: null,
+          listingCount,
         },
       };
     },

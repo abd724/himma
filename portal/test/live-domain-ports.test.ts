@@ -190,8 +190,8 @@ describe('organization view / profile port', () => {
 });
 
 describe('onboarding port', () => {
-  test('the snapshot is the documented composition over the org view, with listingCount UNKNOWN until W2-12C', async () => {
-    const { transport } = makeTransport(() => ({ status: 200, body: VIEW_BODY }));
+  test('the snapshot is the documented composition over the org view; without catalogue.read the count is truthfully UNKNOWN and NO listings request fires', async () => {
+    const { transport, calls } = makeTransport(() => ({ status: 200, body: VIEW_BODY }));
     const { onboardingPort } = createLiveDomainPorts(transport);
     const outcome = await onboardingPort.loadSnapshot(ORG);
     expect(outcome).toEqual({
@@ -214,6 +214,39 @@ describe('onboarding port', () => {
         listingCount: null,
       },
     });
+    expect(calls.some((call) => call.path.includes('/listings'))).toBe(false);
+  });
+
+  test('W2-12D: with catalogue.read the REAL listing count rides the bounded authoritative page walk', async () => {
+    const readerView = {
+      ...VIEW_BODY,
+      membership: { ...VIEW_BODY.membership, capabilities: ['org.read', 'catalogue.read'] },
+    };
+    const { transport, calls } = makeTransport((call) => {
+      if (!call.path.includes('/listings')) return { status: 200, body: readerView };
+      return call.path.includes('cursor=')
+        ? { status: 200, body: { programs: [{}, {}], nextCursor: null } }
+        : { status: 200, body: { programs: [{}, {}, {}], nextCursor: 'next-1' } };
+    });
+    const outcome = await createLiveDomainPorts(transport).onboardingPort.loadSnapshot(ORG);
+    if (outcome.kind !== 'loaded') throw new Error(outcome.kind);
+    expect(outcome.snapshot.listingCount).toBe(5);
+    expect(calls.filter((call) => call.path.includes('/listings'))).toHaveLength(2);
+  });
+
+  test('W2-12D: a failed count walk yields UNKNOWN (null) — the snapshot still loads and nothing is fabricated', async () => {
+    const readerView = {
+      ...VIEW_BODY,
+      membership: { ...VIEW_BODY.membership, capabilities: ['org.read', 'catalogue.read'] },
+    };
+    const { transport } = makeTransport((call) =>
+      call.path.includes('/listings')
+        ? { status: 500, code: 'internalError' }
+        : { status: 200, body: readerView },
+    );
+    const outcome = await createLiveDomainPorts(transport).onboardingPort.loadSnapshot(ORG);
+    if (outcome.kind !== 'loaded') throw new Error(outcome.kind);
+    expect(outcome.snapshot.listingCount).toBeNull();
   });
 
   test('submission maps the real outcomes and a success re-resolves access (organizationState changed)', async () => {

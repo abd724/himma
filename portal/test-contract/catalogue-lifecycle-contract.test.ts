@@ -625,6 +625,66 @@ describe('provider ProgramRevision status (§34, §36)', () => {
   });
 });
 
+describe('W2-12D closeout proofs', () => {
+  test('lifecycle actions cannot cross organization boundaries — a foreign owner gets the one not-found shape', async () => {
+    const { session, orgId, branchIds } = await provisionOrgWithRole('owner');
+    const programId = await completeDraft(session, orgId, branchIds[0]!, 'Sealed Lifecycle');
+    const stranger = await provisionOrgWithRole('owner');
+    await expect(stranger.session.lifecycle.submitProgram(orgId, programId, 1)).resolves.toEqual({
+      kind: 'notFound',
+    });
+    await expect(stranger.session.lifecycle.publishProgram(orgId, programId, 1)).resolves.toEqual({
+      kind: 'notFound',
+    });
+    await expect(stranger.session.lifecycle.archiveProgram(orgId, programId, 1)).resolves.toEqual({
+      kind: 'notFound',
+    });
+    expect((await detailOf(session, orgId, programId)).listingState).toBe('draft');
+  });
+
+  test('live onboarding now carries the REAL listing count (bounded authoritative walk); a member without catalogue.read stays truthfully unknown', async () => {
+    const { createLiveDomainPorts } = await import('../src/services/live/live-domain-ports');
+    const { session, orgId, branchIds, user } = await provisionOrgWithRole('owner');
+    await completeDraft(session, orgId, branchIds[0]!, 'Counted One');
+    await completeDraft(session, orgId, branchIds[0]!, 'Counted Two');
+
+    const runtime = createLiveAuthRuntime({
+      apiBaseUrl: harness.apiBaseUrl,
+      cognitoIssuer: CONTRACT_ISSUER,
+      cognitoClientId: CONTRACT_CLIENT_ID,
+      fetchImpl: harness.fetchImpl,
+    });
+    await runtime.adapter.signIn({ email: user.email, password: user.password });
+    const signedInResult = await runtime.adapter.completeMfaChallenge(VALID_TOTP);
+    if (signedInResult.kind !== 'signedIn') throw new Error(signedInResult.kind);
+    const snapshot = await createLiveDomainPorts(runtime.transport).onboardingPort.loadSnapshot(
+      orgId,
+    );
+    if (snapshot.kind !== 'loaded') throw new Error(snapshot.kind);
+    expect(snapshot.snapshot.listingCount).toBe(2);
+
+    const financeUser = await provisionUser();
+    await addMembership(harness.testDb.db, financeUser.userId, orgId, 'finance');
+    const financeRuntime = createLiveAuthRuntime({
+      apiBaseUrl: harness.apiBaseUrl,
+      cognitoIssuer: CONTRACT_ISSUER,
+      cognitoClientId: CONTRACT_CLIENT_ID,
+      fetchImpl: harness.fetchImpl,
+    });
+    await financeRuntime.adapter.signIn({
+      email: financeUser.email,
+      password: financeUser.password,
+    });
+    const financeSignIn = await financeRuntime.adapter.completeMfaChallenge(VALID_TOTP);
+    if (financeSignIn.kind !== 'signedIn') throw new Error(financeSignIn.kind);
+    const financeSnapshot = await createLiveDomainPorts(
+      financeRuntime.transport,
+    ).onboardingPort.loadSnapshot(orgId);
+    if (financeSnapshot.kind !== 'loaded') throw new Error(financeSnapshot.kind);
+    expect(financeSnapshot.snapshot.listingCount).toBeNull();
+  });
+});
+
 describe('END-TO-END lifecycle journey (§35)', () => {
   test('authenticate → author → submit → internal approval → publish → public → pause → hidden → resume → public → archive → terminal', async () => {
     const { session, orgId, branchIds } = await provisionOrgWithRole('owner');

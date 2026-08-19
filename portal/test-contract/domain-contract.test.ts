@@ -194,7 +194,7 @@ describe('organization view & profile (§25.1–6)', () => {
       snapshot: {
         organization: { verificationState: 'draft' },
         membership: { role: 'owner' },
-        listingCount: null, // catalogue integration is W2-12C
+        listingCount: 0, // the REAL count via the bounded walk (W2-12D)
       },
     });
     if (snapshot.kind !== 'loaded') throw new Error('snapshot failed');

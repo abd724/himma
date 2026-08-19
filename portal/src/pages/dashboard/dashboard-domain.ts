@@ -34,7 +34,7 @@ export async function loadCatalogueSummary(
 ): Promise<CatalogueSummaryOutcome> {
   const programs: ProgramSummaryRecord[] = [];
   let cursor: string | undefined;
-  // Defensive bound only — the loop ends when the cursor does.
+  // Defensive bound only — the loop normally ends when the cursor does.
   for (let page = 0; page < 100; page += 1) {
     const outcome = await listingsPort.listListings(organizationId, {
       limit: 100,
@@ -45,11 +45,15 @@ export async function loadCatalogueSummary(
     }
     programs.push(...outcome.page.programs);
     if (outcome.page.nextCursor === null) {
-      break;
+      return { kind: 'loaded', programs };
     }
     cursor = outcome.page.nextCursor;
   }
-  return { kind: 'loaded', programs };
+  // The defensive bound exhausted with pages remaining (10,000+ listings):
+  // a silently truncated catalogue would render WRONG dashboard counts as
+  // if they were complete, so the summary is honestly unavailable instead
+  // (W2-12D audit; a real aggregate read stays the recorded future fix).
+  return { kind: 'unavailable' };
 }
 
 /** Counts per canonical lifecycle state (unknown state strings ignored). */

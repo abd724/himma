@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { resolveAuthMode } from '../src/auth/auth-mode';
 import { createAuthRuntime } from '../src/app/auth-runtime';
 import type { PortalEnv } from '../src/api/env';
@@ -89,6 +91,32 @@ describe('createAuthRuntime live-mode composition (fail-closed)', () => {
       await expect(runtime.bulkImportPort.dryRun('any', [])).resolves.toEqual({
         kind: 'unavailable',
       });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test('W2-12D composition lock: in the LIVE branch the ONLY unconfigured adapter is bulk import — every backend-capable port is live-wired', () => {
+    const source = readFileSync(
+      join(__dirname, '../src/app/auth-runtime.ts'),
+      'utf8',
+    );
+    const liveBranch = source.slice(
+      source.indexOf("if (mode === 'live')"),
+      source.indexOf("if (mode === 'fixture')"),
+    );
+    expect(liveBranch.length).toBeGreaterThan(0);
+    const unconfigured = liveBranch.match(/createUnconfigured\w+/g) ?? [];
+    expect(unconfigured).toEqual(['createUnconfiguredBulkImportPort']);
+  });
+
+  test('W2-12D fetch discipline retained after the composition lock', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new TypeError('network unreachable'));
+    try {
+      const runtime = createAuthRuntime(LIVE_ENV);
+      await expect(runtime.areaPort.listAreas()).resolves.toEqual({ kind: 'unavailable' });
     } finally {
       fetchSpy.mockRestore();
     }
