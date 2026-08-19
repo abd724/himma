@@ -1,6 +1,7 @@
 import {
   createApiClient,
   type ApiClient,
+  type ApiBinaryResponse,
   type ApiJsonResponse,
   type FetchLike,
 } from '../../api/client';
@@ -87,6 +88,9 @@ export interface LiveTransport {
     path: string,
     options?: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown },
   ): Promise<ApiJsonResponse | null>;
+  /** Bearer-authenticated binary GET (W3-5 evidence documents); the blob
+   *  lives in memory only. Null when no session is held. */
+  authorizedBinaryRequest(path: string): Promise<ApiBinaryResponse | null>;
   /** Unauthenticated Himma API call (public reads such as areas). */
   publicRequest(path: string): Promise<ApiJsonResponse>;
   /**
@@ -222,6 +226,21 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
       ...options,
       accessToken: held.tokens.accessToken,
     });
+    if (
+      response.status === 401 &&
+      (response.code === 'sessionExpired' || response.code === 'invalidAccessToken')
+    ) {
+      dropSession();
+      notify({ kind: 'sessionExpired' });
+    }
+    return response;
+  };
+
+  const authorizedBinaryRequest = async (path: string) => {
+    if (held === null) {
+      return null;
+    }
+    const response = await api.requestBinary(path, { accessToken: held.tokens.accessToken });
     if (
       response.status === 401 &&
       (response.code === 'sessionExpired' || response.code === 'invalidAccessToken')
@@ -533,6 +552,7 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
 
   const transport: LiveTransport = {
     authorizedRequest,
+    authorizedBinaryRequest,
     publicRequest: (path) => api.request(path),
     notifyAccessChanged: () => notify({ kind: 'accessChanged' }),
   };

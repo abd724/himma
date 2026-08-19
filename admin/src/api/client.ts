@@ -38,11 +38,28 @@ export interface ApiRequestOptions {
   readonly csrfToken?: string;
 }
 
+/** Binary (document) response — W3-5 evidence retrieval. The body is a
+ *  Blob held in memory only; nothing is ever written to browser storage. */
+export interface ApiBinaryResponse {
+  readonly status: number;
+  readonly code: string | null;
+  readonly blob: Blob | null;
+  readonly contentType: string | null;
+  /** Display filename from Content-Disposition (sanitized server-side). */
+  readonly filename: string | null;
+  readonly networkFailure: boolean;
+}
+
 export interface ApiClient {
   /** Base URL this client is bound to (per-environment configuration). */
   readonly baseUrl: string;
   /** JSON request against a backend route path (must start with '/'). */
   request(path: string, options?: ApiRequestOptions): Promise<ApiJsonResponse>;
+  /** Authorized binary GET (W3-5 evidence documents) — bearer-only. */
+  requestBinary(
+    path: string,
+    options: { accessToken: string },
+  ): Promise<ApiBinaryResponse>;
 }
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -104,6 +121,56 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
           ? (body as { code: string }).code
           : null;
       return { status: response.status, code, body, networkFailure: false };
+    },
+
+    async requestBinary(path, requestOptions) {
+      if (!path.startsWith('/')) {
+        throw new Error('API paths must be absolute route paths');
+      }
+      let response: Response;
+      try {
+        response = await fetchImpl(`${root}${path}`, {
+          method: 'GET',
+          headers: { authorization: `Bearer ${requestOptions.accessToken}` },
+        });
+      } catch {
+        return {
+          status: 0,
+          code: null,
+          blob: null,
+          contentType: null,
+          filename: null,
+          networkFailure: true,
+        };
+      }
+      if (!response.ok) {
+        let code: string | null = null;
+        try {
+          const body = (await response.json()) as { code?: unknown };
+          code = typeof body.code === 'string' ? body.code : null;
+        } catch {
+          code = null;
+        }
+        return {
+          status: response.status,
+          code,
+          blob: null,
+          contentType: null,
+          filename: null,
+          networkFailure: false,
+        };
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition') ?? '';
+      const match = /filename="([^"]*)"/.exec(disposition);
+      return {
+        status: response.status,
+        code: null,
+        blob,
+        contentType: response.headers.get('content-type'),
+        filename: match?.[1] ?? null,
+        networkFailure: false,
+      };
     },
   };
 }

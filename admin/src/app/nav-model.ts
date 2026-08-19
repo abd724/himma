@@ -23,7 +23,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     path: '/verification',
     label: 'Verification',
     capability: 'providers.operate',
-    pendingSlice: 'W3-3–W3-5',
+    pendingSlice: null,
   },
   {
     path: '/moderation',

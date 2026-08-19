@@ -61,14 +61,10 @@ export const adminRoutes: RouteObject[] = [
       { path: 'providers', element: area(<ProvidersIndexPage />) },
       { path: 'providers/:organizationId', element: area(<ProviderDetailPage />) },
       {
+        // W3-5: verification work happens from the review queue and each
+        // provider's detail workspace — the nav entry lands on the queue.
         path: 'verification',
-        element: area(
-          <PlaceholderPage
-            title="Verification"
-            slice="W3-3–W3-5"
-            description="Verification cases, evidence review, and decisions arrive with the verification domain (W3-3), its private document storage (W3-4), and the review workflow (W3-5)."
-          />,
-        ),
+        element: <Navigate to="/providers?view=queue" replace />,
       },
       {
         path: 'moderation',

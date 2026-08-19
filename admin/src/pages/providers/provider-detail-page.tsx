@@ -9,6 +9,7 @@ import {
 import pageStyles from '../pages.module.css';
 import styles from './providers.module.css';
 import { REVIEW_LABELS, STATE_LABELS } from './providers-index-page';
+import { VerificationPanel } from './verification-panel';
 
 /**
  * W3-2 internal Provider detail — the operations view over one
@@ -118,27 +119,8 @@ function OverviewSection({ detail }: { detail: OrganizationDetail }) {
   );
 }
 
-function VerificationSection({ detail }: { detail: OrganizationDetail }) {
-  const { organization } = detail;
-  return (
-    <section className={styles.sectionPanel} aria-labelledby="verification-title">
-      <h2 id="verification-title" className={styles.sectionTitle}>
-        Verification
-      </h2>
-      <dl className={styles.factList}>
-        <dt>Current state</dt>
-        <dd>{STATE_LABELS[organization.verificationState]}</dd>
-        <dt>Himma action</dt>
-        <dd>{REVIEW_LABELS[organization.reviewState]}</dd>
-      </dl>
-      <p className={pageStyles.panelBody} style={{ marginTop: 'var(--hp-space-sm)' }}>
-        Evidence review isn’t available yet — verification cases, document review, and decisions
-        arrive with W3-3 to W3-5. Until then this page shows the organization’s current state
-        only, and verification decisions can’t be made from the console.
-      </p>
-    </section>
-  );
-}
+// The W3-5 review workspace replaced the W3-2 placeholder section — see
+// verification-panel.tsx (AD-03 case UX over the real backend path).
 
 function BranchesSection({ detail }: { detail: OrganizationDetail }) {
   return (
@@ -276,7 +258,7 @@ export function ProviderDetailPage() {
           <h1 className={pageStyles.pageTitle}>{query.data.profile.displayName}</h1>
           <div className={styles.detailGrid}>
             <OverviewSection detail={query.data} />
-            <VerificationSection detail={query.data} />
+            <VerificationPanel organizationId={query.data.organization.id} />
             <BranchesSection detail={query.data} />
             <TeamSection detail={query.data} />
             <CatalogueSection detail={query.data} />

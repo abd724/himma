@@ -171,10 +171,19 @@ describe('capability-aware navigation and guards (task §16–§18, §30)', () =
   });
 
   test('placeholders are truthful: a future area names its W3 slice and shows no fake operational data', async () => {
-    renderAdmin({ asIdentity: 'ops@himma.demo', initialEntries: ['/verification'] });
-    await screen.findByRole('heading', { name: 'Verification' });
-    expect(screen.getByText(/Connected in W3-3–W3-5/)).toBeInTheDocument();
+    renderAdmin({ asIdentity: 'ops@himma.demo', initialEntries: ['/moderation'] });
+    await screen.findByRole('heading', { name: 'Catalogue moderation' });
+    expect(screen.getByText(/Connected in W3-6/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/\b\d+ (cases|providers|pending|queue)\b/i);
+  });
+
+  test('the Verification nav area is live (W3-5): it lands on the provider review queue', async () => {
+    renderAdmin({ asIdentity: 'ops@himma.demo', initialEntries: ['/verification'] });
+    // The redirect lands on the queue view of the directory.
+    await screen.findByRole('button', { name: 'Review queue' });
+    expect(
+      (await screen.findByRole('button', { name: 'Review queue' })).getAttribute('aria-pressed'),
+    ).toBe('true');
   });
 
   test('the fixture capability projection mirrors the backend module exactly', () => {

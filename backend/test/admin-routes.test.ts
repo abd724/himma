@@ -139,7 +139,12 @@ describe('admin policy category', () => {
     // recent-factor strength — the split must never weaken it. NB the
     // /admin/organizations URL carries BOTH: GET (read, baseline) and POST
     // (creation, step-up) — the assertion is per method.
-    const BASELINE = new Set(['/admin/me', '/admin/organizations', '/admin/organizations/:organizationId']);
+    const BASELINE = new Set([
+      '/admin/me',
+      '/admin/organizations',
+      '/admin/organizations/:organizationId',
+      '/admin/organizations/:organizationId/verification', // W3-5 workspace read
+    ]);
     for (const route of adminRoutes) {
       const isRead = (route.method === 'GET' || route.method === 'HEAD') && BASELINE.has(route.url);
       expect(`${route.method} ${route.url} → ${route.policy}`).toBe(

@@ -14,7 +14,9 @@ import type {
   AdminRole,
 } from '../../access/contract';
 import type { AdminProvidersReadPort } from '../../providers/contract';
-import { createFixtureProvidersPort } from './fixture-providers';
+import type { AdminVerificationPort } from '../../verification/contract';
+import { createFixtureProviderData, createFixtureProvidersPort } from './fixture-providers';
+import { createFixtureVerificationPort } from './fixture-verification';
 
 /**
  * Deterministic FIXTURE admin runtime — design/testing/demo identities
@@ -111,12 +113,17 @@ export interface FixtureAdminControls {
   /** Toggle a provider-read outage (directory/detail resolve unavailable
    *  while active) — models a backend incident for error-state tests. */
   setProvidersOutage(active: boolean): void;
+  /** Model the W3-4 content-safety gate: false = review/decision/evidence
+   *  download refuse with the typed safety condition (the LIVE production
+   *  default until real scanning exists). Fixture default: true. */
+  setContentSafetyReady(ready: boolean): void;
 }
 
 export interface FixtureAdminRuntime {
   adapter: AdminAuthAdapter;
   accessPort: AdminAccessPort;
   providersPort: AdminProvidersReadPort;
+  verificationPort: AdminVerificationPort;
   controls: FixtureAdminControls;
   /** Test-harness seeding: start signed in as a fixture identity. */
   seedSession(email: string): void;
@@ -129,6 +136,7 @@ interface FixtureState {
   stepUpDemanded: boolean;
   accessFailurePending: boolean;
   providersOutage: boolean;
+  contentSafetyReady: boolean;
   revoked: Set<string>;
 }
 
@@ -139,6 +147,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     stepUpDemanded: false,
     accessFailurePending: false,
     providersOutage: false,
+    contentSafetyReady: true,
     revoked: new Set(),
   };
   const listeners = new Set<(interrupt: SessionInterrupt) => void>();
@@ -256,20 +265,41 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
   // The fixture provider directory answers with the CURRENT identity's
   // authority — mirroring backend truth (operations-only): revoked or
   // capability-less identities are refused, a missing session is
-  // unavailable, never silently served.
-  const providersPort = createFixtureProvidersPort({
-    currentAuthority() {
-      const identity = state.current;
-      if (identity === null) return null;
-      const roles = state.revoked.has(identity.email) ? [] : identity.roles;
-      return {
-        hasProvidersCapability: fixtureCapabilities(roles).includes('providers.operate'),
-      };
+  // unavailable, never silently served. Directory and verification share
+  // ONE mutable data instance, so review decisions surface in the queue.
+  const providerData = createFixtureProviderData();
+  const currentAuthority = () => {
+    const identity = state.current;
+    if (identity === null) return null;
+    const roles = state.revoked.has(identity.email) ? [] : identity.roles;
+    return {
+      hasProvidersCapability: fixtureCapabilities(roles).includes('providers.operate'),
+    };
+  };
+  const providersPort = createFixtureProvidersPort(
+    {
+      currentAuthority,
+      takeFailure() {
+        return state.providersOutage;
+      },
     },
-    takeFailure() {
-      return state.providersOutage;
+    providerData,
+  );
+  const verificationPort = createFixtureVerificationPort(
+    {
+      currentAuthority,
+      takeFailure() {
+        return state.providersOutage;
+      },
+      stepUpDemanded() {
+        return state.stepUpDemanded;
+      },
+      contentSafetyReady() {
+        return state.contentSafetyReady;
+      },
     },
-  });
+    providerData,
+  );
 
   const controls: FixtureAdminControls = {
     failNextAccessResolve() {
@@ -277,6 +307,9 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     },
     setProvidersOutage(active: boolean) {
       state.providersOutage = active;
+    },
+    setContentSafetyReady(ready: boolean) {
+      state.contentSafetyReady = ready;
     },
     revokeAllRoles(email) {
       state.revoked.add(email);
@@ -301,5 +334,5 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     state.stepUpDemanded = false;
   };
 
-  return { adapter, accessPort, providersPort, controls, seedSession };
+  return { adapter, accessPort, providersPort, verificationPort, controls, seedSession };
 }

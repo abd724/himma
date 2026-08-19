@@ -267,6 +267,202 @@ const FIXTURE_ORGS: readonly FixtureOrg[] = [
   },
 ];
 
+// -- mutable per-runtime state (W3-5) ----------------------------------------
+// The directory/detail/verification ports share ONE mutable copy of the
+// seed data per fixture runtime, so the review journey (open round → start
+// review → decide → organization state changes) is exercisable end-to-end
+// deterministically. The static seeds above never mutate.
+
+export interface FixtureEvidence {
+  evidenceId: string;
+  state: 'pending_upload' | 'stored';
+  originalFilename: string;
+  declaredContentType: string;
+  byteSize: number | null;
+  storedAt: string | null;
+  version: number;
+}
+
+export interface FixtureRequirement {
+  requirementId: string;
+  requirementKey: string;
+  labelEn: string;
+  descriptionEn: string | null;
+  required: boolean;
+  evidence: FixtureEvidence | null;
+}
+
+export interface FixtureRound {
+  caseId: string;
+  round: number;
+  state: 'open' | 'in_review' | 'decided' | 'superseded';
+  policyVersion: string;
+  requirements: FixtureRequirement[];
+  decision: {
+    outcome: 'approved' | 'rejected';
+    reasonCode: string | null;
+    providerSafeMessage: string | null;
+    internalNote: string | null;
+    decidedBy: string;
+    decidedAt: string;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface FixtureOrgRecord {
+  org: {
+    id: string;
+    displayName: string;
+    tradeName: string;
+    legalName: string;
+    state: OrganizationState;
+    published: boolean;
+    createdAt: string;
+    updatedAt: string;
+    branches: FixtureOrg['branches'];
+    team: FixtureOrg['team'];
+    listings: FixtureOrg['listings'];
+  };
+  verification: FixtureRound[];
+}
+
+export interface FixtureProviderData {
+  orgs: FixtureOrgRecord[];
+}
+
+const requirement = (
+  slug: string,
+  key: string,
+  labelEn: string,
+  required: boolean,
+  evidence: FixtureEvidence | null,
+): FixtureRequirement => ({
+  requirementId: `req-${slug}-${key}`,
+  requirementKey: key,
+  labelEn,
+  descriptionEn: null,
+  required,
+  evidence,
+});
+
+const storedEvidence = (slug: string, key: string): FixtureEvidence => ({
+  evidenceId: `evidence-${slug}-${key}`,
+  state: 'stored',
+  originalFilename: `${key}.pdf`,
+  declaredContentType: 'application/pdf',
+  byteSize: 24_680,
+  storedAt: '2026-08-15T10:00:00.000Z',
+  version: 2,
+});
+
+/** Fictional deterministic requirements (D-W3-3 remains deferred). */
+function seedRound(
+  slug: string,
+  round: number,
+  state: FixtureRound['state'],
+  options: {
+    storedKeys?: readonly string[];
+    decision?: FixtureRound['decision'];
+  } = {},
+): FixtureRound {
+  const stored = new Set(options.storedKeys ?? []);
+  return {
+    caseId: `case-${slug}-${round}`,
+    round,
+    state,
+    policyVersion: 'fixture-policy-v1',
+    requirements: [
+      requirement(
+        slug,
+        'business_document',
+        'Business document',
+        true,
+        stored.has('business_document') ? storedEvidence(slug, 'business_document') : null,
+      ),
+      requirement(
+        slug,
+        'operating_license',
+        'Operating licence',
+        true,
+        stored.has('operating_license') ? storedEvidence(slug, 'operating_license') : null,
+      ),
+      requirement(slug, 'optional_reference', 'Optional reference', false, null),
+    ],
+    decision: options.decision ?? null,
+    createdAt: '2026-08-14T09:00:00.000Z',
+    updatedAt: '2026-08-15T10:00:00.000Z',
+    version: state === 'open' ? 1 : 2,
+  };
+}
+
+const SEED_VERIFICATION: Readonly<Record<string, FixtureRound[]>> = {
+  // Submitted, round open, one required document still missing.
+  'org-aquava': [seedRound('aquava', 1, 'open', { storedKeys: ['business_document'] })],
+  // Under review with COMPLETE evidence — decidable in the fixture demo.
+  'org-desert-padel': [
+    seedRound('desert-padel', 1, 'in_review', {
+      storedKeys: ['business_document', 'operating_license'],
+    }),
+  ],
+  // Under review with missing evidence — the reject-path demo.
+  'org-crestpeak': [
+    seedRound('crestpeak', 1, 'in_review', { storedKeys: ['business_document'] }),
+  ],
+  // Verified: an approved decided round — go-live is the remaining action.
+  'org-falcon-kick': [
+    seedRound('falcon-kick', 1, 'decided', {
+      storedKeys: ['business_document', 'operating_license'],
+      decision: {
+        outcome: 'approved',
+        reasonCode: null,
+        providerSafeMessage: null,
+        internalNote: 'All documents matched the registry.',
+        decidedBy: 'fixture-ops@himma.demo',
+        decidedAt: '2026-08-15T14:00:00.000Z',
+      },
+    }),
+  ],
+  // Rejected: the three-layer decision is visible internally.
+  'org-oasis-flow': [
+    seedRound('oasis-flow', 1, 'decided', {
+      storedKeys: ['business_document'],
+      decision: {
+        outcome: 'rejected',
+        reasonCode: 'expired_document',
+        providerSafeMessage: 'Your operating licence has expired — upload a current one.',
+        internalNote: 'Licence lapsed in 2025; do not fast-track.',
+        decidedBy: 'fixture-ops@himma.demo',
+        decidedAt: '2026-08-10T16:45:00.000Z',
+      },
+    }),
+  ],
+};
+
+export function createFixtureProviderData(): FixtureProviderData {
+  return {
+    orgs: FIXTURE_ORGS.map((seed) => ({
+      org: {
+        id: seed.id,
+        displayName: seed.displayName,
+        tradeName: seed.tradeName,
+        legalName: seed.legalName,
+        state: seed.state,
+        published: seed.published,
+        createdAt: seed.createdAt,
+        updatedAt: seed.updatedAt,
+        branches: seed.branches,
+        team: seed.team,
+        listings: seed.listings,
+      },
+      verification: JSON.parse(
+        JSON.stringify(SEED_VERIFICATION[seed.id] ?? []),
+      ) as FixtureRound[],
+    })),
+  };
+}
+
 function summaryOf(org: FixtureOrg): OrganizationSummary {
   return {
     organizationId: org.id,
@@ -346,7 +542,10 @@ export interface FixtureProvidersAuthority {
 
 export function createFixtureProvidersPort(
   authority: FixtureProvidersAuthority,
+  data?: FixtureProviderData,
 ): AdminProvidersReadPort {
+  const source = (): readonly FixtureOrg[] =>
+    data === undefined ? FIXTURE_ORGS : data.orgs.map((record) => record.org);
   return {
     async listOrganizations(params: ListOrganizationsParams) {
       const auth = authority.currentAuthority();
@@ -355,7 +554,7 @@ export function createFixtureProvidersPort(
       if (!auth.hasProvidersCapability) return { kind: 'forbidden' as const };
       // Server semantics: filters over the COMPLETE set, then the
       // (createdAt, id) keyset window.
-      const filtered = FIXTURE_ORGS.filter(
+      const filtered = source().filter(
         (org) =>
           matchesSearch(org, params.q) &&
           (params.state === undefined || org.state === params.state) &&
@@ -385,7 +584,7 @@ export function createFixtureProvidersPort(
       if (auth === null) return { kind: 'unavailable' as const };
       if (authority.takeFailure()) return { kind: 'unavailable' as const };
       if (!auth.hasProvidersCapability) return { kind: 'forbidden' as const };
-      const org = FIXTURE_ORGS.find((entry) => entry.id === organizationId);
+      const org = source().find((entry) => entry.id === organizationId);
       return org === undefined
         ? { kind: 'notFound' as const }
         : { kind: 'loaded' as const, detail: detailOf(org) };

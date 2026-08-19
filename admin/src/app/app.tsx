@@ -6,8 +6,10 @@ import {
   createUnconfiguredAccessPort,
   createUnconfiguredAuthAdapter,
   createUnconfiguredProvidersPort,
+  createUnconfiguredVerificationPort,
 } from '../auth/unconfigured';
 import type { AdminProvidersReadPort } from '../providers/contract';
+import type { AdminVerificationPort } from '../verification/contract';
 import type { AuthRuntime } from './auth-runtime';
 
 /**
@@ -44,31 +46,44 @@ export function AppProviders({
         adapter: createUnconfiguredAuthAdapter(),
         accessPort: createUnconfiguredAccessPort(),
         providersPort: createUnconfiguredProvidersPort(),
+        verificationPort: createUnconfiguredVerificationPort(),
       },
   );
 
   return (
     <QueryClientProvider client={ownedClient}>
       <ProvidersPortContext.Provider value={runtime.providersPort}>
-        <SessionProvider
-          adapter={runtime.adapter}
-          accessPort={runtime.accessPort}
-          {...(initialSessionState ? { initialState: initialSessionState } : {})}
-        >
-          {children}
-        </SessionProvider>
+        <VerificationPortContext.Provider value={runtime.verificationPort}>
+          <SessionProvider
+            adapter={runtime.adapter}
+            accessPort={runtime.accessPort}
+            {...(initialSessionState ? { initialState: initialSessionState } : {})}
+          >
+            {children}
+          </SessionProvider>
+        </VerificationPortContext.Provider>
       </ProvidersPortContext.Provider>
     </QueryClientProvider>
   );
 }
 
 const ProvidersPortContext = createContext<AdminProvidersReadPort | null>(null);
+const VerificationPortContext = createContext<AdminVerificationPort | null>(null);
 
 /** The composed provider-directory read port (fixture/live/unconfigured). */
 export function useProvidersPort(): AdminProvidersReadPort {
   const port = useContext(ProvidersPortContext);
   if (port === null) {
     throw new Error('useProvidersPort requires AppProviders');
+  }
+  return port;
+}
+
+/** The composed verification review port (fixture/live/unconfigured). */
+export function useVerificationPort(): AdminVerificationPort {
+  const port = useContext(VerificationPortContext);
+  if (port === null) {
+    throw new Error('useVerificationPort requires AppProviders');
   }
   return port;
 }

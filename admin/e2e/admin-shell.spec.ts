@@ -44,9 +44,9 @@ test('operations journey: sign in → MFA → capability-aware shell → truthfu
   }
   await page
     .getByRole('navigation', { name: 'Admin navigation' })
-    .getByRole('link', { name: 'Verification' })
+    .getByRole('link', { name: 'Taxonomy' })
     .click();
-  await expect(page.getByText(/Connected in W3-3–W3-5/)).toBeVisible();
+  await expect(page.getByText(/Connected in W3-7/)).toBeVisible();
   await noHorizontalOverflow(page);
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-placeholder.png`),

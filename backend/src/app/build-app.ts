@@ -50,6 +50,8 @@ import {
   type VerificationEvidenceUploadConfig,
 } from '../modules/provider/storage/evidence-store';
 import type { EvidenceStorageDeps } from '../modules/provider/services/evidence-storage';
+import { registerVerificationReviewRoutes } from '../modules/provider/http/verification-review-routes';
+import type { VerificationRequirementPolicyProvider } from '../modules/provider/services/verification-case';
 import { registerStorefrontRoutes } from '../modules/provider/http/storefront-routes';
 import { installRoutePolicyGuard } from '../modules/identity/http/policies';
 import {
@@ -160,6 +162,14 @@ export interface IdentityHttpOptions {
      */
     contentSafetyReady?: boolean;
   };
+  /**
+   * W3-5: the injected evidence-requirement policy (W3-3 seam). ABSENT
+   * (the default — D-W3-3 is an unresolved owner decision) = opening a
+   * verification round refuses with the typed policy-unavailable outcome;
+   * the real production review path stays fail-closed until the owner
+   * approves the launch checklist and configuration supplies it.
+   */
+  verificationPolicyProvider?: VerificationRequirementPolicyProvider;
 }
 
 function adminProductionReady(readiness: AdminProductionReadiness | undefined): boolean {
@@ -343,6 +353,21 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       installEvidenceContentParsers(app, evidenceStorageDeps.upload.allowedContentTypes);
     }
 
+    // W3-5 review composition: the canonical lifecycle config + the W3-4
+    // content-safety capability + the injected (D-W3-3) policy seam.
+    const verificationReviewDeps = {
+      db: identity.db,
+      lifecycle: {
+        nodeEnv,
+        verificationEvidenceCapabilityReady:
+          identity.verificationEvidenceCapabilityReady ?? false,
+      },
+      contentSafetyReady: identity.verificationEvidenceStorage?.contentSafetyReady ?? false,
+      ...(identity.verificationPolicyProvider !== undefined
+        ? { policyProvider: identity.verificationPolicyProvider }
+        : {}),
+    };
+
     const organizationAdminDeps =
       identity.staffInvitationConfig !== undefined
         ? {
@@ -378,6 +403,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         if (evidenceStorageDeps !== undefined) {
           registerAdminEvidenceRoutes(app, evidenceStorageDeps);
         }
+        registerVerificationReviewRoutes(app, verificationReviewDeps);
       }
     } else if (identity.enableAdminRoutes !== false) {
       registerAdminRoutes(app, { db: identity.db });
@@ -390,6 +416,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       if (evidenceStorageDeps !== undefined) {
         registerAdminEvidenceRoutes(app, evidenceStorageDeps);
       }
+      registerVerificationReviewRoutes(app, verificationReviewDeps);
     }
 
     // Customer-public storefront read (S3-4, docs/27 §13.1): explicitly

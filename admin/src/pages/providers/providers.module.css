@@ -309,6 +309,84 @@
   color: var(--hp-color-text-secondary);
 }
 
+/* ---- verification panel (W3-5) ---- */
+
+.safetyBanner {
+  margin: 0 0 var(--hp-space-sm);
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  background: var(--hp-color-status-warning-soft);
+  border-radius: var(--hp-radius-control);
+  color: var(--hp-color-text-primary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.actionNotice {
+  margin: var(--hp-space-sm) 0;
+  padding: var(--hp-space-sm) var(--hp-space-md);
+  background: var(--hp-color-status-error-soft);
+  border-radius: var(--hp-radius-control);
+  color: var(--hp-color-text-primary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hp-space-sm);
+  margin-top: var(--hp-space-sm);
+}
+
+.primaryButton {
+  padding: 8px 16px;
+  font: inherit;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--hp-radius-button);
+  background: var(--hp-color-brand-primary);
+  color: var(--hp-color-text-inverse);
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.linkButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--hp-color-brand-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  min-height: 24px;
+}
+
+.caseCard {
+  margin-top: var(--hp-space-sm);
+  border-top: 1px solid var(--hp-color-border-default);
+  padding-top: var(--hp-space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+}
+
+.rejectForm,
+.stepUpForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-sm);
+  margin-top: var(--hp-space-sm);
+  border: 1px solid var(--hp-color-border-default);
+  border-radius: var(--hp-radius-control);
+  padding: var(--hp-space-md);
+}
+
 /* ---- mobile restack ---- */
 
 @media (max-width: 719px) {

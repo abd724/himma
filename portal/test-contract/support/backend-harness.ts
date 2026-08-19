@@ -76,7 +76,11 @@ interface PendingChallenge {
   readonly username: string;
 }
 
-export async function createContractHarness(): Promise<ContractHarness> {
+export async function createContractHarness(
+  /** ADDITIVE identity extras (e.g. the W3-5 verification policy/storage
+   *  composition) — the default harness is unchanged for existing suites. */
+  options: { identityExtras?: Record<string, unknown> } = {},
+): Promise<ContractHarness> {
   const testDb = await createMigratedTestDb();
   const verifier = new FakeAccessTokenVerifier();
   const idAdapter = new FakeAuthProviderAdapter();
@@ -85,6 +89,7 @@ export async function createContractHarness(): Promise<ContractHarness> {
   const mail = new CaptureMailSender();
   const app = buildApp({
     identity: {
+      ...(options.identityExtras as object),
       db: testDb.db,
       accessTokenVerifier: verifier,
       idTokenAdapter: idAdapter,

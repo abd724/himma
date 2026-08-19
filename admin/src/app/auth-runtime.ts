@@ -4,12 +4,15 @@ import {
   createUnconfiguredAccessPort,
   createUnconfiguredAuthAdapter,
   createUnconfiguredProvidersPort,
+  createUnconfiguredVerificationPort,
 } from '../auth/unconfigured';
 import type { AdminEnv } from '../api/env';
 import type { AdminAccessPort } from '../access/contract';
 import type { AdminProvidersReadPort } from '../providers/contract';
+import type { AdminVerificationPort } from '../verification/contract';
 import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
 import { createLiveProvidersReadPort } from '../services/live/live-providers-port';
+import { createLiveVerificationPort } from '../services/live/live-verification-port';
 import {
   createFixtureAdminRuntime,
   type FixtureAdminControls,
@@ -20,6 +23,7 @@ export interface AuthRuntime {
   readonly adapter: AdminAuthAdapter;
   readonly accessPort: AdminAccessPort;
   readonly providersPort: AdminProvidersReadPort;
+  readonly verificationPort: AdminVerificationPort;
 }
 
 declare global {
@@ -55,6 +59,7 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
       adapter: live.adapter,
       accessPort: live.accessPort,
       providersPort: createLiveProvidersReadPort(live.transport),
+      verificationPort: createLiveVerificationPort(live.transport),
     };
   }
 
@@ -71,6 +76,7 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
       adapter: fixture.adapter,
       accessPort: fixture.accessPort,
       providersPort: fixture.providersPort,
+      verificationPort: fixture.verificationPort,
     };
   }
 
@@ -105,5 +111,6 @@ function unconfiguredRuntime(): AuthRuntime {
     adapter: createUnconfiguredAuthAdapter(),
     accessPort: createUnconfiguredAccessPort(),
     providersPort: createUnconfiguredProvidersPort(),
+    verificationPort: createUnconfiguredVerificationPort(),
   };
 }

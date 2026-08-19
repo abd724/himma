@@ -566,51 +566,70 @@ export async function recordVerificationDecision(
     if (!(await hasOperationsRole(trx, actor.userId))) return { kind: 'forbidden' as const };
     const row = await lockCase(trx, input.caseId);
     if (row === undefined) return { kind: 'caseNotFound' as const };
-    if (row.state !== 'in_review') return { kind: 'caseStateConflict' as const };
-    if (row.version !== input.expectedVersion) return { kind: 'staleVersion' as const };
-
-    const decisionId = newId();
-    await trx
-      .insertInto('verification_decision')
-      .values({
-        id: decisionId,
-        case_id: input.caseId,
-        outcome: input.outcome,
-        reason_code: input.reasonCode ?? null,
-        provider_safe_message: input.providerSafeMessage ?? null,
-        internal_note: input.internalNote ?? null,
-        decided_by: actor.userId,
-      })
-      .execute();
-    const updated = await trx
-      .updateTable('verification_case')
-      .set({ state: 'decided', decided_at: new Date() })
-      .where('id', '=', input.caseId)
-      .where('version', '=', input.expectedVersion)
-      .returning('version')
-      .executeTakeFirstOrThrow();
-    await appendAuditEvent(trx, {
-      actorType: 'user',
-      actorId: actor.userId,
-      action: 'org.verification_decision_recorded',
-      entityType: 'verification_decision',
-      entityId: decisionId,
-    });
-    // Machine layers only — no reviewer text of ANY kind rides the event.
-    await appendOutboxEvent(trx, {
-      aggregateType: 'organization',
-      aggregateId: row.organization_id,
-      eventType: 'organization.verification_decision_recorded',
-      payload: {
-        organizationId: row.organization_id,
-        caseId: input.caseId,
-        round: row.round,
-        outcome: input.outcome,
-        ...(input.reasonCode !== undefined ? { reasonCode: input.reasonCode } : {}),
-      },
-    });
-    return { kind: 'decisionRecorded' as const, decisionId, caseVersion: updated.version };
+    return recordDecisionForLockedCaseInTrx(trx, actor.userId, row, input);
   });
+}
+
+/** @internal — the ONE decision-persistence implementation (W3-5): used by
+ *  the standalone service above and composed INSIDE the W3-5 review
+ *  transaction together with the organization transition. The CALLER owns
+ *  authorization, rejection-input validation, and the case lock. */
+export async function recordDecisionForLockedCaseInTrx(
+  trx: Trx,
+  actorUserId: string,
+  caseRow: { id: string; organization_id: string; round: number; state: string; version: number },
+  input: {
+    expectedVersion: number;
+    outcome: VerificationDecisionOutcome;
+    reasonCode?: string;
+    providerSafeMessage?: string;
+    internalNote?: string;
+  },
+): Promise<RecordVerificationDecisionResult> {
+  if (caseRow.state !== 'in_review') return { kind: 'caseStateConflict' };
+  if (caseRow.version !== input.expectedVersion) return { kind: 'staleVersion' };
+
+  const decisionId = newId();
+  await trx
+    .insertInto('verification_decision')
+    .values({
+      id: decisionId,
+      case_id: caseRow.id,
+      outcome: input.outcome,
+      reason_code: input.reasonCode ?? null,
+      provider_safe_message: input.providerSafeMessage ?? null,
+      internal_note: input.internalNote ?? null,
+      decided_by: actorUserId,
+    })
+    .execute();
+  const updated = await trx
+    .updateTable('verification_case')
+    .set({ state: 'decided', decided_at: new Date() })
+    .where('id', '=', caseRow.id)
+    .where('version', '=', input.expectedVersion)
+    .returning('version')
+    .executeTakeFirstOrThrow();
+  await appendAuditEvent(trx, {
+    actorType: 'user',
+    actorId: actorUserId,
+    action: 'org.verification_decision_recorded',
+    entityType: 'verification_decision',
+    entityId: decisionId,
+  });
+  // Machine layers only — no reviewer text of ANY kind rides the event.
+  await appendOutboxEvent(trx, {
+    aggregateType: 'organization',
+    aggregateId: caseRow.organization_id,
+    eventType: 'organization.verification_decision_recorded',
+    payload: {
+      organizationId: caseRow.organization_id,
+      caseId: caseRow.id,
+      round: caseRow.round,
+      outcome: input.outcome,
+      ...(input.reasonCode !== undefined ? { reasonCode: input.reasonCode } : {}),
+    },
+  });
+  return { kind: 'decisionRecorded', decisionId, caseVersion: updated.version };
 }
 
 // -- read models: internal vs provider-safe (W3-3 §34/§35) --------------------

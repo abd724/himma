@@ -206,6 +206,23 @@ export const HTTP_OUTCOMES = {
     message:
       'Internal document review is unavailable until the evidence content-safety capability is active.',
   },
+  verificationPolicyUnavailable: {
+    statusCode: 503,
+    code: 'verificationPolicyUnavailable',
+    message:
+      'Verification cannot proceed: no evidence requirement policy is configured (D-W3-3 pending).',
+  },
+  verificationCaseConflict: {
+    statusCode: 409,
+    code: 'verificationCaseConflict',
+    message: 'The verification case is not in a state that allows this action.',
+  },
+  invalidVerificationDecision: {
+    statusCode: 422,
+    code: 'invalidVerificationDecision',
+    message:
+      'A rejection requires a machine reason code and a provider-safe message.',
+  },
   rateLimited: {
     statusCode: 429,
     code: 'rateLimited',

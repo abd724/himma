@@ -1,6 +1,7 @@
 import type { AdminAuthAdapter } from './adapter';
 import type { AdminAccessPort } from '../access/contract';
 import type { AdminProvidersReadPort } from '../providers/contract';
+import type { AdminVerificationPort } from '../verification/contract';
 
 /**
  * FAIL-CLOSED default: a production build with no configured authentication
@@ -31,5 +32,16 @@ export function createUnconfiguredProvidersPort(): AdminProvidersReadPort {
   return {
     listOrganizations: async () => ({ kind: 'unavailable' }),
     getOrganization: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredVerificationPort(): AdminVerificationPort {
+  return {
+    getVerification: async () => ({ kind: 'unavailable' }),
+    openCase: async () => ({ kind: 'unavailable' }),
+    startReview: async () => ({ kind: 'unavailable' }),
+    decide: async () => ({ kind: 'unavailable' }),
+    goLive: async () => ({ kind: 'unavailable' }),
+    downloadEvidence: async () => ({ kind: 'unavailable' }),
   };
 }

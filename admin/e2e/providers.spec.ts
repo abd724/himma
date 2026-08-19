@@ -47,11 +47,13 @@ test('directory journey: real table → search → state filter → detail (desk
   });
   await page.getByLabel('Organization state').selectOption('');
 
-  // Row → the read-only internal detail.
+  // Row → the internal detail; a LIVE org with no rounds shows the real
+  // W3-5 verification workspace with truthfully NO pending actions.
   await page.getByRole('link', { name: 'Marina Ace Tennis' }).click();
   await expect(page.getByRole('heading', { name: 'Marina Ace Tennis' })).toBeVisible();
-  await expect(page.getByText('Evidence review isn’t available yet', { exact: false })).toBeVisible();
-  // Read-only: no lifecycle action buttons exist.
+  await expect(
+    page.getByRole('region', { name: 'Verification' }).getByText('No review rounds yet.'),
+  ).toBeVisible();
   for (const forbidden of ['Verify', 'Reject', 'Go live', 'Suspend', 'Start review']) {
     await expect(page.getByRole('button', { name: forbidden })).toHaveCount(0);
   }

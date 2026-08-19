@@ -201,18 +201,22 @@ describe('provider detail (task §24)', () => {
     }
   });
 
-  test('the verification section shows the CURRENT state only, with the truthful evidence-capability note', async () => {
+  test('the verification section is the REAL W3-5 case workspace (checklist, readiness truth, decision actions)', async () => {
     const { runtime } = opsRuntime();
     renderAdmin({ runtime, initialEntries: ['/providers/org-crestpeak'] });
     await screen.findByRole('heading', { name: 'Crestpeak Climbing' });
-    const verification = screen.getByRole('region', { name: 'Verification' });
-    expect(within(verification).getByText('In review')).toBeInTheDocument();
+    const verification = await screen.findByRole('region', { name: 'Verification' });
+    await within(verification).findByText(/Round 1 — under review/);
+    expect(within(verification).getByText('Business document')).toBeInTheDocument();
     expect(
-      within(verification).getByText(/Evidence review isn’t available yet/),
+      within(verification).getByText(/Missing required evidence: Operating licence/),
     ).toBeInTheDocument();
-    // No fabricated evidence artifacts (the truthful note itself is the
-    // only mention of the future workflow).
-    expect(document.body.textContent).not.toMatch(/checklist|score|overdue|urgent|uploaded/i);
+    // Approval is disabled while required evidence is missing — readiness
+    // is necessary; rejection stays possible.
+    expect(within(verification).getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(within(verification).getByRole('button', { name: 'Reject…' })).toBeEnabled();
+    // No fabricated metrics/scores.
+    expect(document.body.textContent).not.toMatch(/score|overdue|urgent/i);
   });
 
   test('a nonexistent provider is a truthful not-found, and a suspended provider shows its suspension', async () => {

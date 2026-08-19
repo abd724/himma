@@ -113,6 +113,7 @@ describe('structural sweeps (task §13/§29)', () => {
       'auth/live/cognito-api.ts',
       'api/client.ts',
       'services/live/live-providers-port.ts',
+      'services/live/live-verification-port.ts',
     ]) {
       expect(src(module)).not.toMatch(/services\/mock|fixture/i);
     }
@@ -129,7 +130,18 @@ describe('structural sweeps (task §13/§29)', () => {
   });
 
   test('no browser-readable token storage exists anywhere in the admin source', () => {
-    const roots = ['auth', 'api', 'app', 'services', 'access', 'shell', 'pages', 'providers', 'hooks'];
+    const roots = [
+      'auth',
+      'api',
+      'app',
+      'services',
+      'access',
+      'shell',
+      'pages',
+      'providers',
+      'verification',
+      'hooks',
+    ];
     const files: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir)) {

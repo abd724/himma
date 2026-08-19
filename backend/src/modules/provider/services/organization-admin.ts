@@ -248,11 +248,35 @@ export async function transitionOrganization(
     reasonCode?: string;
   },
 ): Promise<TransitionOrganizationResult> {
-  const spec = TRANSITIONS[input.action];
   return withTransaction(deps.db, async (trx) => {
     if (!(await hasOperationsRole(trx, actor.userId))) {
       return { kind: 'forbidden' as const };
     }
+    return transitionOrganizationInTrx(trx, deps.lifecycle, actor, input);
+  });
+}
+
+/**
+ * @internal — the ONE organization-transition implementation (W3-5): used
+ * by the standalone admin routes above and composed INSIDE the W3-5
+ * verification-decision transaction so a decision and its lifecycle effect
+ * can never diverge. The CALLER owns the operations-role check and the
+ * transaction; everything else (locking, machine pre-checks, the D-S3-3
+ * production evidence gate, CAS, audit, outbox) lives here exactly once.
+ */
+export async function transitionOrganizationInTrx(
+  trx: Trx,
+  lifecycle: OrganizationAdminDeps['lifecycle'],
+  actor: AdminOrgActor,
+  input: {
+    organizationId: string;
+    action: AdminLifecycleAction;
+    expectedVersion: number;
+    reasonCode?: string;
+  },
+): Promise<TransitionOrganizationResult> {
+  const spec = TRANSITIONS[input.action];
+  {
     const org = await trx
       .selectFrom('organization')
       .select(['verification_state', 'version'])
@@ -272,8 +296,8 @@ export async function transitionOrganization(
     // refuses, and the blocked attempt is itself audited (docs/27 §14.9b).
     if (
       spec.evidenceGated &&
-      deps.lifecycle.nodeEnv === 'production' &&
-      !deps.lifecycle.verificationEvidenceCapabilityReady
+      lifecycle.nodeEnv === 'production' &&
+      !lifecycle.verificationEvidenceCapabilityReady
     ) {
       await appendAuditEvent(trx, {
         actorType: 'user',
@@ -327,5 +351,5 @@ export async function transitionOrganization(
       state: spec.toState,
       version: updated.version,
     };
-  });
+  }
 }
