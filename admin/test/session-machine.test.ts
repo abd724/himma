@@ -51,7 +51,7 @@ describe('admin session machine', () => {
     expect(state.status).toBe('resolvingAccess');
   });
 
-  test('stepUpRequired is its own state; completion re-resolves; failure stays with the error; success then resolves access', () => {
+  test('stepUpRequired (the retained D-W3-5 seam — never ordinary bootstrap) is its own state; completion re-resolves; failure stays with the error; success then resolves access', () => {
     let state = sessionReducer(resolving(), {
       type: 'ACCESS_RESULT',
       outcome: { kind: 'stepUpRequired' },

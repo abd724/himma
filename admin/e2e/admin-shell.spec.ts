@@ -127,6 +127,22 @@ test('mobile drawer keyboard behavior: open moves focus in, Escape closes and re
   });
 });
 
+test('W3-1 final: a stale-recent-factor admin reaches the shell with NO step-up gate (desktop representative)', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'representative on desktop');
+  await signInAs(page, 'stale@himma.demo');
+  // Ordinary bootstrap: straight to the shell — the step-up surface never
+  // appears (owner decision: MFA assurance, not factor recency, is the
+  // baseline; step-up stays an action-level mechanism for D-W3-5).
+  await expect(page.getByRole('heading', { name: 'Welcome, Stefan Stale' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Confirm your identity' })).toHaveCount(0);
+  await page.screenshot({
+    path: join(evidence, `${testInfo.project.name}-stale-factor-shell.png`),
+    fullPage: true,
+  });
+});
+
 test('multi-role admin sees the deduplicated union (desktop representative)', async ({
   page,
 }, testInfo) => {

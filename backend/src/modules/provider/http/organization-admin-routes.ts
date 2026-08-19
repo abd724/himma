@@ -1,9 +1,11 @@
 /**
  * Himma-admin organization lifecycle routes (docs/27 §13.3) — S3-4.
  *
- * Internal admin surface: every route declares the existing `admin` policy
+ * Internal admin surface: every route declares the `adminStepUp` policy
  * (live session + MFA assurance + recent MFA factor + ≥1 active database
- * admin role, B2-6C), and the services additionally require the
+ * admin role, B2-6C — the pre-split semantics, deliberately retained by
+ * the W3-1 baseline/step-up separation), and the services additionally
+ * require the
  * `operations` role fresh per transaction. Provider memberships and
  * Cognito claims satisfy nothing here. Registration shares the admin
  * surface's production capability gate in build-app; the D-S3-3
@@ -83,7 +85,7 @@ export function registerOrganizationAdminRoutes(
   app.post(
     '/admin/organizations',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: ADMIN_ORG_BODY_LIMIT,
       schema: {
         body: Type.Object({
@@ -137,7 +139,7 @@ export function registerOrganizationAdminRoutes(
     app.post(
       url,
       {
-        config: { authPolicy: 'admin' },
+        config: { authPolicy: 'adminStepUp' },
         bodyLimit: ADMIN_ORG_BODY_LIMIT,
         schema: {
           params: Type.Object({ organizationId: Uuid }),

@@ -131,11 +131,14 @@ async function bearerFor(
 }
 
 describe('admin policy category', () => {
-  it('declares every admin route with the explicit admin policy', () => {
+  it('declares every admin route with an explicit admin-category policy — the /admin/me bootstrap on the baseline, every sensitive operation on adminStepUp', () => {
     const adminRoutes = app.routePolicyInventory.filter((r) => r.url.startsWith('/admin'));
     expect(adminRoutes.length).toBeGreaterThanOrEqual(5);
     for (const route of adminRoutes) {
-      expect(route.policy).toBe('admin');
+      // W3-1 final split: ONLY the ordinary bootstrap read sits on the
+      // baseline; the pre-existing sensitive set keeps its recent-factor
+      // strength — the split must never weaken it.
+      expect(route.policy).toBe(route.url === '/admin/me' ? 'admin' : 'adminStepUp');
     }
   });
 

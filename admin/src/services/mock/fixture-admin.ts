@@ -30,9 +30,17 @@ import type {
  * - duo@himma.demo        operations + access_admin (Dana Duo — D4-legal)
  * - support@himma.demo    support (truthfully EMPTY W3-phase capabilities)
  * - none@himma.demo       authenticated, NO admin role → noAdminAccess
- * - stale@himma.demo      operations, but the first resolution demands a
- *                         recent factor (stepUpRequired) — completes with
- *                         the same TOTP code, then resolves normally.
+ * - stale@himma.demo      operations whose recent-factor window has aged.
+ *                         Per the W3-1 final owner decision, a stale factor
+ *                         does NOT gate ordinary shell access — this
+ *                         identity bootstraps normally, proving MFA
+ *                         assurance (not recency) is the baseline.
+ *
+ * Recent-factor step-up remains a distinct ACTION-LEVEL mechanism
+ * (D-W3-5, deferred): the `demandStepUp()` control models a future
+ * high-risk operation answering step-up-required, and the adapter's
+ * step-up completion re-satisfies it — the seam stays exercisable without
+ * wiring it to any ordinary bootstrap path.
  */
 
 export const FIXTURE_PASSWORD = 'admin-demo';
@@ -70,7 +78,6 @@ interface FixtureIdentity {
   readonly email: string;
   readonly displayName: string;
   readonly roles: readonly AdminRole[];
-  readonly requiresInitialStepUp?: boolean;
 }
 
 const IDENTITIES: readonly FixtureIdentity[] = [
@@ -84,12 +91,8 @@ const IDENTITIES: readonly FixtureIdentity[] = [
   },
   { email: 'support@himma.demo', displayName: 'Samir Support', roles: ['support'] },
   { email: 'none@himma.demo', displayName: 'Noor NoRole', roles: [] },
-  {
-    email: 'stale@himma.demo',
-    displayName: 'Stefan Stale',
-    roles: ['operations'],
-    requiresInitialStepUp: true,
-  },
+  // Stale recent factor — bootstraps normally (W3-1 final owner decision).
+  { email: 'stale@himma.demo', displayName: 'Stefan Stale', roles: ['operations'] },
 ];
 
 export interface FixtureAdminControls {
@@ -99,6 +102,10 @@ export interface FixtureAdminControls {
   revokeAllRoles(email: string): void;
   /** Simulate session expiry/revocation (pushes the canonical interrupt). */
   expireSession(): void;
+  /** Model a FUTURE action-level step-up demand (D-W3-5 seam): access
+   *  resolutions answer stepUpRequired until a step-up completes. Never
+   *  wired to ordinary bootstrap. */
+  demandStepUp(): void;
 }
 
 export interface FixtureAdminRuntime {
@@ -112,7 +119,8 @@ export interface FixtureAdminRuntime {
 interface FixtureState {
   current: FixtureIdentity | null;
   pendingChallenge: FixtureIdentity | null;
-  stepUpSatisfied: boolean;
+  /** True only while a (future) action-level step-up demand is open. */
+  stepUpDemanded: boolean;
   accessFailurePending: boolean;
   revoked: Set<string>;
 }
@@ -121,7 +129,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
   const state: FixtureState = {
     current: null,
     pendingChallenge: null,
-    stepUpSatisfied: false,
+    stepUpDemanded: false,
     accessFailurePending: false,
     revoked: new Set(),
   };
@@ -178,7 +186,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
       }
       state.pendingChallenge = null;
       state.current = challenge;
-      state.stepUpSatisfied = challenge.requiresInitialStepUp !== true;
+      state.stepUpDemanded = false;
       return { kind: 'signedIn', assurance: 'mfa', identity: identityView(challenge) };
     },
 
@@ -193,7 +201,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
       if (code !== FIXTURE_TOTP) {
         return { kind: 'invalidCode' };
       }
-      state.stepUpSatisfied = true;
+      state.stepUpDemanded = false;
       return { kind: 'completed', expiresAt: new Date(Date.now() + 600_000).toISOString() };
     },
 
@@ -204,7 +212,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     async signOut() {
       state.current = null;
       state.pendingChallenge = null;
-      state.stepUpSatisfied = false;
+      state.stepUpDemanded = false;
     },
 
     subscribe(listener) {
@@ -223,9 +231,11 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
         state.accessFailurePending = false;
         return { kind: 'unavailable' };
       }
-      if (!state.stepUpSatisfied) {
-        // Mirrors the backend admin policy: a stale factor resolves the
+      if (state.stepUpDemanded) {
+        // The D-W3-5 seam only: a modeled action-level demand resolves the
         // dedicated step-up outcome, never access and never a bypass.
+        // Ordinary bootstrap NEVER sets this — a stale recent factor is
+        // not a gate on shell access (W3-1 final owner decision).
         return { kind: 'stepUpRequired' };
       }
       if (state.revoked.has(identity.email) || identity.roles.length === 0) {
@@ -245,8 +255,11 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     },
     expireSession() {
       state.current = null;
-      state.stepUpSatisfied = false;
+      state.stepUpDemanded = false;
       notify({ kind: 'sessionExpired' });
+    },
+    demandStepUp() {
+      state.stepUpDemanded = true;
     },
   };
 
@@ -256,7 +269,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
       throw new Error(`unknown fixture admin: ${email}`);
     }
     state.current = identity;
-    state.stepUpSatisfied = identity.requiresInitialStepUp !== true;
+    state.stepUpDemanded = false;
   };
 
   return { adapter, accessPort, controls, seedSession };

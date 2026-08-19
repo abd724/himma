@@ -507,7 +507,8 @@ describe('audit/outbox and route boundary', () => {
       ].sort(),
     );
     for (const route of taxonomyRoutes) {
-      expect(route.policy).toBe('admin');
+      // Retained recent-factor strength (W3-1 final split — not weakened).
+      expect(route.policy).toBe('adminStepUp');
     }
     // The customer-public /listings, /catalogue/*, /providers/:id/listings,
     // and /search reads arrived legitimately with their owner-approved

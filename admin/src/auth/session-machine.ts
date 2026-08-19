@@ -17,9 +17,12 @@ import type { AdminAccess, AdminAccessOutcome } from '../access/contract';
  * - access comes ONLY from `GET /admin/me`; `noAdminAccess` is a valid
  *   authenticated end-state (customer/provider identities land there and
  *   learn nothing else);
- * - the backend `admin` policy demands a RECENT MFA factor — a stale
- *   session resolves `stepUpRequired`, a dedicated state that re-verifies
- *   the factor and then re-resolves access (never a bypass).
+ * - ordinary bootstrap NEVER demands step-up (W3-1 final owner decision:
+ *   the `admin` baseline requires MFA assurance, not factor recency).
+ *   `stepUpRequired` is retained as the generic SEAM — the future D-W3-5
+ *   action-level mechanism, plus the degenerate session holding no
+ *   MFA-verified factor at all — and completing it re-resolves access
+ *   authoritatively (never a bypass).
  */
 
 export type SignInError =
@@ -50,7 +53,8 @@ export type AdminSessionState =
     }
   /** Authenticated but holding NO active admin role — denied, truthfully. */
   | { status: 'noAdminAccess'; assurance: SessionAssurance; identity: SessionIdentity }
-  /** The admin policy wants a recent factor before access resolves. */
+  /** The retained step-up SEAM: a future action-level demand (D-W3-5) or
+   *  a session with no MFA-verified factor — never ordinary bootstrap. */
   | {
       status: 'stepUpRequired';
       assurance: SessionAssurance;

@@ -1,9 +1,11 @@
 /**
  * Internal Himma catalogue moderation routes (docs/28 §16.3) — the review
  * transitions for submitted listings and the decision surface for
- * provider-submitted revisions, on the EXISTING `admin` policy (live
- * session + MFA assurance + recent MFA factor + ≥1 active database admin
- * role); the services additionally require the `operations` role fresh per
+ * provider-submitted revisions, on the `adminStepUp` policy (live session
+ * + MFA assurance + recent MFA factor + ≥1 active database admin role —
+ * the pre-split semantics, deliberately retained by the W3-1
+ * baseline/step-up separation); the services additionally require the
+ * `operations` role fresh per
  * transaction. Provider memberships, customer accounts, and Cognito claims
  * satisfy nothing here. Named action routes only — no writable state field
  * exists; nothing here publishes a listing (D-S4-2), and no customer-public
@@ -119,7 +121,7 @@ export function registerAdminModerationRoutes(
   app.get(
     '/admin/listings',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       schema: {
         querystring: QueueQuery,
         response: {
@@ -157,7 +159,7 @@ export function registerAdminModerationRoutes(
   app.get(
     '/admin/listings/:programId',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       schema: {
         params: Type.Object({ programId: Uuid }),
         response: {
@@ -201,7 +203,7 @@ export function registerAdminModerationRoutes(
     app.post(
       url,
       {
-        config: { authPolicy: 'admin' },
+        config: { authPolicy: 'adminStepUp' },
         bodyLimit: MODERATION_BODY_LIMIT,
         schema: {
           params: Type.Object({ programId: Uuid }),
@@ -245,7 +247,7 @@ export function registerAdminModerationRoutes(
   app.get(
     '/admin/revisions',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       schema: {
         querystring: QueueQuery,
         response: {
@@ -282,7 +284,7 @@ export function registerAdminModerationRoutes(
   app.post(
     '/admin/listings/:programId/revisions/:revisionId/review/start',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: MODERATION_BODY_LIMIT,
       schema: {
         params: Type.Object({ programId: Uuid, revisionId: Uuid }),
@@ -315,7 +317,7 @@ export function registerAdminModerationRoutes(
   app.post(
     '/admin/listings/:programId/revisions/:revisionId/approve',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: MODERATION_BODY_LIMIT,
       schema: {
         params: Type.Object({ programId: Uuid, revisionId: Uuid }),
@@ -351,7 +353,7 @@ export function registerAdminModerationRoutes(
   app.post(
     '/admin/listings/:programId/revisions/:revisionId/reject',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: MODERATION_BODY_LIMIT,
       schema: {
         params: Type.Object({ programId: Uuid, revisionId: Uuid }),

@@ -1,7 +1,8 @@
 /**
  * Internal taxonomy administration routes (docs/28 §16.3 `/admin/taxonomy/…`).
  *
- * Existing `admin` policy; the services require the `operations` role fresh
+ * The `adminStepUp` policy (pre-split recent-factor semantics, retained by
+ * the W3-1 baseline/step-up separation); the services require the `operations` role fresh
  * per transaction. Deliberate named services per entity — no generic table
  * CRUD abstraction, no raw models. Slug immutability is structural: no
  * PATCH schema carries a slug (undeclared fields are stripped app-wide),
@@ -174,7 +175,7 @@ export function registerAdminTaxonomyRoutes(
   app.get(
     '/admin/taxonomy',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       schema: {
         response: {
           200: Type.Object({
@@ -201,7 +202,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/areas',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -233,7 +234,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/areas/:areaId',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ areaId: Uuid }),
@@ -275,7 +276,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/categories',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -307,7 +308,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/categories/:categoryId',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ categoryId: Uuid }),
@@ -349,7 +350,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/activity-types',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -391,7 +392,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/activity-types/:activityTypeId',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ activityTypeId: Uuid }),
@@ -438,7 +439,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/collections',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -473,7 +474,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/collections/:collectionId',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ collectionId: Uuid }),

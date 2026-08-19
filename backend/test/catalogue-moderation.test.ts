@@ -674,7 +674,8 @@ describe('event payload hygiene and route boundary', () => {
       ].sort(),
     );
     for (const route of moderation) {
-      expect(route.policy).toBe('admin');
+      // Retained recent-factor strength (W3-1 final split — not weakened).
+      expect(route.policy).toBe('adminStepUp');
     }
     // Still no session/booking/payment surface. (The Slice-2 /auth/session
     // identity routes are the AUTH session store — not the booking-domain

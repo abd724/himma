@@ -86,7 +86,7 @@ async function grantRole(userId: string, role: AdminRole): Promise<string> {
 async function bearerFor(
   userId: string,
   assurance: 'single_factor' | 'mfa',
-  options: { scopes?: string[] } = {},
+  options: { scopes?: string[]; authTime?: Date } = {},
 ): Promise<string> {
   counter += 1;
   const subject = `admin-me-bearer-${counter}`;
@@ -123,7 +123,7 @@ async function bearerFor(
     scopes: options.scopes ?? ['openid'],
     assurance,
     expiresAt: new Date(Date.now() + 3_600_000),
-    authTime: new Date(),
+    authTime: options.authTime ?? new Date(),
   };
   const established = await establishSession({ db: testDb.db }, { evidence: access, client: {} });
   if (established.kind !== 'sessionEstablished') throw new Error(established.kind);
@@ -200,6 +200,82 @@ describe('bootstrap denial (task §8/§29)', () => {
                 WHERE ai.user_id = ${admin}
               )`.execute(testDb.db);
     expect((await me(bearer)).statusCode).toBe(401);
+  });
+});
+
+describe('the baseline/step-up separation (W3-1 final correction §5/§6/§12/§13)', () => {
+  /** Well beyond the 300s step-up window — an MFA login whose factor aged. */
+  const STALE_AUTH_TIME = () => new Date(Date.now() - 3_600_000);
+
+  it('Case A/B: a fresh-factor admin AND the same admin with a STALE factor both bootstrap /admin/me — MFA assurance, not recency, is the baseline', async () => {
+    const admin = await makeCustomer();
+    await grantRole(admin, 'access_admin');
+    const fresh = await bearerFor(admin, 'mfa');
+    expect((await me(fresh)).statusCode).toBe(200);
+    // The key distinction: the recent-factor window has expired, MFA
+    // assurance stands — ordinary shell access is NOT refused.
+    const stale = await bearerFor(admin, 'mfa', { authTime: STALE_AUTH_TIME() });
+    const bootstrap = await me(stale);
+    expect(bootstrap.statusCode).toBe(200);
+    expect((bootstrap.json() as { roles: string[] }).roles).toEqual(['access_admin']);
+  });
+
+  it('the split does NOT weaken sensitive admin routes: the SAME stale bearer that bootstraps /admin/me is refused stepUpRequired on role administration', async () => {
+    const admin = await makeCustomer();
+    await grantRole(admin, 'access_admin');
+    const stale = await bearerFor(admin, 'mfa', { authTime: STALE_AUTH_TIME() });
+    const headers = { authorization: `Bearer ${stale}` };
+    expect((await me(stale)).statusCode).toBe(200);
+    // Read surface of the sensitive set (adminStepUp): retained strength.
+    const read = await app.inject({ method: 'GET', url: '/admin/role-assignments', headers });
+    expect(read.statusCode).toBe(403);
+    expect(read.json().code).toBe('stepUpRequired');
+    // Mutation surface: same retained strength (valid body — schema
+    // validation runs before auth, so an invalid body would mask the probe).
+    const target = await makeCustomer();
+    const mutation = await app.inject({
+      method: 'POST',
+      url: '/admin/role-requests',
+      headers,
+      payload: { targetUserId: target, role: 'support' },
+    });
+    expect(mutation.statusCode).toBe(403);
+    expect(mutation.json().code).toBe('stepUpRequired');
+    // A FRESH factor still satisfies the sensitive set — nothing tightened
+    // by accident either.
+    const fresh = await bearerFor(admin, 'mfa');
+    const freshRead = await app.inject({
+      method: 'GET',
+      url: '/admin/role-assignments',
+      headers: { authorization: `Bearer ${fresh}` },
+    });
+    expect(freshRead.statusCode).toBe(200);
+  });
+
+  it('Case C/D still hold on the baseline: no MFA assurance and no active role are refused; a stale factor never rescues a revoked role or session', async () => {
+    // No MFA assurance (single-factor login, no grant) → mfaRequired.
+    const single = await makeCustomer();
+    await grantRole(single, 'operations');
+    const singleResponse = await me(await bearerFor(single, 'single_factor'));
+    expect(singleResponse.statusCode).toBe(403);
+    expect(singleResponse.json().code).toBe('mfaRequired');
+    // No active role → forbidden, stale or not.
+    const nobody = await makeCustomer();
+    const nobodyResponse = await me(
+      await bearerFor(nobody, 'mfa', { authTime: STALE_AUTH_TIME() }),
+    );
+    expect(nobodyResponse.statusCode).toBe(403);
+    expect(nobodyResponse.json().code).toBe('forbidden');
+    // Revoked final role with a stale (but MFA-assured) bearer → forbidden.
+    const revoked = await makeCustomer();
+    const assignmentId = await grantRole(revoked, 'operations');
+    const staleBearer = await bearerFor(revoked, 'mfa', { authTime: STALE_AUTH_TIME() });
+    expect((await me(staleBearer)).statusCode).toBe(200);
+    await sql`UPDATE admin_role_assignment SET state = 'revoked', revoked_by = ${adminA}
+              WHERE id = ${assignmentId}`.execute(testDb.db);
+    const afterRevocation = await me(staleBearer);
+    expect(afterRevocation.statusCode).toBe(403);
+    expect(afterRevocation.json().code).toBe('forbidden');
   });
 });
 

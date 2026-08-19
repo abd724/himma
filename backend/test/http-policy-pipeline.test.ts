@@ -103,7 +103,7 @@ describe('route-policy registry and structural deny-by-default', () => {
     expect(inventory.length).toBeGreaterThan(0);
     for (const line of inventory) {
       expect(line).toMatch(
-        /→ (public|unauthenticatedAuthFlow|authenticatedCustomer|stepUpRequired|admin|provider|providerStepUp)$/,
+        /→ (public|unauthenticatedAuthFlow|authenticatedCustomer|stepUpRequired|admin|adminStepUp|provider|providerStepUp)$/,
       );
     }
   });

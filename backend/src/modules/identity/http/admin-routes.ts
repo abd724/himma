@@ -1,11 +1,13 @@
 /**
  * Administrative role-management routes (docs/26 §10 admin set) — B2-5.
  *
- * Every route declares the explicit `admin` policy: live session + MFA
- * assurance + at least one active Himma database role (pipeline), with the
- * specific role authority enforced by the services (access administration
- * manages; audit reads). Production registration is FAIL-CLOSED until B2-6
- * lands admin MFA enforcement — see build-app.ts.
+ * Role administration keeps the explicit `adminStepUp` policy — the
+ * pre-split recent-factor semantics, deliberately NOT weakened by the
+ * W3-1 baseline/step-up separation — while `GET /admin/me` (the ordinary
+ * Admin Portal bootstrap) sits on the `admin` baseline. Specific role
+ * authority is enforced by the services (access administration manages;
+ * audit reads). Production registration is FAIL-CLOSED until B2-6 lands
+ * admin MFA enforcement — see build-app.ts.
  */
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
@@ -77,14 +79,18 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   const serviceDeps = { db: deps.db };
 
   // ---------------------------------------------------------------------
-  // GET /admin/me — the Admin Portal bootstrap (W3-1). The `admin` policy
-  // has already refused everyone without a live session + Himma MFA
-  // assurance + ≥1 ACTIVE PostgreSQL admin role (non-admins learn nothing
-  // beyond `forbidden`; Cognito claims grant no role). The response is the
-  // SAFE access projection the frontend needs and nothing more: display
-  // identity, the active canonical roles, and the centralized capability
-  // projection (admin-capabilities.ts) — no session internals, no
-  // assignment audit fields, no provider/customer data.
+  // GET /admin/me — the Admin Portal bootstrap (W3-1). The `admin`
+  // BASELINE policy has already refused everyone without a live session +
+  // Himma MFA assurance + ≥1 ACTIVE PostgreSQL admin role (non-admins
+  // learn nothing beyond `forbidden`; Cognito claims grant no role) — and,
+  // per the W3-1 final owner decision, it deliberately does NOT demand a
+  // RECENT factor: an MFA-assured admin whose factor merely aged still
+  // bootstraps the shell. Recent-factor step-up remains a distinct
+  // action-level mechanism (`adminStepUp`, D-W3-5 deferred). The response
+  // is the SAFE access projection the frontend needs and nothing more:
+  // display identity, the active canonical roles, and the centralized
+  // capability projection (admin-capabilities.ts) — no session internals,
+  // no assignment audit fields, no provider/customer data.
   // ---------------------------------------------------------------------
   app.get(
     '/admin/me',
@@ -130,7 +136,7 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.get(
     '/admin/role-assignments',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       schema: {
         querystring: Type.Object({
           state: Type.Optional(Type.String({ maxLength: 20 })),
@@ -160,7 +166,7 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.get(
     '/admin/role-assignments/:assignmentId',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       schema: {
         params: Type.Object({ assignmentId: Uuid }),
         response: {
@@ -186,7 +192,7 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.post(
     '/admin/role-requests',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: ADMIN_BODY_LIMIT,
       schema: {
         body: Type.Object({
@@ -232,7 +238,7 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.post(
     '/admin/role-requests/:assignmentId/approve',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: ADMIN_BODY_LIMIT,
       schema: {
         params: Type.Object({ assignmentId: Uuid }),
@@ -260,7 +266,7 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.post(
     '/admin/role-requests/:assignmentId/deny',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: ADMIN_BODY_LIMIT,
       schema: {
         params: Type.Object({ assignmentId: Uuid }),
@@ -288,7 +294,7 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.delete(
     '/admin/role-assignments/:assignmentId',
     {
-      config: { authPolicy: 'admin' },
+      config: { authPolicy: 'adminStepUp' },
       bodyLimit: ADMIN_BODY_LIMIT,
       schema: {
         params: Type.Object({ assignmentId: Uuid }),

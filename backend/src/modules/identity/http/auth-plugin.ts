@@ -30,7 +30,7 @@ import {
 } from '../services/mfa-step-up';
 import type { AccessTokenVerifier } from '../providers/access-token';
 import { livenessOutcomeName, sendOutcome } from './http-outcomes';
-import { isProviderPolicy, policyOf, providerCapabilityOf } from './policies';
+import { isAdminPolicy, isProviderPolicy, policyOf, providerCapabilityOf } from './policies';
 import {
   rateLimitDigest,
   type RateLimiterStore,
@@ -219,15 +219,20 @@ export function installAuthPipeline(app: FastifyInstance, deps: AuthPipelineDeps
       }
       orgScope = resolved.orgScope;
     }
-    if (policy === 'admin') {
-      // Admin surfaces, in the binding order (docs/23 §7, docs/26 §5.8):
-      // (1) live session — established above; (2) at least one ACTIVE Himma
-      // database role, resolved fresh per request (non-admins are simply
-      // `forbidden`, learning nothing about MFA requirements); (3) Himma
-      // MFA enrollment; (4) a sufficiently RECENT MFA-verified factor: an
-      // MFA login within the step-up window, or a live TOTP/recovery-code
-      // grant. No role or assurance material ever comes from provider
-      // claims, and role/session revocation bites regardless of any grant.
+    if (isAdminPolicy(policy)) {
+      // Admin surfaces, in the binding order (docs/23 §7, docs/26 §5.8;
+      // W3-1 final baseline/step-up split): (1) live session — established
+      // above; (2) at least one ACTIVE Himma database role, resolved fresh
+      // per request (non-admins are simply `forbidden`, learning nothing
+      // about MFA requirements); (3) Himma MFA enrollment; (4) an
+      // MFA-VERIFIED session factor — an MFA login or a live
+      // TOTP/recovery-code grant — with NO recency requirement at the
+      // `admin` baseline (owner decision: ordinary bootstrap and permitted
+      // surfaces never demand a fresh TOTP merely because the factor
+      // aged); (5) `adminStepUp` only: a sufficiently RECENT factor — the
+      // pre-split semantics every sensitive admin operation keeps. No role
+      // or assurance material ever comes from provider claims, and
+      // role/session revocation bites regardless of any grant.
       adminRoles = await resolveAdminRoles({ db: deps.db }, liveness.principal.userId);
       if (adminRoles.length === 0) return sendOutcome(reply, 'forbidden');
       const assurance = await resolveAssurance();
@@ -239,13 +244,16 @@ export function installAuthPipeline(app: FastifyInstance, deps: AuthPipelineDeps
           ? assurance.grant
           : undefined;
       const sessionMfaVerified = liveness.principal.assurance === 'mfa';
+      if (mfaGrant === undefined && !sessionMfaVerified) {
+        return sendOutcome(reply, 'mfaRequired');
+      }
       if (mfaGrant !== undefined) {
         stepUp = { at: mfaGrant.grantedAt, method: mfaGrant.method };
       } else if (sessionMfaVerified && authTimeFresh && authTime !== undefined) {
         stepUp = { at: authTime, method: 'provider_mfa' };
-      } else {
-        // MFA-verified but stale → step up; never MFA-verified → mfaRequired.
-        return sendOutcome(reply, sessionMfaVerified ? 'stepUpRequired' : 'mfaRequired');
+      } else if (policy === 'adminStepUp') {
+        // MFA-verified but stale: the baseline admits it; step-up refuses.
+        return sendOutcome(reply, 'stepUpRequired');
       }
     }
 

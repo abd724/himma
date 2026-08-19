@@ -150,7 +150,10 @@ describe('route inventory and structural deny-by-default', () => {
     // surfaces now legitimately exist under /admin (their own suites lock
     // them). The PROVIDER surface still carries no decision path.
     const decisionish = app.routePolicyInventory.filter(
-      (route) => route.policy !== 'admin' && /revision|review|approve|moderat/i.test(route.url),
+      (route) =>
+        route.policy !== 'admin' &&
+        route.policy !== 'adminStepUp' &&
+        /revision|review|approve|moderat/i.test(route.url),
     );
     expect(decisionish).toEqual([]);
   });

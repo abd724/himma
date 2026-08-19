@@ -25,9 +25,17 @@ export const ROUTE_POLICIES = [
   'authenticatedCustomer',
   /** authenticatedCustomer + recent provider authentication (§3.10). */
   'stepUpRequired',
-  /** Live session + MFA assurance + ≥1 active Himma admin role (B2-5).
-   *  Route handlers still check the specific role; deny-by-default holds. */
+  /** Admin BASELINE access (W3-1 final owner decision): live session +
+   *  ≥1 active Himma admin role + MFA enrollment + an MFA-verified session
+   *  factor — with NO recency requirement. Ordinary Admin Portal bootstrap
+   *  and permitted reads sit here; route handlers still check the specific
+   *  role; deny-by-default holds. */
   'admin',
+  /** `admin` + a sufficiently RECENT MFA factor (the pre-split W3-1
+   *  semantics, preserved verbatim). Every pre-existing admin operation
+   *  keeps this stronger policy — the baseline/step-up split must never
+   *  weaken them. The future D-W3-5 high-risk action set builds on this. */
+  'adminStepUp',
   /** Provider-private management (docs/27 §7–§8, S3-3): live session +
    *  active staff_membership for the addressed `:organizationId` (resolved
    *  fresh from PostgreSQL; cross-org is not-found-shaped) + the D-S3-5 MFA
@@ -46,6 +54,12 @@ const PROVIDER_POLICIES: readonly RoutePolicy[] = ['provider', 'providerStepUp']
 
 export function isProviderPolicy(policy: RoutePolicy): boolean {
   return PROVIDER_POLICIES.includes(policy);
+}
+
+const ADMIN_POLICIES: readonly RoutePolicy[] = ['admin', 'adminStepUp'];
+
+export function isAdminPolicy(policy: RoutePolicy): boolean {
+  return ADMIN_POLICIES.includes(policy);
 }
 
 export interface RoutePolicyEntry {

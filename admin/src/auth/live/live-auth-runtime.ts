@@ -496,11 +496,18 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
 
   const accessPort: AdminAccessPort = {
     /** The authoritative access bootstrap — PostgreSQL admin-role truth via
-     *  the REAL `GET /admin/me`; claims grant nothing. The `admin` policy's
-     *  refusals map to their own semantic outcomes: `forbidden` = a valid
-     *  identity holding no active admin role (the truthful denial screen);
-     *  `stepUpRequired` = a live admin whose MFA factor is stale — the
-     *  portal re-verifies the factor, never bypasses. */
+     *  the REAL `GET /admin/me`; claims grant nothing. `/admin/me` sits on
+     *  the admin BASELINE policy (W3-1 final owner decision): MFA
+     *  assurance + an active role bootstrap the shell, and a merely-aged
+     *  recent factor is NOT refused — so ordinary resolution never demands
+     *  a fresh TOTP. Refusals map to their own semantic outcomes:
+     *  `forbidden` = a valid identity holding no active admin role (the
+     *  truthful denial screen); `mfaRequired` = a session with NO
+     *  MFA-verified factor at all — routed through the step-up seam, whose
+     *  TOTP verification establishes a live Himma grant and re-resolves
+     *  authoritatively (never a bypass). The `stepUpRequired` wire code is
+     *  kept mapped for the future D-W3-5 action-level mechanism; the
+     *  baseline `/admin/me` itself no longer emits it. */
     async resolveAccess(): Promise<AdminAccessOutcome> {
       const response = await authorizedRequest('/admin/me');
       if (response === null || response.networkFailure) {

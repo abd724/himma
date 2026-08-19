@@ -51,7 +51,7 @@ async function signedInRuntime(handler: (url: string) => { status: number; body:
 }
 
 describe('live /admin/me outcome mapping', () => {
-  test('a 200 with the exact DTO resolves the access projection', async () => {
+  test('a 200 with the exact DTO resolves the access projection — the ONLY ordinary bootstrap path (the baseline answers 200 even when the recent factor aged, so resolution never routes staleness anywhere else)', async () => {
     const runtime = await signedInRuntime(() => ({ status: 200, body: ACCESS_BODY }));
     await expect(runtime.accessPort.resolveAccess()).resolves.toEqual({
       kind: 'resolved',
@@ -70,7 +70,7 @@ describe('live /admin/me outcome mapping', () => {
   test.each([
     ['stepUpRequired', 'stepUpRequired'],
     ['mfaRequired', 'stepUpRequired'],
-  ])('%s maps to the dedicated step-up outcome — never a bypass, never noAccess', async (code, kind) => {
+  ])('the step-up SEAM stays mapped (%s → re-verification): a future D-W3-5 action-level refusal or a no-MFA-factor session routes to the step-up flow — never a bypass, never noAccess', async (code, kind) => {
     const runtime = await signedInRuntime(() => ({
       status: 403,
       body: { code, message: 'refused' },

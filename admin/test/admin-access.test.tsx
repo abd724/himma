@@ -10,8 +10,9 @@ import { renderAdmin } from './support/render-admin';
 
 /**
  * W3-1 access flows over the deterministic fixture runtime: sign-in → MFA
- * → capability-aware shell; the denial matrix (task §8/§29); the
- * step-up-at-bootstrap flow the backend `admin` policy demands; and the
+ * → capability-aware shell; the denial matrix (task §8/§29); the W3-1
+ * final baseline/step-up separation (ordinary bootstrap NEVER invokes
+ * step-up; the D-W3-5 action-level seam stays exercisable); and the
  * revoked-role exit (task §19).
  */
 
@@ -101,15 +102,29 @@ describe('bootstrap denial and access truth (task §8/§19)', () => {
     expect(screen.getByText('Your session ended. Sign in again to continue.')).toBeInTheDocument();
   });
 
-  test('a stale MFA factor resolves the dedicated step-up screen and a fresh code re-resolves access — never a bypass', async () => {
-    const user = userEvent.setup();
+  test('W3-1 final: a STALE recent factor no longer gates ordinary shell access — the MFA-assured admin bootstraps straight to the shell, no step-up screen (owner decision §5–§8)', async () => {
+    // Seeded session = the hard-reload continuity shape: an established
+    // MFA-assured session whose factor window has aged.
     renderAdmin({ asIdentity: 'stale@himma.demo' });
+    await screen.findByRole('heading', { name: 'Welcome, Stefan Stale' });
+    // Ordinary bootstrap never invoked the step-up surface.
+    expect(screen.queryByRole('heading', { name: 'Confirm your identity' })).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Admin navigation' })).toBeInTheDocument();
+  });
+
+  test('the D-W3-5 step-up SEAM remains: an action-level demand resolves the dedicated screen and a fresh code re-resolves access — never a bypass (§10/§12.12)', async () => {
+    const user = userEvent.setup();
+    const runtime = createFixtureAdminRuntime();
+    runtime.seedSession('ops@himma.demo');
+    // Model a FUTURE high-risk operation answering step-up-required.
+    runtime.controls.demandStepUp();
+    renderAdmin({ runtime });
     await screen.findByRole('heading', { name: 'Confirm your identity' });
     expect(screen.queryByRole('navigation', { name: 'Admin navigation' })).toBeNull();
 
     await user.type(screen.getByLabelText('Verification code'), FIXTURE_TOTP);
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
-    await screen.findByRole('heading', { name: 'Welcome, Stefan Stale' });
+    await screen.findByRole('heading', { name: 'Welcome, Layla Operations' });
   });
 
   test('a transient access failure is retryable without losing the session', async () => {

@@ -5,7 +5,7 @@ import styles from './access-gate.module.css';
 
 /**
  * The admin access zone (task §14): every non-active session state renders
- * here — sign-in, MFA challenge, recent-factor step-up, signed-out,
+ * here — sign-in, MFA challenge, the step-up seam, signed-out,
  * no-admin-access, session-expired, unavailable — with account-enumeration-
  * safe wording (one credential-failure class; no raw Cognito errors).
  * Only an `active` session ever reaches the protected shell children.
@@ -224,8 +224,8 @@ function StepUpScreen({
     <AccessFrame>
       <h1 className={styles.title}>Confirm your identity</h1>
       <p className={styles.body}>
-        Administrative access needs a recent verification. Enter the current code from your
-        authenticator app to continue as {state.identity.displayName || 'this administrator'}.
+        This step needs a fresh verification. Enter the current code from your authenticator app
+        to continue as {state.identity.displayName || 'this administrator'}.
       </p>
       {state.error !== null ? (
         <p className={styles.error} role="alert">

@@ -38,7 +38,9 @@ export type AdminAccessOutcome =
   | { readonly kind: 'resolved'; readonly access: AdminAccess }
   /** Authenticated, but NO active admin role — the portal is not for them. */
   | { readonly kind: 'noAccess' }
-  /** The `admin` policy wants a RECENT factor — re-verify TOTP, then retry. */
+  /** The retained step-up SEAM (W3-1 final): a future D-W3-5 action-level
+   *  demand, or a session with no MFA-verified factor. Ordinary baseline
+   *  bootstrap never produces this — re-verify TOTP, then retry. */
   | { readonly kind: 'stepUpRequired' }
   | { readonly kind: 'unavailable' };
 

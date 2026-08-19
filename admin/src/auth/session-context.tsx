@@ -21,10 +21,12 @@ import type { AdminAccessPort } from '../access/contract';
  * adapter and the `/admin/me` access port, and exposes semantic actions.
  * All components read session truth from here — no scattered auth booleans.
  *
- * Admin-specific: the backend `admin` policy demands a RECENT MFA factor,
- * so access resolution can land in `stepUpRequired`; completing the
- * existing step-up seam (TOTP or recovery code) re-resolves access
- * authoritatively — the frontend never bypasses.
+ * Admin-specific: the backend `admin` BASELINE never demands a recent
+ * factor for ordinary bootstrap (W3-1 final owner decision) — a stale
+ * factor still enters the shell. `stepUpRequired` remains the generic
+ * seam for the future D-W3-5 action-level mechanism (and the degenerate
+ * no-MFA-factor session); completing it (TOTP or recovery code)
+ * re-resolves access authoritatively — the frontend never bypasses.
  */
 
 export interface SessionActions {
