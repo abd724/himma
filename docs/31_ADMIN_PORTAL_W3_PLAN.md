@@ -1,0 +1,133 @@
+# 31 — Internal Admin Portal & Provider Verification (W3) — Workstream Plan
+
+**Status: W3-0 planning deliverable — awaiting owner approval. No W3 implementation has started.**
+
+Authority: docs/23 (§6.1, §9, §15–16), docs/24, docs/25, docs/26 (identity/admin roles), docs/27 (Slice-3 provider organizations incl. D-S3-3), docs/28 (Slice-4 moderation/taxonomy), docs/29 (Provider Portal, W2 closures), and the repository itself. W2-12 — Real Provider Portal API Integration — is CLOSED at `2ba9a2e`. This plan reconciles what the backend already provides, what W3 must add, and the bounded order to build it in. It contains **no application code** and creates **no routes or schema**.
+
+---
+
+## 1. Objective
+
+The Internal Admin Portal is the Himma **staff-facing** web surface (docs/23 §9), distinct from the customer app and the Provider Portal. W3's first production priority is **provider onboarding and verification**: a provider must not become operational (`live`) merely by filling in its profile — Himma staff review the business and its evidence, decide, and separately activate. That capability is the binding precondition the backend already encodes: **D-S3-3** makes `in_review → verified` and `verified → live` **fail closed in production** until an authoritative verification-evidence capability exists and reports ready (`organization-admin.ts`; forcing the flag refuses startup, and blocked attempts are audited). W3 exists to build that capability and the staff surface around it.
+
+Three readiness levels stay separate (docs/23 §15–16): **engineering implementation complete** ≠ **provider-outreach/onboarding ready** ≠ **public marketplace launch ready**. W3 primarily advances the second.
+
+## 2. Current-state matrix (repository-reconciled)
+
+### 2.1 Already implemented (backend, code-complete and tested)
+
+| Capability | Where | Notes |
+|---|---|---|
+| Admin identity & authorization | Slice 2 (`admin_role_assignment`, `resolveAdminRoles`, `authPolicy: 'admin'`) | Live session + MFA assurance + ≥1 ACTIVE PostgreSQL admin role; route handlers check the specific role; Cognito claims grant nothing. Dual-control role grant/approve/deny/revoke with D4 exclusivity and finance-approver rules (DB triggers final authority). |
+| Admin role registry | `ADMIN_ROLES = operations · support · finance · access_admin · auditor` | Exactly five internal roles; no superadmin. `operations` owns org lifecycle, moderation, taxonomy. |
+| Admin role HTTP surface | `/admin/role-assignments` (list/detail/revoke) · `/admin/role-requests` (+ approve/deny) | AD-17 backend exists end-to-end. |
+| Organization lifecycle (admin) | `organization-admin.ts` + `/admin/organizations` routes | Create-with-founding-invitation; transitions `start-review` (submitted→in_review), `verify` (in_review→verified), `reject` (in_review→rejected), **`go-live` (verified→live — a SEPARATE admin action)**, `suspend`, `reinstate`, `offboard`. CAS `expectedVersion`; optional machine `reasonCode` (audit-only); S3-1 state trigger is final authority; every transition audited + outboxed. |
+| D-S3-3 production gate | `verificationEvidenceCapabilityReady` | verify/go-live REFUSE in production until the evidence capability ships; refusals audited. |
+| Program moderation | `moderation.ts` + `/admin/listings` routes | Queue (keyset), moderation view (full ProgramDetailView + open revision), `review/start`, `review/approve` (rests at `approved` — approval ≠ publication, D-S4-2), `review/request-changes` (+ audit-only reasonCode). Operations-only, audited + outboxed. |
+| ProgramRevision moderation | same module | Revision queue, `review/start`, `approve` (applies the payload atomically), `reject`. The moderation view exposes a **`RevisionChangeSetView`** (the exact protected-field/option change set) — reviewers CAN see what they are approving; **no W3 backend gap here**. |
+| Taxonomy administration | `taxonomy-admin.ts` + `/admin/taxonomy` routes | Full admin view + create/patch for areas, categories, activity types, collections (activate/deactivate, labels, sort, synonyms). Operations-only, audited. |
+| Audit + outbox conventions | `appendAuditEvent` / `appendOutboxEvent` | Used by every sensitive admin mutation above; `admin-event-integrity` tests lock the pattern. |
+| Provider-side onboarding submission | Slice 3 + W2-12B | `draft|rejected → submitted` from the Provider Portal; org view renders exact verification state. |
+
+### 2.2 Partially implemented
+
+| Capability | Present | Missing |
+|---|---|---|
+| Provider verification | The full org state machine, admin transitions, audit | The actual **VerificationCase/evidence review capability** the D-S3-3 gate demands: nothing records WHAT was reviewed or the evidence it rested on. |
+| Rejection feedback | Machine `reasonCode` on reject/request-changes (audit-only) | Any **provider-safe explanation** (the Provider Portal's carried Class-B gap) — no storage, no contract, no read. |
+| Admin work queues | Moderation + revision queues; org transitions | **No `GET /admin/organizations` list/detail read exists at all** (the only org admin routes are POST create + POST transitions) — the AD-02/AD-04 provider queue/directory/detail reads are missing. |
+| Audit review | Events are written | No audit **read/explorer** route (AD-18). |
+
+### 2.3 Missing entirely (W3 must add)
+
+VerificationCase domain (case per review round, states, reviewer ownership, CAS) · evidence/document records + private binary storage · evidence review decisions with internal notes vs provider-safe output · admin organization list/search/detail reads · provider-safe rejection contract + Provider Portal read · taxonomy request workflow (provider-side "request a new Activity Type") · admin audit explorer read · **the entire Admin Portal frontend** · admin step-up policy for highest-risk actions (no `adminStepUp` policy exists; provider-side step-up infrastructure does).
+
+### 2.4 Explicitly out of W3's first phase (deferred per docs/23 §9, future workstreams)
+
+Customer lookup (AD-07), booking operations (AD-08), payments/reconciliation (AD-09), refunds (AD-10), credits (AD-11), payouts (AD-12), support cases (AD-13), content/media moderation beyond listings (AD-14), notifications (AD-15), platform configuration (AD-16). These depend on domains (bookings/payments) that do not exist yet.
+
+## 3. Verification domain design (W3 core)
+
+Canonical vocabulary stays docs/23 §6.1 / Slice-3: `draft → submitted → in_review → verified → live`, `in_review → rejected (→ submitted on resubmit)`. W3 adds the evidence capability UNDER that machine — it does not change it.
+
+**VerificationCase** (one per review round): `organizationId`, state (`open → in_review → decided`, mirroring the org edge it governs), `openedAt`, assigned reviewer (nullable), decision (`verified` | `rejected`), decision actor/time, **internal reviewer notes** (staff-only, never serialized to providers), machine `reasonCode`, **provider-safe message** (see §6), `version` (CAS). A case opens when an organization reaches `submitted` (created lazily on first admin touch or eagerly via outbox — decided in W3-3 from repo conventions). History is append-per-round: a resubmission opens a NEW case; prior cases remain immutable audit history.
+
+**VerificationEvidence** records: per-case rows carrying evidence kind (from a **policy-configurable checklist**, §5), uploader (provider or staff), storage reference, content metadata (filename, content type, size, hash), review status per item (`pending → accepted | rejected`), and reviewer per-item note. Domain infrastructure is fixed; **which documents Himma requires per provider type is policy/configuration**, not schema — a `verification_requirement` config (seeded, admin-editable later) keyed by org kind, so the legal checklist can change without migrations.
+
+**Decision workflow** (§12 of the task): operations reviewer (PostgreSQL role, fresh per transaction) → case in `in_review` with the org in `in_review` → evidence reviewed item-by-item → decision `verify` or `reject` with CAS on both the case and the organization (one transaction: case decided + `transitionOrganization` edge + audit + outbox) → the D-S3-3 readiness input flips to REAL truth: `verify` requires the governing case to report ready (all mandatory checklist items accepted). Nothing in the frontend can bypass this — the service composes the existing state trigger.
+
+**Go-live** stays exactly canon: `verified → live` remains a **separate deliberate operations action** (`POST /admin/organizations/:id/go-live`), already implemented and audited — activation is NOT automatic after verification. This is settled by D-S3-3 + §6.1 + the shipped route; it is not an open owner question.
+
+## 4. Evidence storage (the media/binary dependency)
+
+No binary storage exists anywhere (ProgramMedia is metadata-only). Two architectures were weighed:
+
+**Option A — one shared binary-storage foundation now, consumed later by public media.** Pro: one infrastructure. Con: verification documents are PRIVATE, sensitive business/identity papers; marketplace media is public CDN content. A shared first implementation invites access-tier mistakes at the worst possible boundary, and couples W3 to public-media requirements (image processing, CDN) it does not have.
+
+**Option B (recommended) — a deliberately separate private document store for verification evidence.** S3-compatible object storage, private bucket/prefix, server-mediated access only: uploads via short-lived pre-signed PUT (or server-proxied upload) recorded against the case; retrieval ONLY through authorized routes issuing short-lived signed GETs — provider principals may access solely their own organization's evidence via the provider surface; admin access requires the operations role; **no public URL ever exists**; keys are unguessable and never derived from org names. Object metadata + hash stored in PostgreSQL; deletion/retention policy recorded (owner policy input, not schema). The later public-media milestone MAY reuse the low-level client/config layer, but the access tier, bucket, and lifecycle stay separate by design. → Owner decision **D-W3-1** (§10) with this recommendation.
+
+## 5. Provider-facing rejection/feedback architecture
+
+Three strictly separated layers (task §13): (1) **internal reviewer notes** — staff-only, never leave the admin surface; (2) **machine `reasonCode`** — canonical vocabulary, audit + analytics + Portal branching; (3) **provider-safe message** — reviewer-authored (or template-derived) actionable text stored ON the decision (case or moderation action) explicitly marked provider-visible. The smallest proper contract: the existing provider org/listing reads gain a provider-safe `latestDecision { reasonCode, providerMessage, decidedAt }` projection (organization verification first; listing `changes_requested` second, closing the W2 carried gap). Internal notes live in different columns and are structurally absent from every provider serializer — test-locked, mirroring the existing capability-shaped projection pattern.
+
+## 6. Admin authentication & authorization
+
+Reuse the approved identity architecture wholesale (docs/26; W2-12A code): browser → Cognito (USER_PASSWORD_AUTH + SOFTWARE_TOKEN_MFA, public client) → `POST /auth/session` → bearer + §14.E cookie/CSRF continuity → per-request liveness. **Authority is PostgreSQL admin roles only** (`authPolicy: 'admin'` = live session + MFA assurance + ≥1 active role; handlers check the specific role; deny-by-default; Cognito groups grant nothing). Admin and provider authority are disjoint by construction — the same person may hold both, but each surface resolves its own. The admin portal is a **separate origin** in `PORTAL_ALLOWED_ORIGINS` terms (its own allowlist entry/config). The W2-12A live auth runtime, transport, continuity channel, and fixture/live/unconfigured mode discipline are reused as a pattern (and where clean, as shared code) — with `/provider/me` replaced by an admin bootstrap (`GET /admin/me` — a small W3 addition returning the caller's active admin roles; today roles are only implicit in `request.principal`).
+
+**Step-up:** no `adminStepUp` policy exists. Plan: add one (reusing the Slice-2 recent-step-up window exactly as `providerStepUp` does) for the highest-risk actions — go-live, suspend/offboard, role approve/deny, taxonomy deactivation. Default set is a recommendation under **D-W3-5**; dual-control on role grants already exceeds step-up and stays as is.
+
+## 7. Frontend architecture
+
+A new **`admin/`** package, sibling to `portal/`, mirroring its proven shape: Vite + React + TypeScript, typed port contracts, **deterministic fixture mode** for Jest/Playwright/walkthroughs, **live mode** over the centralized authenticated transport, **unconfigured fail-closed** default; provisional Himma tokens from docs/07 (staff-appropriate, light, non-childish); docs/23 §8.4 web-quality contract (not docs/12 native rules). **No provider/customer UI-component sharing beyond the neutral token layer** — coupling staff tooling to provider screens would harm both; small primitives may be duplicated deliberately. Contract tests run against the real `buildApp` + real PostgreSQL with the fake Cognito boundary, exactly like `portal/test-contract`.
+
+Minimum W3 surfaces (docs/23 §9.1 subset): **AD-01** sign-in/MFA/role display · **AD-02** work queue (verifications awaiting review; listings submitted; open revisions — real queues only, no speculative analytics) · **AD-03** verification case/evidence review + decision · **AD-04** provider directory/detail (needs the new admin org reads) · **AD-05** listing review queue/detail (existing contracts) · AD-05b revision review (existing contracts incl. change-set) · **AD-06** taxonomy management (existing contracts) · **AD-17** roles administration (existing contracts) · **AD-18** audit explorer (needs a read route; late slice). Provider detail (task §11) composes real truth only: organization/verification state, storefront profile, branches, staff summary (counts/roles — no credentials), catalogue status counts, verification case + evidence, decision/audit history where permitted; no secrets or authentication data.
+
+## 8. Reuse commitments (no rebuilds)
+
+- **Program moderation (AD-05):** consume the existing queue/view/decision routes verbatim. Approval RESTS at `approved`; providers publish (D-S4-2). No new domain.
+- **Revision moderation:** consume the existing queue + `RevisionChangeSetView` + start/approve/reject. Sufficient reviewer information exists; no fabricated diffs.
+- **Taxonomy (AD-06):** consume existing admin CRUD. Provider "request a new Activity Type" (W2 carried gap): recommended as a lightweight request record (provider submits label + context via a small provider route; operations sees it in the AD-02 queue; outcome = create the taxonomy row via the EXISTING admin route, or decline with a provider-safe message). Providers never mutate global taxonomy. In/out of W3 scope = **D-W3-4**.
+- **Audit:** every new W3 mutation uses `appendAuditEvent`/`appendOutboxEvent` in-transaction (verification decisions, evidence acceptance/rejection, go-live — already audited, provider-safe message publication, taxonomy requests). AD-18 is a paginated, role-gated read over the existing table (auditor + operations), added late (W3-9), never frontend logs.
+
+## 9. Security requirements (binding for every W3 slice)
+
+Deny-by-default `admin` policy on every route; PostgreSQL-authoritative roles resolved fresh per transaction; **no universal superadmin** (five roles, specific-role checks); MFA baseline; `adminStepUp` for the D-W3-5 set; dual control retained on role grants; cross-role tests (support/finance/auditor refused from operations surfaces and vice versa); no provider/customer authority leakage in either direction (contract-proven per slice); verification documents privately stored, server-mediated, signed short-lived retrieval, no public URLs, access limited to the operations role and the owning organization's provider principals; internal notes structurally absent from provider serializers; audit on every sensitive action; fixture/live isolation identical to the portal discipline.
+
+## 10. Owner decisions
+
+**Required before W3-3 (backend verification domain):**
+- **D-W3-1 — Evidence storage architecture.** Recommendation: Option B (§4) — separate private document store, server-mediated signed access; low-level client reusable later, access tier never shared with public media.
+- **D-W3-2 — Provider-facing rejection content.** Recommendation: §5's three-layer model; reviewer-authored provider-safe message required on reject, optional on request-changes; internal notes never exposed.
+
+**Deferrable (needed before the slice named, not before W3-1):**
+- **D-W3-3 — First-launch mandatory evidence checklist per provider type** (policy config; needed before REAL provider onboarding, not before the infrastructure; a placeholder checklist serves dev/test).
+- **D-W3-4 — Taxonomy request workflow in W3?** Recommendation: yes, as the lightweight request record above (W3-7); the truthful Support fallback remains meanwhile.
+- **D-W3-5 — Admin step-up action set.** Recommendation: go-live, suspend, offboard, role approve/deny, taxonomy deactivate (before W3-5).
+- **D-W3-6 — Evidence retention/deletion policy** (operational/legal input; before outreach, not before implementation).
+
+Settled by existing canon (NOT open): go-live is a separate admin action after verification (D-S3-3, §6.1, shipped `go-live` route) · exactly five admin roles · approval ≠ publication · reviewers see revision change-sets.
+
+## 11. W3 decomposition (bounded, sequential; each ends with owner STOP)
+
+| Slice | Scope | Depends on |
+|---|---|---|
+| **W3-0** | This plan. | — |
+| **W3-1** | Admin Portal foundation: `admin/` package, shell/navigation, fixture+live+unconfigured composition, sign-in/MFA/continuity over existing identity routes, NEW `GET /admin/me` bootstrap, role display, deny-by-default routing. | Plan approval |
+| **W3-2** | Provider directory/queue/detail: NEW admin organization read routes (list/search/filter by verification state + detail composition), AD-02 queue (verifications + existing moderation queues) and AD-04 directory over them; existing lifecycle actions (suspend/reinstate/offboard) wired with truthful states; verify/go-live visible but production-gated (D-S3-3 honest). | W3-1 |
+| **W3-3** | Verification domain backend: VerificationCase + evidence records + requirement config (schema + migrations), case lifecycle services, decision transaction composing `transitionOrganization`, D-S3-3 readiness wired to REAL case truth, audit/outbox, contract tests. | D-W3-1/2 approved |
+| **W3-4** | Evidence file infrastructure: private document store per D-W3-1, provider upload surface (Provider Portal onboarding gains real evidence upload), admin retrieval via signed access, privacy proofs. | W3-3 |
+| **W3-5** | Verification review/decision integration: AD-03 case UX end-to-end (checklist, evidence viewing, per-item review, decide with CAS + step-up), go-live enabled by real readiness; end-to-end contract journey submitted→case→evidence→verify→go-live→live storefront public. | W3-3/4 |
+| **W3-6** | Catalogue + revision moderation integration (AD-05): existing contracts, change-set review UX, approve/request-changes; composition proofs with the Provider Portal truth. | W3-1 |
+| **W3-7** | Taxonomy administration (AD-06) + the D-W3-4 request workflow. | W3-1 (W3-7b needs D-W3-4) |
+| **W3-8** | Provider-facing correction/reason integration: the §5 contract on org verification + listing changes-requested; Provider Portal reads and renders it (closing the W2 carried gap). | D-W3-2; W3-3/5 |
+| **W3-9** | Closeout/hardening: AD-17 roles UX over existing routes, AD-18 audit explorer (NEW read route), admin step-up set (D-W3-5), cross-role/cross-org security regression, W3 closeout audit (W2-12D pattern). | all prior |
+
+W3-6/W3-7 are parallel-eligible after W3-1 but remain sequential owner-approved tasks. Every slice: RED→GREEN backend tests where backend changes; real-PostgreSQL contract tests through the real authenticated transport; fixture Jest/Playwright for the admin surface; `db:verify`; certification per docs/25.
+
+## 12. Provider-outreach gate (honest, current)
+
+Before Himma can onboard/outreach to real providers: ✅ W2 Provider Portal core (CLOSED `2ba9a2e`) · ⬜ W3 minimum admin/verification capability (W3-1…W3-5 + W3-8) · ⬜ real Cognito environment + §14.E′ smokes (operational) · ⬜ evidence checklist policy (D-W3-3) + retention (D-W3-6) · ⬜ real mail delivery for invitations/notifications (operational) · ⬜ external design-partner validation round (docs/23 §8.6) with findings dispositioned · ⬜ hosting/deployment of backend + portals with production config (docs/23 §10/§18 scope) · ⬜ legal/compliance content where docs/23 §15 requires it for provider-facing operation. Public marketplace launch additionally requires the future booking/payment workstreams and the §15 gates — far beyond W3, and deliberately not claimed here.
+
+## 13. Non-goals of W3 (recorded ownership)
+
+Bookings/schedules/capacity/payments/finance/support-case domains (future workstreams, docs/23 §16) · public marketplace media binaries/CDN (future media milestone; may reuse §4's low-level layer, never its access tier) · bulk import engine (separate milestone) · customer-facing surfaces · Provider Portal visual polish · analytics/CRM.
