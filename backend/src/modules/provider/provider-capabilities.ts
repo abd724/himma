@@ -60,6 +60,12 @@ export const ACTIVE_PROVIDER_CAPABILITIES = [
   'listings.publish',
   /** Listing media-reference metadata management (references only). */
   'media.manage',
+  // -- W3-4 verification-evidence activation (docs/31 W3-4; D-W3-1) -------
+  /** PRIVATE verification-evidence submission/retrieval for the OWN
+   *  organization's review round — owner only (business legal documents;
+   *  widening to other roles is a future owner decision, not a default).
+   *  Never grants any admin/operations authority. */
+  'verification.evidence.manage',
 ] as const;
 
 export type ProviderCapability = (typeof ACTIVE_PROVIDER_CAPABILITIES)[number];
@@ -107,6 +113,7 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'listings.manage',
     'listings.publish',
     'media.manage',
+    'verification.evidence.manage',
   ],
   org_manager: [
     'org.read',

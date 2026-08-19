@@ -39,6 +39,17 @@ import { registerMfaRoutes } from '../modules/identity/http/mfa-routes';
 import { registerOrganizationAdminRoutes } from '../modules/provider/http/organization-admin-routes';
 import { registerOrganizationAdminReadRoutes } from '../modules/provider/http/organization-admin-read-routes';
 import { registerProviderRoutes } from '../modules/provider/http/provider-routes';
+import {
+  installEvidenceContentParsers,
+  registerAdminEvidenceRoutes,
+  registerProviderEvidenceRoutes,
+} from '../modules/provider/http/verification-evidence-routes';
+import {
+  DEFAULT_EVIDENCE_UPLOAD_CONFIG,
+  type VerificationEvidenceObjectStore,
+  type VerificationEvidenceUploadConfig,
+} from '../modules/provider/storage/evidence-store';
+import type { EvidenceStorageDeps } from '../modules/provider/services/evidence-storage';
 import { registerStorefrontRoutes } from '../modules/provider/http/storefront-routes';
 import { installRoutePolicyGuard } from '../modules/identity/http/policies';
 import {
@@ -126,6 +137,18 @@ export interface IdentityHttpOptions {
    *  UNREADY production build refuses startup (D-S3-5 shares the identity
    *  MFA-activation gate — no bypass). */
   enableProviderRoutes?: boolean;
+  /**
+   * W3-4 private verification-evidence storage (D-W3-1). ABSENT (the
+   * default) = the entire evidence upload/download surface does not exist
+   * (fail-closed 404) — an unconfigured deployment can never accept or
+   * serve documents, and nothing can ever mark evidence `stored`.
+   * Production must supply the real private S3-compatible driver; the
+   * deterministic in-memory store is a dev/test double only.
+   */
+  verificationEvidenceStorage?: {
+    store: VerificationEvidenceObjectStore;
+    upload?: Partial<VerificationEvidenceUploadConfig>;
+  };
 }
 
 function adminProductionReady(readiness: AdminProductionReadiness | undefined): boolean {
@@ -280,6 +303,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         'verificationEvidenceCapabilityReady cannot be true: this build contains no VerificationCase/document-review capability, and production verified/live transitions stay fail-closed until it exists (docs/27 D-S3-3).',
       );
     }
+    // W3-4 private evidence storage: configured → the trusted server-
+    // proxied surface exists; absent → fail-closed 404 everywhere.
+    const evidenceStorageDeps: EvidenceStorageDeps | undefined =
+      identity.verificationEvidenceStorage !== undefined
+        ? {
+            db: identity.db,
+            store: identity.verificationEvidenceStorage.store,
+            upload: {
+              ...DEFAULT_EVIDENCE_UPLOAD_CONFIG,
+              ...identity.verificationEvidenceStorage.upload,
+            } satisfies VerificationEvidenceUploadConfig,
+          }
+        : undefined;
+    if (evidenceStorageDeps !== undefined) {
+      installEvidenceContentParsers(app, evidenceStorageDeps.upload.allowedContentTypes);
+    }
+
     const organizationAdminDeps =
       identity.staffInvitationConfig !== undefined
         ? {
@@ -312,6 +352,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         if (organizationAdminDeps !== undefined) {
           registerOrganizationAdminRoutes(app, organizationAdminDeps);
         }
+        if (evidenceStorageDeps !== undefined) {
+          registerAdminEvidenceRoutes(app, evidenceStorageDeps);
+        }
       }
     } else if (identity.enableAdminRoutes !== false) {
       registerAdminRoutes(app, { db: identity.db });
@@ -320,6 +363,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       registerOrganizationAdminReadRoutes(app, { db: identity.db });
       if (organizationAdminDeps !== undefined) {
         registerOrganizationAdminRoutes(app, organizationAdminDeps);
+      }
+      if (evidenceStorageDeps !== undefined) {
+        registerAdminEvidenceRoutes(app, evidenceStorageDeps);
       }
     }
 
@@ -372,10 +418,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           // provider surface's production capability gate: same MFA
           // baseline, same fail-closed activation, no bypass.
           registerCatalogueRoutes(app, { db: identity.db });
+          if (evidenceStorageDeps !== undefined) {
+            registerProviderEvidenceRoutes(app, evidenceStorageDeps);
+          }
         }
       } else if (identity.enableProviderRoutes !== false) {
         registerProviderRoutes(app, providerDeps);
         registerCatalogueRoutes(app, { db: identity.db });
+        if (evidenceStorageDeps !== undefined) {
+          registerProviderEvidenceRoutes(app, evidenceStorageDeps);
+        }
       }
     }
   }

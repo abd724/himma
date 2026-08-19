@@ -185,6 +185,21 @@ export const HTTP_OUTCOMES = {
     message:
       'Provider verification decisions are unavailable until the verification evidence capability is active.',
   },
+  invalidEvidenceMetadata: {
+    statusCode: 422,
+    code: 'invalidEvidenceMetadata',
+    message: 'The evidence document metadata is not acceptable.',
+  },
+  evidenceStateConflict: {
+    statusCode: 409,
+    code: 'evidenceStateConflict',
+    message: 'The evidence record is not in a state that allows this action.',
+  },
+  storageUnavailable: {
+    statusCode: 503,
+    code: 'storageUnavailable',
+    message: 'Document storage is temporarily unavailable. Please try again shortly.',
+  },
   rateLimited: {
     statusCode: 429,
     code: 'rateLimited',

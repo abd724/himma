@@ -315,79 +315,99 @@ export async function registerEvidence(
   },
 ): Promise<RegisterEvidenceResult> {
   // Typed refusal ahead of the schema CHECKs (which remain the backstop).
-  if (
-    input.originalFilename.trim().length === 0 ||
-    input.originalFilename.length > 300 ||
-    !/^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,128}$/.test(input.declaredContentType)
-  ) {
+  if (!evidenceMetadataAcceptable(input.originalFilename, input.declaredContentType)) {
     return { kind: 'invalidMetadata' };
   }
   return withTransaction(deps.db, async (trx) => {
     if (!(await hasOperationsRole(trx, actor.userId))) return { kind: 'forbidden' as const };
     const row = await lockCase(trx, input.caseId);
     if (row === undefined) return { kind: 'caseNotFound' as const };
-    // Evidence changes only while the round is collecting (`open`): a round
-    // under review or terminal is never a moving target.
-    if (row.state !== 'open') return { kind: 'caseStateConflict' as const };
-    const requirement = await trx
-      .selectFrom('verification_case_requirement')
-      .select(['id'])
-      .where('id', '=', input.requirementId)
-      .where('case_id', '=', input.caseId)
-      .executeTakeFirst();
-    if (requirement === undefined) return { kind: 'requirementNotFound' as const };
+    return registerEvidenceForOpenCaseInTrx(trx, actor.userId, row, input);
+  });
+}
 
-    const current = await trx
-      .selectFrom('verification_evidence')
-      .select(['id', 'state'])
-      .where('requirement_id', '=', input.requirementId)
-      .where('state', '<>', 'superseded')
-      .forUpdate()
-      .executeTakeFirst();
-    let supersededEvidenceId: string | undefined;
-    if (current !== undefined) {
-      await trx
-        .updateTable('verification_evidence')
-        .set({ state: 'superseded', superseded_at: new Date() })
-        .where('id', '=', current.id)
-        .execute();
-      supersededEvidenceId = current.id;
-      await appendAuditEvent(trx, {
-        actorType: 'user',
-        actorId: actor.userId,
-        action: 'org.verification_evidence_superseded',
-        entityType: 'verification_evidence',
-        entityId: current.id,
-      });
-    }
+export function evidenceMetadataAcceptable(
+  originalFilename: string,
+  declaredContentType: string,
+): boolean {
+  return (
+    originalFilename.trim().length > 0 &&
+    originalFilename.length <= 300 &&
+    /^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,128}$/.test(declaredContentType)
+  );
+}
 
-    const evidenceId = newId();
+/** @internal — shared registration core (the operations path above and the
+ *  W3-4 provider-scoped path). The CALLER owns authorization and must have
+ *  locked/verified the case row belongs to the acting context; this core
+ *  owns the open-state rule, supersession, insertion, and auditing. */
+export async function registerEvidenceForOpenCaseInTrx(
+  trx: Trx,
+  actorUserId: string,
+  caseRow: { id: string; state: string },
+  input: { requirementId: string; originalFilename: string; declaredContentType: string },
+): Promise<RegisterEvidenceResult> {
+  // Evidence changes only while the round is collecting (`open`): a round
+  // under review or terminal is never a moving target.
+  if (caseRow.state !== 'open') return { kind: 'caseStateConflict' };
+  const requirement = await trx
+    .selectFrom('verification_case_requirement')
+    .select(['id'])
+    .where('id', '=', input.requirementId)
+    .where('case_id', '=', caseRow.id)
+    .executeTakeFirst();
+  if (requirement === undefined) return { kind: 'requirementNotFound' };
+
+  const current = await trx
+    .selectFrom('verification_evidence')
+    .select(['id', 'state'])
+    .where('requirement_id', '=', input.requirementId)
+    .where('state', '<>', 'superseded')
+    .forUpdate()
+    .executeTakeFirst();
+  let supersededEvidenceId: string | undefined;
+  if (current !== undefined) {
     await trx
-      .insertInto('verification_evidence')
-      .values({
-        id: evidenceId,
-        case_id: input.caseId,
-        requirement_id: input.requirementId,
-        state: 'pending_upload',
-        original_filename: input.originalFilename,
-        declared_content_type: input.declaredContentType,
-        created_by: actor.userId,
-      })
+      .updateTable('verification_evidence')
+      .set({ state: 'superseded', superseded_at: new Date() })
+      .where('id', '=', current.id)
       .execute();
+    supersededEvidenceId = current.id;
     await appendAuditEvent(trx, {
       actorType: 'user',
-      actorId: actor.userId,
-      action: 'org.verification_evidence_registered',
+      actorId: actorUserId,
+      action: 'org.verification_evidence_superseded',
       entityType: 'verification_evidence',
-      entityId: evidenceId,
+      entityId: current.id,
     });
-    return {
-      kind: 'evidenceRegistered' as const,
-      evidenceId,
-      version: 1,
-      ...(supersededEvidenceId !== undefined ? { supersededEvidenceId } : {}),
-    };
+  }
+
+  const evidenceId = newId();
+  await trx
+    .insertInto('verification_evidence')
+    .values({
+      id: evidenceId,
+      case_id: caseRow.id,
+      requirement_id: input.requirementId,
+      state: 'pending_upload',
+      original_filename: input.originalFilename,
+      declared_content_type: input.declaredContentType,
+      created_by: actorUserId,
+    })
+    .execute();
+  await appendAuditEvent(trx, {
+    actorType: 'user',
+    actorId: actorUserId,
+    action: 'org.verification_evidence_registered',
+    entityType: 'verification_evidence',
+    entityId: evidenceId,
   });
+  return {
+    kind: 'evidenceRegistered',
+    evidenceId,
+    version: 1,
+    ...(supersededEvidenceId !== undefined ? { supersededEvidenceId } : {}),
+  };
 }
 
 export type FinalizeEvidenceStorageResult =
