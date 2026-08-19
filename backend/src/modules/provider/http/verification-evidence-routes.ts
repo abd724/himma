@@ -230,9 +230,11 @@ export function registerProviderEvidenceRoutes(
           reply,
           result.kind === 'storageUnavailable'
             ? 'storageUnavailable'
-            : result.kind === 'forbidden'
-              ? 'forbidden'
-              : 'notFound',
+            : result.kind === 'evidenceSafetyUnavailable'
+              ? 'verificationEvidenceSafetyUnavailable'
+              : result.kind === 'forbidden'
+                ? 'forbidden'
+                : 'notFound',
         );
       }
       return sendDocument(reply, result);
@@ -269,9 +271,11 @@ export function registerAdminEvidenceRoutes(
           reply,
           result.kind === 'storageUnavailable'
             ? 'storageUnavailable'
-            : result.kind === 'forbidden'
-              ? 'forbidden'
-              : 'notFound',
+            : result.kind === 'evidenceSafetyUnavailable'
+              ? 'verificationEvidenceSafetyUnavailable'
+              : result.kind === 'forbidden'
+                ? 'forbidden'
+                : 'notFound',
         );
       }
       return sendDocument(reply, result);

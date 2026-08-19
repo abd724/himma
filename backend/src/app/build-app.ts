@@ -148,6 +148,17 @@ export interface IdentityHttpOptions {
   verificationEvidenceStorage?: {
     store: VerificationEvidenceObjectStore;
     upload?: Partial<VerificationEvidenceUploadConfig>;
+    /**
+     * Evidence content-safety capability report (W3-4 owner correction).
+     * Defaults FALSE: internal/admin retrieval of provider-uploaded bytes
+     * FAILS CLOSED (typed `verificationEvidenceSafetyUnavailable`) until a
+     * trusted content-safety/scanning boundary exists and reports ready —
+     * a HARD prerequisite for live Admin evidence review. This build
+     * contains NO scanning capability, so a production start claiming
+     * readiness refuses loudly (the D-S3-3 pattern) — there is no operator
+     * bypass. Dev/test set it true to exercise retrieval deterministically.
+     */
+    contentSafetyReady?: boolean;
   };
 }
 
@@ -305,6 +316,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
     // W3-4 private evidence storage: configured → the trusted server-
     // proxied surface exists; absent → fail-closed 404 everywhere.
+    // Content safety mirrors D-S3-3: no scanning capability exists in this
+    // build, so a production claim of readiness is a lie by construction
+    // and refuses startup — internal retrieval stays fail-closed instead.
+    if (
+      nodeEnv === 'production' &&
+      identity.verificationEvidenceStorage?.contentSafetyReady === true
+    ) {
+      throw new Error(
+        'verificationEvidenceStorage.contentSafetyReady cannot be true: this build contains no evidence content-safety/scanning capability, and internal admin retrieval of uploaded documents stays fail-closed until it exists (W3-4 owner correction; docs/31).',
+      );
+    }
     const evidenceStorageDeps: EvidenceStorageDeps | undefined =
       identity.verificationEvidenceStorage !== undefined
         ? {
@@ -314,6 +336,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
               ...DEFAULT_EVIDENCE_UPLOAD_CONFIG,
               ...identity.verificationEvidenceStorage.upload,
             } satisfies VerificationEvidenceUploadConfig,
+            contentSafetyReady: identity.verificationEvidenceStorage.contentSafetyReady ?? false,
           }
         : undefined;
     if (evidenceStorageDeps !== undefined) {

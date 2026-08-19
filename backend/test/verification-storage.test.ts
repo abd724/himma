@@ -149,6 +149,11 @@ beforeAll(async () => {
         store,
         // Small technical bound so the oversize proof stays cheap.
         upload: { maxBytes: 64_000 },
+        // Deterministic TEST composition: content safety reported ready so
+        // admin retrieval is exercised end-to-end. The default (and the
+        // only production-representable value) is FALSE — see the
+        // fail-closed suite below.
+        contentSafetyReady: true,
       },
     },
   });
@@ -240,7 +245,9 @@ describe('the complete storage lifecycle', () => {
       .execute();
     expect(audit.map((entry) => entry.action)).toContain('org.verification_evidence_accessed');
 
-    // Internal operations download works through the admin surface.
+    // Internal operations download works through the admin surface (this
+    // test composition reports content safety ready) — with attachment
+    // semantics and nosniff on every permitted download.
     const adminDownload = await app.inject({
       method: 'GET',
       url: `/admin/verification/evidence/${evidenceId}/content`,
@@ -248,6 +255,9 @@ describe('the complete storage lifecycle', () => {
     });
     expect(adminDownload.statusCode).toBe(200);
     expect(adminDownload.rawPayload.equals(PDF_BYTES)).toBe(true);
+    expect(adminDownload.headers['content-disposition']).toMatch(/^attachment; filename=/);
+    expect(adminDownload.headers['x-content-type-options']).toBe('nosniff');
+    expect(downloaded.headers['x-content-type-options']).toBe('nosniff');
 
     // No evidence-related outbox event carries anything (none exist).
     const outbox = await testDb.db
@@ -478,6 +488,109 @@ describe('failure and recovery (never a false `stored`)', () => {
     const retried = await uploadViaHttp(ownerBearer, orgId, evidenceId);
     expect(retried.statusCode).toBe(200);
     await expect(evaluateCaseReadiness(testDb.db, caseId)).resolves.toEqual({ kind: 'ready' });
+  });
+});
+
+describe('content-safety fail-close (W3-4 owner correction)', () => {
+  /** The LIVE-shaped composition: storage configured, content safety NOT
+   *  ready (the default — and the only value production can represent). */
+  async function guardedApp(): Promise<FastifyInstance> {
+    const guarded = buildApp({
+      identity: {
+        db: testDb.db,
+        accessTokenVerifier: ctx.verifier,
+        idTokenAdapter: new FakeAuthProviderAdapter(),
+        mailSender: new CaptureMailSender(),
+        rateLimiterStore: new InMemoryRateLimiterStore(),
+        staffInvitationConfig: parseStaffInvitationConfig('test', {}),
+        verificationEvidenceStorage: { store, upload: { maxBytes: 64_000 } },
+      },
+    });
+    await guarded.ready();
+    return guarded;
+  }
+
+  it('an AUTHORIZED operations admin is refused uploaded bytes with the typed safety condition — BEFORE any object-store read — while the provider owner still retrieves their own document', async () => {
+    const { orgId, caseId, requirementId, ownerBearer } = await provisionedOrg();
+    const registered = await registerViaHttp(ownerBearer, orgId, caseId, requirementId);
+    const { evidenceId } = registered.json() as { evidenceId: string };
+    await uploadViaHttp(ownerBearer, orgId, evidenceId);
+
+    const guarded = await guardedApp();
+    const getSpy = jest.spyOn(store, 'getObject');
+    try {
+      getSpy.mockClear();
+      const refused = await guarded.inject({
+        method: 'GET',
+        url: `/admin/verification/evidence/${evidenceId}/content`,
+        headers: { authorization: `Bearer ${opsBearer}` },
+      });
+      expect(refused.statusCode).toBe(503);
+      expect(refused.json().code).toBe('verificationEvidenceSafetyUnavailable');
+      // The refusal happened BEFORE the object store was touched.
+      expect(getSpy).not.toHaveBeenCalled();
+      // A distinct typed condition — never disguised as storage or auth
+      // failure — and nothing internal leaks in the refusal.
+      const body = refused.body.toLowerCase();
+      for (const leak of ['storage_ref', 'verification/', 'sha256', 'digest', 'key', 'bucket']) {
+        expect(body).not.toContain(leak);
+      }
+
+      // Authorization still comes FIRST: an unauthorized admin role gets
+      // the same forbidden as before and learns nothing about safety or
+      // storage state; a nonexistent id for a non-operations caller too.
+      const auditor = await createUser(testDb.db);
+      await grantRole(auditor, 'auditor');
+      const auditorBearer = (await bearerForUser(ctx, auditor)).bearer;
+      const auditorRefused = await guarded.inject({
+        method: 'GET',
+        url: `/admin/verification/evidence/${evidenceId}/content`,
+        headers: { authorization: `Bearer ${auditorBearer}` },
+      });
+      expect(auditorRefused.statusCode).toBe(403);
+      expect(auditorRefused.json().code).toBe('forbidden');
+
+      // Cross-org provider behavior is unchanged (not-found shape).
+      const other = await provisionedOrg();
+      const crossOrg = await guarded.inject({
+        method: 'GET',
+        url: providerPath(other.orgId, `/${evidenceId}/content`),
+        headers: { authorization: `Bearer ${other.ownerBearer}` },
+      });
+      expect(crossOrg.statusCode).toBe(404);
+
+      // The provider OWNER's retrieval of their OWN document is outside
+      // the gate: still served, still attachment + nosniff.
+      const ownerDownload = await guarded.inject({
+        method: 'GET',
+        url: providerPath(orgId, `/${evidenceId}/content`),
+        headers: { authorization: `Bearer ${ownerBearer}` },
+      });
+      expect(ownerDownload.statusCode).toBe(200);
+      expect(ownerDownload.rawPayload.equals(PDF_BYTES)).toBe(true);
+      expect(ownerDownload.headers['content-disposition']).toMatch(/^attachment; filename=/);
+      expect(ownerDownload.headers['x-content-type-options']).toBe('nosniff');
+    } finally {
+      getSpy.mockRestore();
+      await guarded.close();
+    }
+  });
+
+  it('production cannot claim content-safety readiness: this build has no scanning capability, so the claim refuses startup (no operator bypass exists)', () => {
+    expect(() =>
+      buildApp({
+        identity: {
+          db: testDb.db,
+          accessTokenVerifier: ctx.verifier,
+          idTokenAdapter: new FakeAuthProviderAdapter(),
+          mailSender: new CaptureMailSender(),
+          rateLimiterStore: new InMemoryRateLimiterStore(),
+          staffInvitationConfig: parseStaffInvitationConfig('test', {}),
+          nodeEnv: 'production',
+          verificationEvidenceStorage: { store, contentSafetyReady: true },
+        },
+      }),
+    ).toThrow(/contentSafetyReady cannot be true/);
   });
 });
 

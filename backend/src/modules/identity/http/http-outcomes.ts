@@ -200,6 +200,12 @@ export const HTTP_OUTCOMES = {
     code: 'storageUnavailable',
     message: 'Document storage is temporarily unavailable. Please try again shortly.',
   },
+  verificationEvidenceSafetyUnavailable: {
+    statusCode: 503,
+    code: 'verificationEvidenceSafetyUnavailable',
+    message:
+      'Internal document review is unavailable until the evidence content-safety capability is active.',
+  },
   rateLimited: {
     statusCode: 429,
     code: 'rateLimited',

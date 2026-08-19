@@ -49,6 +49,18 @@ export interface EvidenceStorageDeps {
   db: Db;
   store: VerificationEvidenceObjectStore;
   upload: VerificationEvidenceUploadConfig;
+  /**
+   * W3-4 correction (owner review): content safety/scanning is deferred
+   * INFRASTRUCTURE, so INTERNAL retrieval of provider-controlled bytes
+   * FAILS CLOSED until a trusted content-safety boundary reports ready.
+   * False (the only production-representable value — build-app refuses a
+   * true claim because no scanning capability exists in this build) means
+   * an operations admin never receives uploaded bytes; the provider
+   * owner's retrieval of their OWN organization's document is unaffected.
+   * This is a capability report, not an operator switch — the D-S3-3
+   * pattern, and a HARD prerequisite for live Admin evidence review.
+   */
+  contentSafetyReady: boolean;
 }
 
 /** Who is acting — resolved and authorized by the HTTP pipeline (provider)
@@ -247,6 +259,9 @@ export type DownloadEvidenceBinaryResult =
     }
   | { kind: 'forbidden' }
   | { kind: 'evidenceNotFound' }
+  /** Internal retrieval refused: content safety unavailable (fail closed —
+   *  a distinct typed condition, never disguised as storage/auth failure). */
+  | { kind: 'evidenceSafetyUnavailable' }
   | { kind: 'storageUnavailable' };
 
 /**
@@ -277,6 +292,14 @@ export async function downloadEvidenceBinary(
   });
   if (admitted.kind !== 'admitted') return admitted;
   const row = admitted.row;
+
+  // The content-safety gate (W3-4 correction): AFTER authorization (an
+  // unauthorized or cross-org caller learns nothing about safety state),
+  // BEFORE any object-store read. Provider-owner retrieval of the OWN
+  // organization's document is deliberately outside this gate.
+  if (context.kind === 'operations' && !deps.contentSafetyReady) {
+    return { kind: 'evidenceSafetyUnavailable' };
+  }
 
   let object: { body: Buffer; contentType: string } | null;
   try {
