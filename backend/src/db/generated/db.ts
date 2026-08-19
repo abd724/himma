@@ -573,6 +573,65 @@ export interface StepUpGrant {
   version: Generated<number>;
 }
 
+export interface VerificationCase {
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  id: string;
+  opened_by: string;
+  organization_id: string;
+  /**
+   * Reference of the requirement policy snapshotted into verification_case_requirement when the round opened (D-W3-3 deferred: policy is injected configuration, never schema). Later policy changes never rewrite historical rounds.
+   */
+  policy_version: string;
+  round: number;
+  state: Generated<string>;
+  superseded_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface VerificationCaseRequirement {
+  case_id: string;
+  created_at: Generated<Timestamp>;
+  description_en: string | null;
+  id: string;
+  label_en: string;
+  organization_id: string;
+  required: boolean;
+  requirement_key: string;
+  sort_hint: Generated<number>;
+}
+
+export interface VerificationDecision {
+  case_id: string;
+  created_at: Generated<Timestamp>;
+  decided_at: Generated<Timestamp>;
+  decided_by: string;
+  id: string;
+  internal_note: string | null;
+  outcome: string;
+  provider_safe_message: string | null;
+  reason_code: string | null;
+}
+
+export interface VerificationEvidence {
+  byte_size: Int8 | null;
+  case_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  declared_content_type: string;
+  id: string;
+  original_filename: string;
+  requirement_id: string;
+  sha256_digest: string | null;
+  state: Generated<string>;
+  storage_ref: string | null;
+  stored_at: Timestamp | null;
+  superseded_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface DB {
   activity_type: ActivityType;
   admin_role_assignment: AdminRoleAssignment;
@@ -608,4 +667,8 @@ export interface DB {
   staff_membership: StaffMembership;
   staff_membership_branch: StaffMembershipBranch;
   step_up_grant: StepUpGrant;
+  verification_case: VerificationCase;
+  verification_case_requirement: VerificationCaseRequirement;
+  verification_decision: VerificationDecision;
+  verification_evidence: VerificationEvidence;
 }
