@@ -134,11 +134,17 @@ describe('admin policy category', () => {
   it('declares every admin route with an explicit admin-category policy — the /admin/me bootstrap on the baseline, every sensitive operation on adminStepUp', () => {
     const adminRoutes = app.routePolicyInventory.filter((r) => r.url.startsWith('/admin'));
     expect(adminRoutes.length).toBeGreaterThanOrEqual(5);
+    // W3-1 final split (+ the W3-2 reads): ordinary internal READ surfaces
+    // sit on the baseline; the pre-existing sensitive set keeps its
+    // recent-factor strength — the split must never weaken it. NB the
+    // /admin/organizations URL carries BOTH: GET (read, baseline) and POST
+    // (creation, step-up) — the assertion is per method.
+    const BASELINE = new Set(['/admin/me', '/admin/organizations', '/admin/organizations/:organizationId']);
     for (const route of adminRoutes) {
-      // W3-1 final split: ONLY the ordinary bootstrap read sits on the
-      // baseline; the pre-existing sensitive set keeps its recent-factor
-      // strength — the split must never weaken it.
-      expect(route.policy).toBe(route.url === '/admin/me' ? 'admin' : 'adminStepUp');
+      const isRead = (route.method === 'GET' || route.method === 'HEAD') && BASELINE.has(route.url);
+      expect(`${route.method} ${route.url} → ${route.policy}`).toBe(
+        `${route.method} ${route.url} → ${isRead ? 'admin' : 'adminStepUp'}`,
+      );
     }
   });
 

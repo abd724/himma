@@ -1,5 +1,6 @@
 import type { AdminAuthAdapter } from './adapter';
 import type { AdminAccessPort } from '../access/contract';
+import type { AdminProvidersReadPort } from '../providers/contract';
 
 /**
  * FAIL-CLOSED default: a production build with no configured authentication
@@ -23,5 +24,12 @@ export function createUnconfiguredAuthAdapter(): AdminAuthAdapter {
 export function createUnconfiguredAccessPort(): AdminAccessPort {
   return {
     resolveAccess: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredProvidersPort(): AdminProvidersReadPort {
+  return {
+    listOrganizations: async () => ({ kind: 'unavailable' }),
+    getOrganization: async () => ({ kind: 'unavailable' }),
   };
 }

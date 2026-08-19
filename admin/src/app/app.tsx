@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { SessionProvider } from '../auth/session-context';
 import type { AdminSessionState } from '../auth/session-machine';
 import {
   createUnconfiguredAccessPort,
   createUnconfiguredAuthAdapter,
+  createUnconfiguredProvidersPort,
 } from '../auth/unconfigured';
+import type { AdminProvidersReadPort } from '../providers/contract';
 import type { AuthRuntime } from './auth-runtime';
 
 /**
@@ -41,18 +43,32 @@ export function AppProviders({
         mode: 'unconfigured',
         adapter: createUnconfiguredAuthAdapter(),
         accessPort: createUnconfiguredAccessPort(),
+        providersPort: createUnconfiguredProvidersPort(),
       },
   );
 
   return (
     <QueryClientProvider client={ownedClient}>
-      <SessionProvider
-        adapter={runtime.adapter}
-        accessPort={runtime.accessPort}
-        {...(initialSessionState ? { initialState: initialSessionState } : {})}
-      >
-        {children}
-      </SessionProvider>
+      <ProvidersPortContext.Provider value={runtime.providersPort}>
+        <SessionProvider
+          adapter={runtime.adapter}
+          accessPort={runtime.accessPort}
+          {...(initialSessionState ? { initialState: initialSessionState } : {})}
+        >
+          {children}
+        </SessionProvider>
+      </ProvidersPortContext.Provider>
     </QueryClientProvider>
   );
+}
+
+const ProvidersPortContext = createContext<AdminProvidersReadPort | null>(null);
+
+/** The composed provider-directory read port (fixture/live/unconfigured). */
+export function useProvidersPort(): AdminProvidersReadPort {
+  const port = useContext(ProvidersPortContext);
+  if (port === null) {
+    throw new Error('useProvidersPort requires AppProviders');
+  }
+  return port;
 }

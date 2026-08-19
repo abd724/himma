@@ -52,4 +52,22 @@ describe('admin accessibility (jest-axe)', () => {
     await screen.findByRole('heading', { name: 'This console is for Himma staff' });
     await expectNoViolations(container);
   });
+
+  test('provider directory (W3-2): table, search, filters', async () => {
+    const { container } = renderAdmin({
+      asIdentity: 'ops@himma.demo',
+      initialEntries: ['/providers'],
+    });
+    await screen.findByRole('link', { name: 'Marina Ace Tennis' });
+    await expectNoViolations(container);
+  });
+
+  test('provider detail (W3-2): sectioned internal record', async () => {
+    const { container } = renderAdmin({
+      asIdentity: 'ops@himma.demo',
+      initialEntries: ['/providers/org-marina-ace'],
+    });
+    await screen.findByRole('heading', { name: 'Marina Ace Tennis' });
+    await expectNoViolations(container);
+  });
 });

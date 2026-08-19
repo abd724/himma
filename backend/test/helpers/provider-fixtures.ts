@@ -24,15 +24,16 @@ let counter = 0;
 
 export async function createProviderOrg(
   db: Kysely<DB>,
-  options: { state?: string; displayName?: string; branches?: number } = {},
+  options: { state?: string; displayName?: string; legalName?: string; branches?: number } = {},
 ): Promise<{ orgId: string; branchIds: string[] }> {
   counter += 1;
   const orgId = newId();
   const state = options.state ?? 'live';
   await sql`
-    INSERT INTO organization (id, legal_name, trade_name, verification_state, suspended_at)
-    VALUES (${orgId}, ${`Legal ${counter} LLC`}, ${`Trade ${counter}`}, ${state},
-            ${state === 'suspended' ? new Date() : null})`.execute(db);
+    INSERT INTO organization (id, legal_name, trade_name, verification_state, suspended_at, offboarded_at)
+    VALUES (${orgId}, ${options.legalName ?? `Legal ${counter} LLC`}, ${`Trade ${counter}`}, ${state},
+            ${state === 'suspended' ? new Date() : null},
+            ${state === 'offboarded' ? new Date() : null})`.execute(db);
   await sql`
     INSERT INTO organization_public_profile (organization_id, display_name)
     VALUES (${orgId}, ${options.displayName ?? `Provider ${counter}`})`.execute(db);

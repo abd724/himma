@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "jest",
+    "test:contract": "jest --config jest.contract.config.cjs --runInBand",
     "e2e": "playwright test"
   },
   "dependencies": {

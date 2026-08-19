@@ -13,6 +13,8 @@ import type {
   AdminCapability,
   AdminRole,
 } from '../../access/contract';
+import type { AdminProvidersReadPort } from '../../providers/contract';
+import { createFixtureProvidersPort } from './fixture-providers';
 
 /**
  * Deterministic FIXTURE admin runtime — design/testing/demo identities
@@ -106,11 +108,15 @@ export interface FixtureAdminControls {
    *  resolutions answer stepUpRequired until a step-up completes. Never
    *  wired to ordinary bootstrap. */
   demandStepUp(): void;
+  /** Toggle a provider-read outage (directory/detail resolve unavailable
+   *  while active) — models a backend incident for error-state tests. */
+  setProvidersOutage(active: boolean): void;
 }
 
 export interface FixtureAdminRuntime {
   adapter: AdminAuthAdapter;
   accessPort: AdminAccessPort;
+  providersPort: AdminProvidersReadPort;
   controls: FixtureAdminControls;
   /** Test-harness seeding: start signed in as a fixture identity. */
   seedSession(email: string): void;
@@ -122,6 +128,7 @@ interface FixtureState {
   /** True only while a (future) action-level step-up demand is open. */
   stepUpDemanded: boolean;
   accessFailurePending: boolean;
+  providersOutage: boolean;
   revoked: Set<string>;
 }
 
@@ -131,6 +138,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     pendingChallenge: null,
     stepUpDemanded: false,
     accessFailurePending: false,
+    providersOutage: false,
     revoked: new Set(),
   };
   const listeners = new Set<(interrupt: SessionInterrupt) => void>();
@@ -245,9 +253,30 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     },
   };
 
+  // The fixture provider directory answers with the CURRENT identity's
+  // authority — mirroring backend truth (operations-only): revoked or
+  // capability-less identities are refused, a missing session is
+  // unavailable, never silently served.
+  const providersPort = createFixtureProvidersPort({
+    currentAuthority() {
+      const identity = state.current;
+      if (identity === null) return null;
+      const roles = state.revoked.has(identity.email) ? [] : identity.roles;
+      return {
+        hasProvidersCapability: fixtureCapabilities(roles).includes('providers.operate'),
+      };
+    },
+    takeFailure() {
+      return state.providersOutage;
+    },
+  });
+
   const controls: FixtureAdminControls = {
     failNextAccessResolve() {
       state.accessFailurePending = true;
+    },
+    setProvidersOutage(active: boolean) {
+      state.providersOutage = active;
     },
     revokeAllRoles(email) {
       state.revoked.add(email);
@@ -272,5 +301,5 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     state.stepUpDemanded = false;
   };
 
-  return { adapter, accessPort, controls, seedSession };
+  return { adapter, accessPort, providersPort, controls, seedSession };
 }

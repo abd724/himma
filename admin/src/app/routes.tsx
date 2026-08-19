@@ -5,6 +5,8 @@ import { canAccessPath } from './nav-model';
 import { AccessGate } from '../shell/access-gate';
 import { AdminShell } from '../shell/admin-shell';
 import { DashboardPage } from '../pages/dashboard-page';
+import { ProvidersIndexPage } from '../pages/providers/providers-index-page';
+import { ProviderDetailPage } from '../pages/providers/provider-detail-page';
 import {
   NoCapabilityPage,
   NotFoundPage,
@@ -13,10 +15,11 @@ import {
 
 /**
  * Route protection (task §18): AccessGate admits ONLY an `active` session
- * (valid Himma session + MFA + recent factor + a real `/admin/me`
- * resolution) into the shell; GuardedArea then applies the capability gate
- * per surface. All of this is UX — every future backend endpoint stays
- * independently authorized by the `admin` policy and its role checks.
+ * (valid Himma session + MFA assurance + a real `/admin/me` resolution —
+ * the W3-1 baseline; no recent-factor demand) into the shell; GuardedArea
+ * then applies the capability gate per surface. All of this is UX — every
+ * backend endpoint stays independently authorized by its admin policy and
+ * role checks.
  */
 function AdminRoot() {
   return (
@@ -55,16 +58,8 @@ export const adminRoutes: RouteObject[] = [
     children: [
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: area(<DashboardPage />) },
-      {
-        path: 'providers',
-        element: area(
-          <PlaceholderPage
-            title="Providers"
-            slice="W3-2"
-            description="The provider directory, review queue, and organization detail connect to new real admin reads in W3-2. Nothing is shown here until that truth exists."
-          />,
-        ),
-      },
+      { path: 'providers', element: area(<ProvidersIndexPage />) },
+      { path: 'providers/:organizationId', element: area(<ProviderDetailPage />) },
       {
         path: 'verification',
         element: area(

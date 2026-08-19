@@ -3,10 +3,13 @@ import { resolveAuthMode } from '../auth/auth-mode';
 import {
   createUnconfiguredAccessPort,
   createUnconfiguredAuthAdapter,
+  createUnconfiguredProvidersPort,
 } from '../auth/unconfigured';
 import type { AdminEnv } from '../api/env';
 import type { AdminAccessPort } from '../access/contract';
+import type { AdminProvidersReadPort } from '../providers/contract';
 import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
+import { createLiveProvidersReadPort } from '../services/live/live-providers-port';
 import {
   createFixtureAdminRuntime,
   type FixtureAdminControls,
@@ -16,6 +19,7 @@ export interface AuthRuntime {
   readonly mode: 'fixture' | 'live' | 'unconfigured';
   readonly adapter: AdminAuthAdapter;
   readonly accessPort: AdminAccessPort;
+  readonly providersPort: AdminProvidersReadPort;
 }
 
 declare global {
@@ -46,7 +50,12 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
       return unconfiguredRuntime();
     }
     const live = createLiveAuthRuntime(liveConfig);
-    return { mode, adapter: live.adapter, accessPort: live.accessPort };
+    return {
+      mode,
+      adapter: live.adapter,
+      accessPort: live.accessPort,
+      providersPort: createLiveProvidersReadPort(live.transport),
+    };
   }
 
   if (mode === 'fixture') {
@@ -57,7 +66,12 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
         seedSession: fixture.seedSession,
       };
     }
-    return { mode, adapter: fixture.adapter, accessPort: fixture.accessPort };
+    return {
+      mode,
+      adapter: fixture.adapter,
+      accessPort: fixture.accessPort,
+      providersPort: fixture.providersPort,
+    };
   }
 
   return unconfiguredRuntime();
@@ -90,5 +104,6 @@ function unconfiguredRuntime(): AuthRuntime {
     mode: 'unconfigured',
     adapter: createUnconfiguredAuthAdapter(),
     accessPort: createUnconfiguredAccessPort(),
+    providersPort: createUnconfiguredProvidersPort(),
   };
 }

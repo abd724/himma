@@ -18,7 +18,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', capability: null, pendingSlice: null },
-  { path: '/providers', label: 'Providers', capability: 'providers.operate', pendingSlice: 'W3-2' },
+  { path: '/providers', label: 'Providers', capability: 'providers.operate', pendingSlice: null },
   {
     path: '/verification',
     label: 'Verification',

@@ -75,6 +75,13 @@ describe('mode resolution (fail-closed)', () => {
       runtime.adapter.signIn({ email: 'ops@himma.demo', password: 'admin-demo' }),
     ).resolves.toEqual({ kind: 'failure' });
     await expect(runtime.accessPort.resolveAccess()).resolves.toEqual({ kind: 'unavailable' });
+    // The W3-2 provider directory is equally fail-closed — no fixture data.
+    await expect(runtime.providersPort.listOrganizations({ limit: 10 })).resolves.toEqual({
+      kind: 'unavailable',
+    });
+    await expect(runtime.providersPort.getOrganization('any')).resolves.toEqual({
+      kind: 'unavailable',
+    });
     expect(window.__himmaAdminAccessFixture).toBeUndefined();
   });
 
@@ -100,11 +107,12 @@ describe('structural sweeps (task §13/§29)', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
 
-  test('the live auth modules are structurally isolated from fixture code', () => {
+  test('the live auth + provider-read modules are structurally isolated from fixture code', () => {
     for (const module of [
       'auth/live/live-auth-runtime.ts',
       'auth/live/cognito-api.ts',
       'api/client.ts',
+      'services/live/live-providers-port.ts',
     ]) {
       expect(src(module)).not.toMatch(/services\/mock|fixture/i);
     }
@@ -121,7 +129,7 @@ describe('structural sweeps (task §13/§29)', () => {
   });
 
   test('no browser-readable token storage exists anywhere in the admin source', () => {
-    const roots = ['auth', 'api', 'app', 'services', 'access', 'shell', 'pages'];
+    const roots = ['auth', 'api', 'app', 'services', 'access', 'shell', 'pages', 'providers', 'hooks'];
     const files: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir)) {

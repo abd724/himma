@@ -37,6 +37,7 @@ import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
 import { registerMfaRoutes } from '../modules/identity/http/mfa-routes';
 import { registerOrganizationAdminRoutes } from '../modules/provider/http/organization-admin-routes';
+import { registerOrganizationAdminReadRoutes } from '../modules/provider/http/organization-admin-read-routes';
 import { registerProviderRoutes } from '../modules/provider/http/provider-routes';
 import { registerStorefrontRoutes } from '../modules/provider/http/storefront-routes';
 import { installRoutePolicyGuard } from '../modules/identity/http/policies';
@@ -306,6 +307,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         // production capability gate — same MFA enforcement, no bypass.
         registerAdminModerationRoutes(app, { db: identity.db });
         registerAdminTaxonomyRoutes(app, { db: identity.db });
+        // W3-2 internal organization reads — same gate, db-only deps.
+        registerOrganizationAdminReadRoutes(app, { db: identity.db });
         if (organizationAdminDeps !== undefined) {
           registerOrganizationAdminRoutes(app, organizationAdminDeps);
         }
@@ -314,6 +317,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       registerAdminRoutes(app, { db: identity.db });
       registerAdminModerationRoutes(app, { db: identity.db });
       registerAdminTaxonomyRoutes(app, { db: identity.db });
+      registerOrganizationAdminReadRoutes(app, { db: identity.db });
       if (organizationAdminDeps !== undefined) {
         registerOrganizationAdminRoutes(app, organizationAdminDeps);
       }
