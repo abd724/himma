@@ -28,6 +28,7 @@ export function renderAdmin(options: {
     accessPort: fixture.accessPort,
     providersPort: fixture.providersPort,
     verificationPort: fixture.verificationPort,
+    moderationPort: fixture.moderationPort,
   };
   const router = createMemoryRouter(adminRoutes, {
     initialEntries: options.initialEntries ?? ['/'],

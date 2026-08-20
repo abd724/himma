@@ -254,6 +254,22 @@ describe('authorization surface (docs/28 §16.3: admin policy + operations role)
     expect(await programState(programId)).toBe('submitted');
   });
 
+  it('W3-6 policy split: a STALE-factor operations admin can READ the queues/detail, but every decision still demands a recent factor', async () => {
+    const { programId } = await submittedProgram('Stale Factor Split');
+    const stale = await bearerForUser(ctx, ops.userId, {
+      authTime: new Date(Date.now() - 3_600_000),
+    });
+    expect((await inject('GET', '/admin/listings?state=submitted', stale.bearer)).statusCode).toBe(200);
+    expect((await inject('GET', `/admin/listings/${programId}`, stale.bearer)).statusCode).toBe(200);
+    expect((await inject('GET', '/admin/revisions', stale.bearer)).statusCode).toBe(200);
+    const refused = await inject('POST', `/admin/listings/${programId}/review/start`, stale.bearer, {
+      expectedVersion: 2,
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().code).toBe('stepUpRequired');
+    expect(await programState(programId)).toBe('submitted');
+  });
+
   it('revoked admin authority bites on the very next request', async () => {
     const shortLived = await makeAdmin('operations');
     expect((await inject('GET', '/admin/listings', shortLived.bearer)).statusCode).toBe(200);
@@ -674,8 +690,13 @@ describe('event payload hygiene and route boundary', () => {
       ].sort(),
     );
     for (const route of moderation) {
-      // Retained recent-factor strength (W3-1 final split — not weakened).
-      expect(route.policy).toBe('adminStepUp');
+      // W3-6 policy split: queue/detail READS ride the admin baseline
+      // (W3-1 ruling); every DECISION mutation keeps its recent-factor
+      // strength on adminStepUp (D-W3-5 still owner-pending).
+      const isRead = route.method === 'GET' || route.method === 'HEAD';
+      expect(`${route.method} ${route.url} → ${route.policy}`).toBe(
+        `${route.method} ${route.url} → ${isRead ? 'admin' : 'adminStepUp'}`,
+      );
     }
     // Still no session/booking/payment surface. (The Slice-2 /auth/session
     // identity routes are the AUTH session store — not the booking-domain

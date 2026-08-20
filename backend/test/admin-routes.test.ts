@@ -144,6 +144,9 @@ describe('admin policy category', () => {
       '/admin/organizations',
       '/admin/organizations/:organizationId',
       '/admin/organizations/:organizationId/verification', // W3-5 workspace read
+      '/admin/listings', // W3-6 moderation queue read
+      '/admin/listings/:programId', // W3-6 moderation detail read
+      '/admin/revisions', // W3-6 revision queue read
     ]);
     for (const route of adminRoutes) {
       const isRead = (route.method === 'GET' || route.method === 'HEAD') && BASELINE.has(route.url);

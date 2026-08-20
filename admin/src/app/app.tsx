@@ -5,11 +5,13 @@ import type { AdminSessionState } from '../auth/session-machine';
 import {
   createUnconfiguredAccessPort,
   createUnconfiguredAuthAdapter,
+  createUnconfiguredModerationPort,
   createUnconfiguredProvidersPort,
   createUnconfiguredVerificationPort,
 } from '../auth/unconfigured';
 import type { AdminProvidersReadPort } from '../providers/contract';
 import type { AdminVerificationPort } from '../verification/contract';
+import type { AdminModerationPort } from '../moderation/contract';
 import type { AuthRuntime } from './auth-runtime';
 
 /**
@@ -47,6 +49,7 @@ export function AppProviders({
         accessPort: createUnconfiguredAccessPort(),
         providersPort: createUnconfiguredProvidersPort(),
         verificationPort: createUnconfiguredVerificationPort(),
+        moderationPort: createUnconfiguredModerationPort(),
       },
   );
 
@@ -54,13 +57,15 @@ export function AppProviders({
     <QueryClientProvider client={ownedClient}>
       <ProvidersPortContext.Provider value={runtime.providersPort}>
         <VerificationPortContext.Provider value={runtime.verificationPort}>
-          <SessionProvider
-            adapter={runtime.adapter}
-            accessPort={runtime.accessPort}
-            {...(initialSessionState ? { initialState: initialSessionState } : {})}
-          >
-            {children}
-          </SessionProvider>
+          <ModerationPortContext.Provider value={runtime.moderationPort}>
+            <SessionProvider
+              adapter={runtime.adapter}
+              accessPort={runtime.accessPort}
+              {...(initialSessionState ? { initialState: initialSessionState } : {})}
+            >
+              {children}
+            </SessionProvider>
+          </ModerationPortContext.Provider>
         </VerificationPortContext.Provider>
       </ProvidersPortContext.Provider>
     </QueryClientProvider>
@@ -69,12 +74,22 @@ export function AppProviders({
 
 const ProvidersPortContext = createContext<AdminProvidersReadPort | null>(null);
 const VerificationPortContext = createContext<AdminVerificationPort | null>(null);
+const ModerationPortContext = createContext<AdminModerationPort | null>(null);
 
 /** The composed provider-directory read port (fixture/live/unconfigured). */
 export function useProvidersPort(): AdminProvidersReadPort {
   const port = useContext(ProvidersPortContext);
   if (port === null) {
     throw new Error('useProvidersPort requires AppProviders');
+  }
+  return port;
+}
+
+/** The composed moderation port (fixture/live/unconfigured). */
+export function useModerationPort(): AdminModerationPort {
+  const port = useContext(ModerationPortContext);
+  if (port === null) {
+    throw new Error('useModerationPort requires AppProviders');
   }
   return port;
 }

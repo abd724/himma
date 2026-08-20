@@ -15,8 +15,10 @@ import type {
 } from '../../access/contract';
 import type { AdminProvidersReadPort } from '../../providers/contract';
 import type { AdminVerificationPort } from '../../verification/contract';
+import type { AdminModerationPort } from '../../moderation/contract';
 import { createFixtureProviderData, createFixtureProvidersPort } from './fixture-providers';
 import { createFixtureVerificationPort } from './fixture-verification';
+import { createFixtureModerationData, createFixtureModerationPort } from './fixture-moderation';
 
 /**
  * Deterministic FIXTURE admin runtime — design/testing/demo identities
@@ -124,6 +126,7 @@ export interface FixtureAdminRuntime {
   accessPort: AdminAccessPort;
   providersPort: AdminProvidersReadPort;
   verificationPort: AdminVerificationPort;
+  moderationPort: AdminModerationPort;
   controls: FixtureAdminControls;
   /** Test-harness seeding: start signed in as a fixture identity. */
   seedSession(email: string): void;
@@ -300,6 +303,25 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     },
     providerData,
   );
+  const moderationPort = createFixtureModerationPort(
+    {
+      currentAuthority() {
+        const identity = state.current;
+        if (identity === null) return null;
+        const roles = state.revoked.has(identity.email) ? [] : identity.roles;
+        return {
+          hasCatalogueCapability: fixtureCapabilities(roles).includes('catalogue.moderate'),
+        };
+      },
+      takeFailure() {
+        return state.providersOutage;
+      },
+      stepUpDemanded() {
+        return state.stepUpDemanded;
+      },
+    },
+    createFixtureModerationData(),
+  );
 
   const controls: FixtureAdminControls = {
     failNextAccessResolve() {
@@ -334,5 +356,13 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     state.stepUpDemanded = false;
   };
 
-  return { adapter, accessPort, providersPort, verificationPort, controls, seedSession };
+  return {
+    adapter,
+    accessPort,
+    providersPort,
+    verificationPort,
+    moderationPort,
+    controls,
+    seedSession,
+  };
 }

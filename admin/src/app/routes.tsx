@@ -7,6 +7,9 @@ import { AdminShell } from '../shell/admin-shell';
 import { DashboardPage } from '../pages/dashboard-page';
 import { ProvidersIndexPage } from '../pages/providers/providers-index-page';
 import { ProviderDetailPage } from '../pages/providers/provider-detail-page';
+import { ModerationQueuePage } from '../pages/moderation/moderation-queue-page';
+import { ModerationDetailPage } from '../pages/moderation/moderation-detail-page';
+import { RevisionQueuePage } from '../pages/moderation/revision-queue-page';
 import {
   NoCapabilityPage,
   NotFoundPage,
@@ -66,26 +69,9 @@ export const adminRoutes: RouteObject[] = [
         path: 'verification',
         element: <Navigate to="/providers?view=queue" replace />,
       },
-      {
-        path: 'moderation',
-        element: area(
-          <PlaceholderPage
-            title="Catalogue moderation"
-            slice="W3-6"
-            description="The listing review queue consumes the existing backend moderation contracts in W3-6. Approval rests at approved — publication stays with the provider."
-          />,
-        ),
-      },
-      {
-        path: 'revisions',
-        element: area(
-          <PlaceholderPage
-            title="Revision moderation"
-            slice="W3-6"
-            description="Protected-change review over the existing ProgramRevision contracts (including the reviewer change-set) connects in W3-6."
-          />,
-        ),
-      },
+      { path: 'moderation', element: area(<ModerationQueuePage />) },
+      { path: 'moderation/:programId', element: area(<ModerationDetailPage />) },
+      { path: 'revisions', element: area(<RevisionQueuePage />) },
       {
         path: 'taxonomy',
         element: area(

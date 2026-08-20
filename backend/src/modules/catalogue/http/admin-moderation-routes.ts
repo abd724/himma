@@ -1,15 +1,15 @@
 /**
  * Internal Himma catalogue moderation routes (docs/28 §16.3) — the review
  * transitions for submitted listings and the decision surface for
- * provider-submitted revisions, on the `adminStepUp` policy (live session
- * + MFA assurance + recent MFA factor + ≥1 active database admin role —
- * the pre-split semantics, deliberately retained by the W3-1
- * baseline/step-up separation); the services additionally require the
- * `operations` role fresh per
- * transaction. Provider memberships, customer accounts, and Cognito claims
- * satisfy nothing here. Named action routes only — no writable state field
- * exists; nothing here publishes a listing (D-S4-2), and no customer-public
- * or taxonomy surface is registered.
+ * provider-submitted revisions. Policy split (W3-1 ruling, applied by the
+ * owning W3-6 slice): the queue/detail READS are ordinary internal read
+ * surfaces on the `admin` BASELINE; every DECISION mutation keeps the
+ * safer `adminStepUp` boundary (recent MFA factor) pending the D-W3-5
+ * owner ruling. The services additionally require the `operations` role
+ * fresh per transaction. Provider memberships, customer accounts, and
+ * Cognito claims satisfy nothing here. Named action routes only — no
+ * writable state field exists; nothing here publishes a listing (D-S4-2),
+ * and no customer-public or taxonomy surface is registered.
  */
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -121,7 +121,7 @@ export function registerAdminModerationRoutes(
   app.get(
     '/admin/listings',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       schema: {
         querystring: QueueQuery,
         response: {
@@ -159,7 +159,7 @@ export function registerAdminModerationRoutes(
   app.get(
     '/admin/listings/:programId',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       schema: {
         params: Type.Object({ programId: Uuid }),
         response: {
@@ -247,7 +247,7 @@ export function registerAdminModerationRoutes(
   app.get(
     '/admin/revisions',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       schema: {
         querystring: QueueQuery,
         response: {
