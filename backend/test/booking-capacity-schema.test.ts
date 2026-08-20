@@ -5,7 +5,9 @@
  * both directions (overselling + floor), non-negative counters,
  * exactly-one org-bound unit targets, hold/booking/unit state machines and
  * immutability triggers, purchaser≠participant representability, live
- * double-booking uniques, quote immutability + total==Σ(lines), grants,
+ * double-booking uniques, the paid-booking intermediate state (an ACTIVE
+ * hold under a pending_payment booking — consumption is a separate paired
+ * boundary), quote immutability + total==Σ(lines), grants,
  * and the expected schema objects. Deliberately NOT proven here: the
  * racing-transaction claim algorithm — that is the S5-2 concurrency gate;
  * these CHECKs are its final backstop, not its implementation.
@@ -584,6 +586,91 @@ describe('booking facts and machine (docs/24 §5.6)', () => {
     await sql`UPDATE capacity_hold SET state = 'expired' WHERE id = ${hold1}`.execute(testDb.db);
     const hold3 = await makeHold({ cohortId, participantId: participantChild, accountId: accountParent });
     await makeBooking({ cohortId, holdId: hold3, participantId: participantChild });
+  });
+});
+
+describe('the paid-booking intermediate state (docs/24 §5.5/§5.6 seam; S5-1 owner probe)', () => {
+  it('a pending_payment booking rests on an ACTIVE hold: the hold is NOT consumed, the seat stays HELD, and consumption remains a separate paired boundary', async () => {
+    const sessionId = await makeSession();
+    const quoteId = await makeQuote({
+      accountId: accountParent,
+      participantId: participantChild,
+      sessionId,
+    });
+    // The S5-2 claim shape: hold row + held_count seat in ONE transaction.
+    const holdId = newId();
+    await testDb.db.transaction().execute(async (trx) => {
+      await sql`UPDATE session SET held_count = held_count + 1 WHERE id = ${sessionId}`.execute(trx);
+      await trx
+        .insertInto('capacity_hold')
+        .values({
+          id: holdId,
+          organization_id: orgA.orgId,
+          session_id: sessionId,
+          camp_week_id: null,
+          cohort_id: null,
+          account_id: accountParent,
+          participant_id: participantChild,
+          quote_id: quoteId,
+          expires_at: FUTURE,
+        } as never)
+        .execute();
+    });
+    const bookingId = await makeBooking({ sessionId, holdId, quoteId });
+
+    // The legitimate intermediate state S5-3/payments depend on: the booking
+    // rests at pending_payment, its hold stays ACTIVE with no consumption
+    // fact, and the seat is still counted in held_count — never booked_count.
+    const state = await sql<{
+      booking_state: string;
+      hold_state: string;
+      consumed_by_booking_id: string | null;
+      booked_count: number;
+      held_count: number;
+    }>`
+      SELECT b.state AS booking_state, h.state AS hold_state, h.consumed_by_booking_id,
+             s.booked_count, s.held_count
+      FROM booking b
+      JOIN capacity_hold h ON h.id = b.hold_id
+      JOIN session s ON s.id = b.session_id
+      WHERE b.id = ${bookingId}`.execute(testDb.db);
+    expect(state.rows[0]).toEqual({
+      booking_state: 'pending_payment',
+      hold_state: 'active',
+      consumed_by_booking_id: null,
+      booked_count: 0,
+      held_count: 1,
+    });
+
+    // The live-uniqueness rules still bite around the intermediate state.
+    await expect(makeHold({ sessionId })).rejects.toThrow(/uq_capacity_hold_live_session/);
+    await expect(makeBooking({ sessionId, holdId })).rejects.toThrow(/uq_booking_live_session/);
+
+    // An ACTIVE hold can never carry consumption facts: a fact-only UPDATE is
+    // trigger-refused, and ck_capacity_hold_consumed_pairing refuses the row
+    // shape outright (proven at INSERT, where no transition trigger runs).
+    await expect(
+      sql`UPDATE capacity_hold SET consumed_by_booking_id = ${bookingId}
+          WHERE id = ${holdId}`.execute(testDb.db),
+    ).rejects.toThrow(/permits state transitions only/);
+    await expect(
+      sql`INSERT INTO capacity_hold (id, organization_id, session_id, account_id, participant_id,
+                                     quote_id, expires_at, state, consumed_by_booking_id)
+          VALUES (${newId()}, ${orgA.orgId}, ${sessionId}, ${accountOther}, ${participantOther},
+                  ${quoteId}, ${FUTURE}, 'active', ${bookingId})`.execute(testDb.db),
+    ).rejects.toThrow(/ck_capacity_hold_consumed_pairing/);
+
+    // consumed REQUIRES the pairing, and the pairing must be a real booking.
+    await expect(
+      sql`UPDATE capacity_hold SET state = 'consumed' WHERE id = ${holdId}`.execute(testDb.db),
+    ).rejects.toThrow(/ck_capacity_hold_consumed_pairing/);
+    await expect(
+      sql`UPDATE capacity_hold SET state = 'consumed', consumed_by_booking_id = ${newId()}
+          WHERE id = ${holdId}`.execute(testDb.db),
+    ).rejects.toThrow(/fk_capacity_hold_consumed_by/);
+    // The later confirmation boundary: consumed WITH its booking pairing commits.
+    await sql`UPDATE capacity_hold SET state = 'consumed', consumed_by_booking_id = ${bookingId}
+              WHERE id = ${holdId}`.execute(testDb.db);
   });
 });
 
