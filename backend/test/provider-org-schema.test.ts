@@ -397,10 +397,12 @@ describe('future listing compatibility (structural proof — no listing schema i
   });
 
   it('the S3-1 spine tables exist and no later-slice booking/session table was smuggled in', async () => {
-    // Amended by S4-1: the original S3-1 assertion ("no listing/program/
-    // category table exists") described the slice-3 close state; the approved
-    // Slice-4 schema commit legitimately ships the catalogue tables, so this
-    // guard now covers only the entities that remain future slices.
+    // Amended by S4-1 (catalogue tables) and again by S5-1 (docs/32: the
+    // owner-approved booking/capacity foundation legitimately ships
+    // session/camp_week/enrolment_cohort/recurring_schedule/capacity_hold/
+    // booking/enrolment/price_quote — locked by
+    // booking-capacity-schema.test.ts). This guard now covers only the
+    // entities that remain future slices: payments and refunds.
     const tables = await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`.execute(
       testDb.db,
@@ -408,7 +410,7 @@ describe('future listing compatibility (structural proof — no listing schema i
     const names = tables.rows.map((r) => r.table_name);
     expect(
       names.filter((n) =>
-        /^(session|camp_week|enrolment_cohort|recurring_schedule|capacity_hold|booking|enrolment|payment_intent|payment_attempt|payment_transaction|price_quote|refund)$/.test(
+        /^(payment_intent|payment_attempt|payment_transaction|gateway_event|refund|payout|payout_statement)$/.test(
           n,
         ),
       ),

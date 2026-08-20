@@ -519,10 +519,17 @@ describe('structural boundaries (docs/28 §1 exclusions; task §6/§22)', () => 
     // Exact later-slice entity names (login_session is the Slice-2 AUTH
     // session store, not the booking-domain Session — deliberately exempt;
     // program_search_document arrived legitimately with the owner-approved
-    // search-foundation task and is locked by catalogue-search.test.ts).
+    // search-foundation task and is locked by catalogue-search.test.ts;
+    // the Slice-5 booking/capacity tables — session, camp_week,
+    // enrolment_cohort(+_schedule), recurring_schedule, capacity_hold,
+    // booking, enrolment, price_quote(+_line), package_entitlement,
+    // cancellation_policy_template — arrived legitimately with the
+    // owner-approved S5-1 foundation (docs/32) and are locked by
+    // booking-capacity-schema.test.ts). Payments/refunds/attendance stay
+    // forbidden until THEIR owning slices.
     const forbiddenExact =
-      /^(session|camp_week|enrolment_cohort|recurring_schedule|capacity_hold|booking|enrolment|payment_intent|payment_attempt|payment_transaction|price_quote|refund|package_entitlement|attendance_record|instructor)$/;
-    const forbiddenAnywhere = /(capacity|entitlement|redemption|rating|review)/i;
+      /^(payment_intent|payment_attempt|payment_transaction|gateway_event|refund|payout|payout_statement|credit_ledger_entry|attendance_record|instructor|waitlist)$/;
+    const forbiddenAnywhere = /(redemption|rating|waitlist)/i;
     expect(names.filter((n) => forbiddenExact.test(n) || forbiddenAnywhere.test(n))).toEqual([]);
     for (const required of [
       'area',

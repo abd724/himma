@@ -5,6 +5,14 @@
 
 import type { ColumnType } from "kysely";
 
+export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
+  ? U[]
+  : ArrayTypeImpl<T>;
+
+export type ArrayTypeImpl<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S[], I[], U[]>
+  : T[];
+
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
@@ -126,6 +134,29 @@ export interface AuthIdentity {
   version: Generated<number>;
 }
 
+export interface Booking {
+  account_id: string;
+  branch_id: string;
+  camp_week_id: string | null;
+  cancelled_at: Timestamp | null;
+  cohort_id: string | null;
+  confirmed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  hold_id: string;
+  id: string;
+  option_kind: string;
+  organization_id: string;
+  participant_id: string;
+  policy_template_id: string | null;
+  program_id: string;
+  quote_id: string;
+  reference_code: string | null;
+  session_id: string | null;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface BootstrapSeal {
   executed_by: string;
   manifest_digest: string;
@@ -146,6 +177,56 @@ export interface Branch {
   label: string;
   opening_hours: Json | null;
   organization_id: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface CampWeek {
+  booked_count: Generated<number>;
+  branch_id: string;
+  capacity: number;
+  created_at: Generated<Timestamp>;
+  daily_end_time: string;
+  daily_start_time: string;
+  end_date: Timestamp;
+  held_count: Generated<number>;
+  id: string;
+  organization_id: string;
+  program_id: string;
+  registration_cutoff_at: Timestamp;
+  start_date: Timestamp;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface CancellationPolicyTemplate {
+  created_at: Generated<Timestamp>;
+  id: string;
+  rules: Json;
+  state: Generated<string>;
+  summary_lines: Generated<Json>;
+  template_version: number;
+  title_ar: string | null;
+  title_en: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface CapacityHold {
+  account_id: string;
+  camp_week_id: string | null;
+  cohort_id: string | null;
+  consumed_by_booking_id: string | null;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  organization_id: string;
+  participant_id: string;
+  quantity: Generated<number>;
+  quote_id: string;
+  session_id: string | null;
+  state: Generated<string>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }
@@ -195,6 +276,44 @@ export interface CustomerAccount {
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   user_id: string;
+  version: Generated<number>;
+}
+
+export interface Enrolment {
+  billing_anchor_date: Timestamp | null;
+  booking_id: string;
+  cadence: string;
+  cohort_id: string;
+  created_at: Generated<Timestamp>;
+  renewal_policy: string | null;
+}
+
+export interface EnrolmentCohort {
+  booked_count: Generated<number>;
+  branch_id: string;
+  capacity: number;
+  created_at: Generated<Timestamp>;
+  effective_end: Timestamp;
+  effective_start: Timestamp;
+  enrolment_cutoff_at: Timestamp;
+  held_count: Generated<number>;
+  id: string;
+  organization_id: string;
+  policy_template_id: string | null;
+  price_option_id: string | null;
+  program_id: string;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface EnrolmentCohortSchedule {
+  active: Generated<boolean>;
+  cohort_id: string;
+  created_at: Generated<Timestamp>;
+  program_id: string;
+  schedule_id: string;
+  updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }
 
@@ -366,6 +485,14 @@ export interface OutboxEvent {
   sequence_no: Int8;
 }
 
+export interface PackageEntitlement {
+  booking_id: string;
+  created_at: Generated<Timestamp>;
+  expiry_policy: string | null;
+  sessions_total: number;
+  sessions_used: Generated<number>;
+}
+
 export interface Participant {
   account_id: string;
   created_at: Generated<Timestamp>;
@@ -376,6 +503,35 @@ export interface Participant {
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface PriceQuote {
+  account_id: string;
+  camp_week_id: string | null;
+  cohort_id: string | null;
+  created_at: Generated<Timestamp>;
+  currency: Generated<string>;
+  expires_at: Timestamp;
+  id: string;
+  offer_id: string | null;
+  option_kind: string;
+  organization_id: string;
+  participant_id: string;
+  price_kind: string;
+  price_option_id: string | null;
+  program_id: string;
+  session_id: string | null;
+  tax_treatment: Generated<string>;
+  total_fils: Int8;
+}
+
+export interface PriceQuoteLine {
+  amount_fils: Int8;
+  id: string;
+  kind: string;
+  label_en: string;
+  line_no: number;
+  quote_id: string;
 }
 
 export interface Program {
@@ -516,6 +672,51 @@ export interface ProgramSearchDocument {
   version: Generated<number>;
 }
 
+export interface RecurringSchedule {
+  created_at: Generated<Timestamp>;
+  effective_end: Timestamp | null;
+  effective_start: Timestamp;
+  end_time: string;
+  exception_dates: Generated<ArrayType<Timestamp>>;
+  id: string;
+  instructor_staff_id: string | null;
+  organization_id: string;
+  program_id: string;
+  registration_cutoff_kind: Generated<string>;
+  registration_cutoff_minutes: number | null;
+  start_time: string;
+  state: Generated<string>;
+  timezone: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+  weekdays: number[];
+}
+
+export interface Session {
+  booked_count: Generated<number>;
+  branch_id: string;
+  capacity: number;
+  created_at: Generated<Timestamp>;
+  end_at: Timestamp;
+  held_count: Generated<number>;
+  id: string;
+  instructor_staff_id: string | null;
+  occurrence_date: Timestamp | null;
+  organization_id: string;
+  override_all_ages: boolean | null;
+  override_gender_eligibility: string | null;
+  override_max_age: number | null;
+  override_min_age: number | null;
+  override_skill_level: string | null;
+  program_id: string;
+  registration_cutoff_at: Timestamp;
+  schedule_id: string | null;
+  start_at: Timestamp;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface StaffInvitation {
   accepted_at: Timestamp | null;
   accepted_by: string | null;
@@ -649,11 +850,18 @@ export interface DB {
   audit_event: AuditEvent;
   auth_challenge: AuthChallenge;
   auth_identity: AuthIdentity;
+  booking: Booking;
   bootstrap_seal: BootstrapSeal;
   branch: Branch;
+  camp_week: CampWeek;
+  cancellation_policy_template: CancellationPolicyTemplate;
+  capacity_hold: CapacityHold;
   category: Category;
   collection: Collection;
   customer_account: CustomerAccount;
+  enrolment: Enrolment;
+  enrolment_cohort: EnrolmentCohort;
+  enrolment_cohort_schedule: EnrolmentCohortSchedule;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
   listing_moderation_feedback: ListingModerationFeedback;
@@ -666,13 +874,18 @@ export interface DB {
   organization: Organization;
   organization_public_profile: OrganizationPublicProfile;
   outbox_event: OutboxEvent;
+  package_entitlement: PackageEntitlement;
   participant: Participant;
+  price_quote: PriceQuote;
+  price_quote_line: PriceQuoteLine;
   program: Program;
   program_branch: ProgramBranch;
   program_media: ProgramMedia;
   program_price_option: ProgramPriceOption;
   program_revision: ProgramRevision;
   program_search_document: ProgramSearchDocument;
+  recurring_schedule: RecurringSchedule;
+  session: Session;
   staff_invitation: StaffInvitation;
   staff_membership: StaffMembership;
   staff_membership_branch: StaffMembershipBranch;
