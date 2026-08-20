@@ -220,18 +220,18 @@ describe('the baseline/step-up separation (W3-1 final correction §5/§6/§12/§
     expect((bootstrap.json() as { roles: string[] }).roles).toEqual(['access_admin']);
   });
 
-  it('the split does NOT weaken sensitive admin routes: the SAME stale bearer that bootstraps /admin/me is refused stepUpRequired on role administration', async () => {
+  it('W3-9 policy split: the SAME stale bearer reads role assignments (baseline) but is refused stepUpRequired on every role MUTATION', async () => {
     const admin = await makeCustomer();
     await grantRole(admin, 'access_admin');
     const stale = await bearerFor(admin, 'mfa', { authTime: STALE_AUTH_TIME() });
     const headers = { authorization: `Bearer ${stale}` };
     expect((await me(stale)).statusCode).toBe(200);
-    // Read surface of the sensitive set (adminStepUp): retained strength.
+    // Ordinary internal READS ride the baseline (W3-1 ruling, applied by
+    // the owning W3-9 slice) — the service still gates the specific role.
     const read = await app.inject({ method: 'GET', url: '/admin/role-assignments', headers });
-    expect(read.statusCode).toBe(403);
-    expect(read.json().code).toBe('stepUpRequired');
-    // Mutation surface: same retained strength (valid body — schema
-    // validation runs before auth, so an invalid body would mask the probe).
+    expect(read.statusCode).toBe(200);
+    // Mutation surface: retained recent-factor strength (valid body —
+    // schema validation runs before auth; an invalid body would mask it).
     const target = await makeCustomer();
     const mutation = await app.inject({
       method: 'POST',
@@ -244,12 +244,13 @@ describe('the baseline/step-up separation (W3-1 final correction §5/§6/§12/§
     // A FRESH factor still satisfies the sensitive set — nothing tightened
     // by accident either.
     const fresh = await bearerFor(admin, 'mfa');
-    const freshRead = await app.inject({
-      method: 'GET',
-      url: '/admin/role-assignments',
+    const freshMutation = await app.inject({
+      method: 'POST',
+      url: '/admin/role-requests',
       headers: { authorization: `Bearer ${fresh}` },
+      payload: { targetUserId: target, role: 'support' },
     });
-    expect(freshRead.statusCode).toBe(200);
+    expect(freshMutation.statusCode).toBe(200);
   });
 
   it('Case C/D still hold on the baseline: no MFA assurance and no active role are refused; a stale factor never rescues a revoked role or session', async () => {
@@ -293,6 +294,7 @@ describe('the safe access projection (task §7/§25/§31)', () => {
       'providers.operate',
       'catalogue.moderate',
       'taxonomy.manage',
+      'audit.read', // W3-9: the AD-18 read is auditor + operations (docs/31 §8)
     ]);
     const account = await testDb.db
       .selectFrom('customer_account')
@@ -321,6 +323,7 @@ describe('the safe access projection (task §7/§25/§31)', () => {
       'taxonomy.manage',
       'roles.administer',
       'roles.view',
+      'audit.read', // W3-9 (docs/31 §8)
     ]);
     // D4 exclusivity (0002 trigger): auditor cannot coexist with any other
     // active role — the database refuses the combination outright.

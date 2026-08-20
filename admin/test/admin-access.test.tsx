@@ -6,6 +6,7 @@ import {
   FIXTURE_TOTP,
   fixtureCapabilities,
 } from '../src/services/mock/fixture-admin';
+import { NAV_ITEMS } from '../src/app/nav-model';
 import { renderAdmin } from './support/render-admin';
 
 /**
@@ -42,9 +43,10 @@ describe('sign-in and MFA (task §14)', () => {
     ]) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
-    // Operations does NOT see role administration or audit.
+    // Operations does NOT see role administration; the audit explorer IS
+    // an operations surface since W3-9 (docs/31 §8: auditor + operations).
     expect(within(nav).queryByRole('link', { name: 'Access administration' })).toBeNull();
-    expect(within(nav).queryByRole('link', { name: 'Audit' })).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'Audit' })).toBeInTheDocument();
   });
 
   test('wrong credentials and wrong codes stay account-enumeration-safe (one class each), and a wrong code can be corrected', async () => {
@@ -158,8 +160,9 @@ describe('capability-aware navigation and guards (task §16–§18, §30)', () =
     for (const label of ['Providers', 'Taxonomy', 'Access administration']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
-    // roles.view ≠ audit.read — Audit stays hidden without the auditor role.
-    expect(within(nav).queryByRole('link', { name: 'Audit' })).toBeNull();
+    // audit.read arrives via the operations half of the pair (docs/31 §8);
+    // roles.view alone never grants it (see the access_admin-only journey).
+    expect(within(nav).getByRole('link', { name: 'Audit' })).toBeInTheDocument();
   });
 
   test('a support admin is valid with truthfully EMPTY W3-phase tools — nothing fabricated', async () => {
@@ -170,11 +173,11 @@ describe('capability-aware navigation and guards (task §16–§18, §30)', () =
     expect(within(nav).getAllByRole('link')).toHaveLength(1); // Dashboard only
   });
 
-  test('placeholders are truthful: a future area names its W3 slice and shows no fake operational data', async () => {
+  test('W3-9 closeout: NO pending placeholder areas remain — every navigation entry is a real connected surface', async () => {
+    expect(NAV_ITEMS.every((item) => item.pendingSlice === null)).toBe(true);
     renderAdmin({ asIdentity: 'access@himma.demo', initialEntries: ['/access'] });
     await screen.findByRole('heading', { name: 'Access administration' });
-    expect(screen.getByText(/Connected in W3-9/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/\b\d+ (cases|providers|pending|queue)\b/i);
+    expect(screen.queryByText(/Connected in W3-\d/)).toBeNull();
   });
 
   test('the Verification nav area is live (W3-5): it lands on the provider review queue', async () => {
@@ -191,6 +194,7 @@ describe('capability-aware navigation and guards (task §16–§18, §30)', () =
       'providers.operate',
       'catalogue.moderate',
       'taxonomy.manage',
+      'audit.read', // W3-9 (docs/31 §8: the AD-18 read is auditor + operations)
     ]);
     expect(fixtureCapabilities(['access_admin'])).toEqual(['roles.administer', 'roles.view']);
     expect(fixtureCapabilities(['auditor'])).toEqual(['roles.view', 'audit.read']);
@@ -202,6 +206,7 @@ describe('capability-aware navigation and guards (task §16–§18, §30)', () =
       'taxonomy.manage',
       'roles.administer',
       'roles.view',
+      'audit.read',
     ]);
   });
 

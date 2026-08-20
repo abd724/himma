@@ -703,21 +703,23 @@ describe('administrative MFA enforcement', () => {
   });
 
   it('enrolled admin with an MFA-verified fresh session passes; single-factor and stale sessions are refused precisely', async () => {
+    // W3-9 split: the role-assignment READS ride the admin BASELINE now,
+    // so the recency probe is a role MUTATION — the sensitive set kept its
+    // adminStepUp strength (D-W3-5 stays owner-pending).
+    const probeMutation = async (bearer: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/admin/role-requests',
+        headers: authed(bearer),
+        payload: { targetUserId: (await makeActor({})).userId, role: 'support' },
+      });
     const ok = await adminBearer({ assurance: 'mfa', enroll: true });
-    const pass = await app.inject({
-      method: 'GET',
-      url: '/admin/role-assignments',
-      headers: authed(ok.bearer),
-    });
+    const pass = await probeMutation(ok.bearer);
     expect(pass.statusCode).toBe(200);
 
     // Enrolled but the session never completed an MFA factor.
     const singleFactor = await adminBearer({ assurance: 'single_factor', enroll: true });
-    const noFactor = await app.inject({
-      method: 'GET',
-      url: '/admin/role-assignments',
-      headers: authed(singleFactor.bearer),
-    });
+    const noFactor = await probeMutation(singleFactor.bearer);
     expect((noFactor.json() as { code: string }).code).toBe('mfaRequired');
 
     // MFA-verified login, but too long ago and no step-up grant since.
@@ -726,12 +728,15 @@ describe('administrative MFA enforcement', () => {
       authTimeAgeSeconds: STEP_UP_MAX_AGE_SECONDS + 120,
       enroll: true,
     });
-    const staleResponse = await app.inject({
+    const staleResponse = await probeMutation(stale.bearer);
+    expect((staleResponse.json() as { code: string }).code).toBe('stepUpRequired');
+    // …while the BASELINE read admits the very same stale bearer.
+    const staleRead = await app.inject({
       method: 'GET',
       url: '/admin/role-assignments',
       headers: authed(stale.bearer),
     });
-    expect((staleResponse.json() as { code: string }).code).toBe('stepUpRequired');
+    expect(staleRead.statusCode).toBe(200);
 
     // A live MFA-method grant restores recency on that stale session.
     await sql`
@@ -739,11 +744,7 @@ describe('administrative MFA enforcement', () => {
       VALUES (${newId()}, ${adminA}, ${stale.sessionId}, 'totp', now() + interval '5 minutes')`.execute(
       testDb.db,
     );
-    const granted = await app.inject({
-      method: 'GET',
-      url: '/admin/role-assignments',
-      headers: authed(stale.bearer),
-    });
+    const granted = await probeMutation(stale.bearer);
     expect(granted.statusCode).toBe(200);
   });
 

@@ -21,6 +21,10 @@ import { createFixtureProviderData, createFixtureProvidersPort } from './fixture
 import { createFixtureVerificationPort } from './fixture-verification';
 import { createFixtureModerationData, createFixtureModerationPort } from './fixture-moderation';
 import { createFixtureTaxonomyData, createFixtureTaxonomyPort } from './fixture-taxonomy';
+import { createFixtureRolesData, createFixtureRolesPort } from './fixture-roles';
+import { createFixtureAuditPort } from './fixture-audit';
+import type { AdminRolesPort } from '../../roles/contract';
+import type { AdminAuditPort } from '../../audit/contract';
 
 /**
  * Deterministic FIXTURE admin runtime — design/testing/demo identities
@@ -56,7 +60,7 @@ export const FIXTURE_TOTP = '246810';
 
 /** Mirror of backend admin-capabilities.ts — kept in ONE place. */
 export const FIXTURE_ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = {
-  operations: ['providers.operate', 'catalogue.moderate', 'taxonomy.manage'],
+  operations: ['providers.operate', 'catalogue.moderate', 'taxonomy.manage', 'audit.read'],
   access_admin: ['roles.administer', 'roles.view'],
   auditor: ['roles.view', 'audit.read'],
   support: [],
@@ -130,6 +134,8 @@ export interface FixtureAdminRuntime {
   verificationPort: AdminVerificationPort;
   moderationPort: AdminModerationPort;
   taxonomyPort: AdminTaxonomyPort;
+  rolesPort: AdminRolesPort;
+  auditPort: AdminAuditPort;
   controls: FixtureAdminControls;
   /** Test-harness seeding: start signed in as a fixture identity. */
   seedSession(email: string): void;
@@ -344,6 +350,39 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     },
     createFixtureTaxonomyData(),
   );
+  const rolesPort = createFixtureRolesPort(
+    {
+      currentAuthority() {
+        const identity = state.current;
+        if (identity === null) return null;
+        const roles = state.revoked.has(identity.email) ? [] : identity.roles;
+        const capabilities = fixtureCapabilities(roles);
+        return {
+          userId: `fixture-${identity.email}`,
+          hasRolesView: capabilities.includes('roles.view'),
+          hasRolesAdminister: capabilities.includes('roles.administer'),
+        };
+      },
+      takeFailure() {
+        return state.providersOutage;
+      },
+      stepUpDemanded() {
+        return state.stepUpDemanded;
+      },
+    },
+    createFixtureRolesData(),
+  );
+  const auditPort = createFixtureAuditPort({
+    currentAuthority() {
+      const identity = state.current;
+      if (identity === null) return null;
+      const roles = state.revoked.has(identity.email) ? [] : identity.roles;
+      return { hasAuditRead: fixtureCapabilities(roles).includes('audit.read') };
+    },
+    takeFailure() {
+      return state.providersOutage;
+    },
+  });
 
   const controls: FixtureAdminControls = {
     failNextAccessResolve() {
@@ -385,6 +424,8 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     verificationPort,
     moderationPort,
     taxonomyPort,
+    rolesPort,
+    auditPort,
     controls,
     seedSession,
   };

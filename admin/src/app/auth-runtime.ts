@@ -6,6 +6,8 @@ import {
   createUnconfiguredModerationPort,
   createUnconfiguredProvidersPort,
   createUnconfiguredTaxonomyPort,
+  createUnconfiguredRolesPort,
+  createUnconfiguredAuditPort,
   createUnconfiguredVerificationPort,
 } from '../auth/unconfigured';
 import type { AdminEnv } from '../api/env';
@@ -14,11 +16,15 @@ import type { AdminProvidersReadPort } from '../providers/contract';
 import type { AdminVerificationPort } from '../verification/contract';
 import type { AdminModerationPort } from '../moderation/contract';
 import type { AdminTaxonomyPort } from '../taxonomy/contract';
+import type { AdminRolesPort } from '../roles/contract';
+import type { AdminAuditPort } from '../audit/contract';
 import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
 import { createLiveProvidersReadPort } from '../services/live/live-providers-port';
 import { createLiveVerificationPort } from '../services/live/live-verification-port';
 import { createLiveModerationPort } from '../services/live/live-moderation-port';
 import { createLiveTaxonomyPort } from '../services/live/live-taxonomy-port';
+import { createLiveRolesPort } from '../services/live/live-roles-port';
+import { createLiveAuditPort } from '../services/live/live-audit-port';
 import {
   createFixtureAdminRuntime,
   type FixtureAdminControls,
@@ -32,6 +38,8 @@ export interface AuthRuntime {
   readonly verificationPort: AdminVerificationPort;
   readonly moderationPort: AdminModerationPort;
   readonly taxonomyPort: AdminTaxonomyPort;
+  readonly rolesPort: AdminRolesPort;
+  readonly auditPort: AdminAuditPort;
 }
 
 declare global {
@@ -70,6 +78,8 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
       verificationPort: createLiveVerificationPort(live.transport),
       moderationPort: createLiveModerationPort(live.transport),
       taxonomyPort: createLiveTaxonomyPort(live.transport),
+      rolesPort: createLiveRolesPort(live.transport),
+      auditPort: createLiveAuditPort(live.transport),
     };
   }
 
@@ -89,6 +99,8 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
       verificationPort: fixture.verificationPort,
       moderationPort: fixture.moderationPort,
       taxonomyPort: fixture.taxonomyPort,
+      rolesPort: fixture.rolesPort,
+      auditPort: fixture.auditPort,
     };
   }
 
@@ -126,5 +138,7 @@ function unconfiguredRuntime(): AuthRuntime {
     verificationPort: createUnconfiguredVerificationPort(),
     moderationPort: createUnconfiguredModerationPort(),
     taxonomyPort: createUnconfiguredTaxonomyPort(),
+    rolesPort: createUnconfiguredRolesPort(),
+    auditPort: createUnconfiguredAuditPort(),
   };
 }

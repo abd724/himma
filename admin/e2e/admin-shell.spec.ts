@@ -156,7 +156,8 @@ test('multi-role admin sees the deduplicated union (desktop representative)', as
   const nav = page.getByRole('navigation', { name: 'Admin navigation' });
   await expect(nav.getByRole('link', { name: 'Providers' })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Access administration' })).toBeVisible();
-  await expect(nav.getByRole('link', { name: 'Audit' })).toHaveCount(0);
+  // W3-9 (docs/31 §8): audit.read rides the operations half of the pair.
+  await expect(nav.getByRole('link', { name: 'Audit' })).toBeVisible();
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-multi-role.png`),
     fullPage: true,

@@ -11,11 +11,9 @@ import { ModerationQueuePage } from '../pages/moderation/moderation-queue-page';
 import { ModerationDetailPage } from '../pages/moderation/moderation-detail-page';
 import { RevisionQueuePage } from '../pages/moderation/revision-queue-page';
 import { TaxonomyPage } from '../pages/taxonomy/taxonomy-page';
-import {
-  NoCapabilityPage,
-  NotFoundPage,
-  PlaceholderPage,
-} from '../pages/placeholder-page';
+import { AccessPage } from '../pages/access/access-page';
+import { AuditPage } from '../pages/audit/audit-page';
+import { NoCapabilityPage, NotFoundPage } from '../pages/placeholder-page';
 
 /**
  * Route protection (task §18): AccessGate admits ONLY an `active` session
@@ -74,26 +72,8 @@ export const adminRoutes: RouteObject[] = [
       { path: 'moderation/:programId', element: area(<ModerationDetailPage />) },
       { path: 'revisions', element: area(<RevisionQueuePage />) },
       { path: 'taxonomy', element: area(<TaxonomyPage />) },
-      {
-        path: 'access',
-        element: area(
-          <PlaceholderPage
-            title="Access administration"
-            slice="W3-9"
-            description="Role assignment review and administration over the existing dual-control backend connects in W3-9, together with the admin step-up policy."
-          />,
-        ),
-      },
-      {
-        path: 'audit',
-        element: area(
-          <PlaceholderPage
-            title="Audit"
-            slice="W3-9"
-            description="The audit explorer read arrives in W3-9. Every sensitive administrative action is already audited server-side."
-          />,
-        ),
-      },
+      { path: 'access', element: area(<AccessPage />) },
+      { path: 'audit', element: area(<AuditPage />) },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

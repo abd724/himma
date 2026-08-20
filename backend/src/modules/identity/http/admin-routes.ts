@@ -1,12 +1,16 @@
 /**
  * Administrative role-management routes (docs/26 §10 admin set) — B2-5.
  *
- * Role administration keeps the explicit `adminStepUp` policy — the
- * pre-split recent-factor semantics, deliberately NOT weakened by the
- * W3-1 baseline/step-up separation — while `GET /admin/me` (the ordinary
- * Admin Portal bootstrap) sits on the `admin` baseline. Specific role
+ * W3-9 policy split (the W3-1 ruling applied by the owning slice): the
+ * ordinary internal READS — `GET /admin/me`, the two role-assignment
+ * reads, and the AD-18 audit-events read — ride the `admin` baseline,
+ * while every role MUTATION (request/approve/deny/revoke) keeps its
+ * pre-split recent-factor strength on `adminStepUp` (D-W3-5 — the final
+ * high-risk action set — stays owner-pending; dual control on
+ * approve/deny already exceeds step-up and is untouched). Specific role
  * authority is enforced by the services (access administration manages;
- * audit reads). Production registration is FAIL-CLOSED until B2-6 lands
+ * auditor reads; the audit explorer reads are auditor + operations per
+ * docs/31 §8). Production registration is FAIL-CLOSED until B2-6 lands
  * admin MFA enforcement — see build-app.ts.
  */
 import { Type } from '@sinclair/typebox';
@@ -14,6 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 
 import type { Db } from '../../../db/kysely';
+import { listAuditEvents } from '../services/audit-read';
 import {
   approveRoleAssignment,
   denyRoleAssignment,
@@ -136,7 +141,9 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.get(
     '/admin/role-assignments',
     {
-      config: { authPolicy: 'adminStepUp' },
+      // W3-9: an ordinary internal READ — the admin BASELINE (W3-1 split);
+      // the service still gates on access_admin | auditor.
+      config: { authPolicy: 'admin' },
       schema: {
         querystring: Type.Object({
           state: Type.Optional(Type.String({ maxLength: 20 })),
@@ -166,7 +173,8 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
   app.get(
     '/admin/role-assignments/:assignmentId',
     {
-      config: { authPolicy: 'adminStepUp' },
+      // W3-9: ordinary internal READ — admin baseline (service-gated).
+      config: { authPolicy: 'admin' },
       schema: {
         params: Type.Object({ assignmentId: Uuid }),
         response: {
@@ -186,6 +194,53 @@ export function registerAdminRoutes(instance: FastifyInstance, deps: { db: Db })
         return reply.status(200).send({ assignment: result.assignment });
       }
       return sendOutcome(reply, result.kind === 'forbidden' ? 'forbidden' : 'notFound');
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // GET /admin/audit-events — the AD-18 audit explorer (W3-9; docs/31 §8):
+  // a paginated, role-gated read over the EXISTING append-only table.
+  // Baseline `admin` policy; the SERVICE gates auditor | operations fresh
+  // per transaction. The projection is bounded (no digests, no principal
+  // context, no request ids); reading emits nothing.
+  // ---------------------------------------------------------------------
+  app.get(
+    '/admin/audit-events',
+    {
+      config: { authPolicy: 'admin' },
+      schema: {
+        querystring: Type.Object({
+          entityType: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
+          entityId: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })),
+          actorId: Type.Optional(Uuid),
+          action: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+          cursor: Type.Optional(Uuid),
+        }),
+        response: {
+          200: Type.Object({
+            events: Type.Array(
+              Type.Object({
+                id: Uuid,
+                actorType: Type.String(),
+                actorId: Type.Union([Uuid, Type.Null()]),
+                action: Type.String(),
+                entityType: Type.String(),
+                entityId: Type.String(),
+                occurredAt: Type.String(),
+              }),
+            ),
+            nextCursor: Type.Union([Uuid, Type.Null()]),
+          }),
+          ...ADMIN_ERRORS,
+        },
+      },
+    },
+    async (request, reply) => {
+      const principal = requirePrincipal(request.principal);
+      const result = await listAuditEvents(serviceDeps, { userId: principal.userId }, request.query);
+      if (result.kind !== 'events') return sendOutcome(reply, 'forbidden');
+      return reply.status(200).send({ events: result.events, nextCursor: result.nextCursor });
     },
   );
 

@@ -8,12 +8,16 @@ import {
   createUnconfiguredModerationPort,
   createUnconfiguredProvidersPort,
   createUnconfiguredTaxonomyPort,
+  createUnconfiguredRolesPort,
+  createUnconfiguredAuditPort,
   createUnconfiguredVerificationPort,
 } from '../auth/unconfigured';
 import type { AdminProvidersReadPort } from '../providers/contract';
 import type { AdminVerificationPort } from '../verification/contract';
 import type { AdminModerationPort } from '../moderation/contract';
 import type { AdminTaxonomyPort } from '../taxonomy/contract';
+import type { AdminRolesPort } from '../roles/contract';
+import type { AdminAuditPort } from '../audit/contract';
 import type { AuthRuntime } from './auth-runtime';
 
 /**
@@ -53,6 +57,8 @@ export function AppProviders({
         verificationPort: createUnconfiguredVerificationPort(),
         moderationPort: createUnconfiguredModerationPort(),
         taxonomyPort: createUnconfiguredTaxonomyPort(),
+        rolesPort: createUnconfiguredRolesPort(),
+        auditPort: createUnconfiguredAuditPort(),
       },
   );
 
@@ -62,6 +68,8 @@ export function AppProviders({
         <VerificationPortContext.Provider value={runtime.verificationPort}>
           <ModerationPortContext.Provider value={runtime.moderationPort}>
             <TaxonomyPortContext.Provider value={runtime.taxonomyPort}>
+              <RolesPortContext.Provider value={runtime.rolesPort}>
+              <AuditPortContext.Provider value={runtime.auditPort}>
               <SessionProvider
                 adapter={runtime.adapter}
                 accessPort={runtime.accessPort}
@@ -69,6 +77,8 @@ export function AppProviders({
               >
                 {children}
               </SessionProvider>
+              </AuditPortContext.Provider>
+              </RolesPortContext.Provider>
             </TaxonomyPortContext.Provider>
           </ModerationPortContext.Provider>
         </VerificationPortContext.Provider>
@@ -81,6 +91,8 @@ const ProvidersPortContext = createContext<AdminProvidersReadPort | null>(null);
 const VerificationPortContext = createContext<AdminVerificationPort | null>(null);
 const ModerationPortContext = createContext<AdminModerationPort | null>(null);
 const TaxonomyPortContext = createContext<AdminTaxonomyPort | null>(null);
+const RolesPortContext = createContext<AdminRolesPort | null>(null);
+const AuditPortContext = createContext<AdminAuditPort | null>(null);
 
 /** The composed provider-directory read port (fixture/live/unconfigured). */
 export function useProvidersPort(): AdminProvidersReadPort {
@@ -105,6 +117,24 @@ export function useTaxonomyPort(): AdminTaxonomyPort {
   const port = useContext(TaxonomyPortContext);
   if (port === null) {
     throw new Error('useTaxonomyPort requires AppProviders');
+  }
+  return port;
+}
+
+/** The composed roles-administration port (fixture/live/unconfigured). */
+export function useRolesPort(): AdminRolesPort {
+  const port = useContext(RolesPortContext);
+  if (port === null) {
+    throw new Error('useRolesPort requires AppProviders');
+  }
+  return port;
+}
+
+/** The composed audit-explorer port (fixture/live/unconfigured). */
+export function useAuditPort(): AdminAuditPort {
+  const port = useContext(AuditPortContext);
+  if (port === null) {
+    throw new Error('useAuditPort requires AppProviders');
   }
   return port;
 }

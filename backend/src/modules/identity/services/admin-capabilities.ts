@@ -16,8 +16,9 @@
  *   taxonomy.manage.
  * - `access_admin` manages role assignments; `auditor` reads them
  *   (admin-roles.ts `gateReader`) → roles.administer / roles.view.
- * - `auditor` is the designated audit-reading role (docs/26 §7) →
- *   audit.read (the AD-18 explorer read lands in a later W3 slice).
+ * - the AD-18 audit explorer read (audit-read.ts, W3-9) is role-gated
+ *   auditor + operations per docs/31 §8 → audit.read for both (auditor
+ *   remains the designated dedicated audit role, docs/26 §7).
  * - `support` and `finance` hold NO capability in the current W3 phase —
  *   their domains (support cases, refunds/payouts) do not exist yet
  *   (docs/31 §2.4). Nothing is projected for them, truthfully.
@@ -37,7 +38,7 @@ export const ADMIN_CAPABILITIES = [
 export type AdminCapability = (typeof ADMIN_CAPABILITIES)[number];
 
 const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = {
-  operations: ['providers.operate', 'catalogue.moderate', 'taxonomy.manage'],
+  operations: ['providers.operate', 'catalogue.moderate', 'taxonomy.manage', 'audit.read'],
   access_admin: ['roles.administer', 'roles.view'],
   auditor: ['roles.view', 'audit.read'],
   support: [],

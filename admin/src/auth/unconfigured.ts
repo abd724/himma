@@ -4,6 +4,8 @@ import type { AdminProvidersReadPort } from '../providers/contract';
 import type { AdminVerificationPort } from '../verification/contract';
 import type { AdminModerationPort } from '../moderation/contract';
 import type { AdminTaxonomyPort } from '../taxonomy/contract';
+import type { AdminRolesPort } from '../roles/contract';
+import type { AdminAuditPort } from '../audit/contract';
 
 /**
  * FAIL-CLOSED default: a production build with no configured authentication
@@ -59,6 +61,22 @@ export function createUnconfiguredTaxonomyPort(): AdminTaxonomyPort {
     updateActivityType: async () => ({ kind: 'unavailable' }),
     createCollection: async () => ({ kind: 'unavailable' }),
     updateCollection: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredRolesPort(): AdminRolesPort {
+  return {
+    listAssignments: async () => ({ kind: 'unavailable' }),
+    requestRole: async () => ({ kind: 'unavailable' }),
+    approveRequest: async () => ({ kind: 'unavailable' }),
+    denyRequest: async () => ({ kind: 'unavailable' }),
+    revokeAssignment: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredAuditPort(): AdminAuditPort {
+  return {
+    listEvents: async () => ({ kind: 'unavailable' }),
   };
 }
 

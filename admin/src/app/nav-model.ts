@@ -38,8 +38,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     pendingSlice: null,
   },
   { path: '/taxonomy', label: 'Taxonomy', capability: 'taxonomy.manage', pendingSlice: null },
-  { path: '/access', label: 'Access administration', capability: 'roles.view', pendingSlice: 'W3-9' },
-  { path: '/audit', label: 'Audit', capability: 'audit.read', pendingSlice: 'W3-9' },
+  { path: '/access', label: 'Access administration', capability: 'roles.view', pendingSlice: null },
+  { path: '/audit', label: 'Audit', capability: 'audit.read', pendingSlice: null },
 ];
 
 export function visibleNavItems(access: AdminAccess): readonly NavItem[] {

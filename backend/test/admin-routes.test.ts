@@ -16,6 +16,8 @@ import { firstLogin } from '../src/modules/identity/services/first-login';
 import { establishSession } from '../src/modules/identity/services/sessions';
 import type { AccessTokenEvidence } from '../src/modules/identity/providers/access-token';
 import type { ProviderEvidence } from '../src/modules/identity/providers/evidence';
+import { sql } from 'kysely';
+
 import { bootstrapAccessAdmins } from './helpers/identity-fixtures';
 import type { TestDb } from './helpers/test-db';
 import { createMigratedTestDb } from './helpers/test-db';
@@ -148,6 +150,9 @@ describe('admin policy category', () => {
       '/admin/listings/:programId', // W3-6 moderation detail read
       '/admin/revisions', // W3-6 revision queue read
       '/admin/taxonomy', // W3-7 taxonomy administration read
+      '/admin/role-assignments', // W3-9 role-administration reads
+      '/admin/role-assignments/:assignmentId',
+      '/admin/audit-events', // W3-9 AD-18 audit explorer read
     ]);
     for (const route of adminRoutes) {
       const isRead = (route.method === 'GET' || route.method === 'HEAD') && BASELINE.has(route.url);
@@ -183,6 +188,101 @@ describe('admin policy category', () => {
   it('no bearer at all is a plain 401', async () => {
     const response = await app.inject({ method: 'GET', url: '/admin/role-assignments' });
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('AD-18 audit explorer read (W3-9; docs/31 §8)', () => {
+  async function grantDirect(userId: string, role: string): Promise<void> {
+    await sql`INSERT INTO admin_role_assignment (id, user_id, role, state, requested_by, approved_by)
+              VALUES (${newId()}, ${userId}, ${role}, 'active', ${adminA}, ${adminB})`.execute(
+      testDb.db,
+    );
+  }
+  const events = (bearer: string, query = '') =>
+    app.inject({
+      method: 'GET',
+      url: `/admin/audit-events${query}`,
+      headers: { authorization: `Bearer ${bearer}` },
+    });
+
+  it('is role-gated to auditor + operations; access_admin/support/finance/customers are refused', async () => {
+    const auditor = await makeCustomer();
+    await grantDirect(auditor, 'auditor');
+    expect((await events(await bearerFor(auditor, 'mfa'))).statusCode).toBe(200);
+
+    const operations = await makeCustomer();
+    await grantDirect(operations, 'operations');
+    expect((await events(await bearerFor(operations, 'mfa'))).statusCode).toBe(200);
+
+    // Baseline `admin` assurance is NOT authorization: these are real
+    // admins, refused by the specific role gate.
+    for (const role of ['access_admin', 'support', 'finance']) {
+      const other = await makeCustomer();
+      await grantDirect(other, role);
+      const refused = await events(await bearerFor(other, 'mfa'));
+      expect(`${role}:${refused.statusCode}`).toBe(`${role}:403`);
+    }
+    const customer = await makeCustomer();
+    expect((await events(await bearerFor(customer, 'mfa'))).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/admin/audit-events' })).statusCode).toBe(401);
+  });
+
+  it('paginates DESC by occurrence with a keyset cursor, filters exactly, and projects the BOUNDED shape only', async () => {
+    const auditor = await makeCustomer();
+    await grantDirect(auditor, 'auditor');
+    const bearer = await bearerFor(auditor, 'mfa');
+    // Deterministic fixture rows straight into the append-only table.
+    const entityId = newId();
+    for (let index = 0; index < 5; index += 1) {
+      await sql`INSERT INTO audit_event (id, actor_type, actor_id, principal_context, action, entity_type, entity_id, before_digest, request_id, occurred_at)
+                VALUES (${newId()}, 'user', ${adminA}, 'internal-context', ${`w39.test_${index}`}, 'w39_probe', ${entityId}, 'digest-material', 'req-123',
+                        ${new Date(Date.UTC(2026, 7, 1, 10, index))})`.execute(testDb.db);
+    }
+    const first = await events(bearer, `?entityType=w39_probe&entityId=${entityId}&limit=3`);
+    expect(first.statusCode).toBe(200);
+    const firstBody = first.json() as {
+      events: Array<Record<string, unknown>>;
+      nextCursor: string | null;
+    };
+    expect(firstBody.events.map((event) => event.action)).toEqual([
+      'w39.test_4',
+      'w39.test_3',
+      'w39.test_2',
+    ]);
+    expect(firstBody.nextCursor).not.toBeNull();
+    // The BOUNDED projection: digests, principal context, and request ids
+    // are internal forensic material and never serialize.
+    expect(Object.keys(firstBody.events[0]!).sort()).toEqual([
+      'action',
+      'actorId',
+      'actorType',
+      'entityId',
+      'entityType',
+      'id',
+      'occurredAt',
+    ]);
+    expect(first.body).not.toContain('digest');
+    expect(first.body).not.toContain('internal-context');
+    expect(first.body).not.toContain('req-123');
+
+    const second = await events(
+      bearer,
+      `?entityType=w39_probe&entityId=${entityId}&limit=3&cursor=${firstBody.nextCursor}`,
+    );
+    const secondBody = second.json() as { events: Array<{ action: string }>; nextCursor: string | null };
+    expect(secondBody.events.map((event) => event.action)).toEqual(['w39.test_1', 'w39.test_0']);
+    expect(secondBody.nextCursor).toBeNull();
+
+    // Exact-match filters compose.
+    const filtered = await events(
+      bearer,
+      `?entityType=w39_probe&entityId=${entityId}&action=w39.test_2`,
+    );
+    expect((filtered.json() as { events: unknown[] }).events).toHaveLength(1);
+    // Reading emitted NOTHING (viewing is not an action).
+    const emitted = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM audit_event WHERE action LIKE 'audit.%'`.execute(testDb.db);
+    expect(Number(emitted.rows[0]?.n)).toBe(0);
   });
 });
 

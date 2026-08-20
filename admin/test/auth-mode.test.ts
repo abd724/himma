@@ -116,6 +116,8 @@ describe('structural sweeps (task §13/§29)', () => {
       'services/live/live-verification-port.ts',
       'services/live/live-moderation-port.ts',
       'services/live/live-taxonomy-port.ts',
+      'services/live/live-roles-port.ts',
+      'services/live/live-audit-port.ts',
     ]) {
       expect(src(module)).not.toMatch(/services\/mock|fixture/i);
     }
@@ -144,6 +146,8 @@ describe('structural sweeps (task §13/§29)', () => {
       'verification',
       'moderation',
       'taxonomy',
+      'roles',
+      'audit',
       'hooks',
     ];
     const files: string[] = [];
