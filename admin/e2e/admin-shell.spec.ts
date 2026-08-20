@@ -10,7 +10,7 @@ import { evidenceDir, FIXTURE_TOTP_CODE, noHorizontalOverflow, signInAs } from '
  */
 const evidence = evidenceDir('admin-w3-1');
 
-test('operations journey: sign in → MFA → capability-aware shell → truthful placeholder', async ({
+test('operations journey: sign in → MFA → capability-aware shell → a real working area', async ({
   page,
 }, testInfo) => {
   await page.goto('/');
@@ -46,7 +46,11 @@ test('operations journey: sign in → MFA → capability-aware shell → truthfu
     .getByRole('navigation', { name: 'Admin navigation' })
     .getByRole('link', { name: 'Taxonomy' })
     .click();
-  await expect(page.getByText(/Connected in W3-7/)).toBeVisible();
+  // Every operations area is REAL now (W3-7 closed the last one) — the
+  // journey lands on the live taxonomy workspace; placeholder truthfulness
+  // for the remaining W3-9 areas is covered by the access/audit journeys.
+  await expect(page.getByRole('heading', { name: 'Taxonomy', level: 1 })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Water Sports' })).toBeVisible();
   await noHorizontalOverflow(page);
   await page.screenshot({
     path: join(evidence, `${testInfo.project.name}-placeholder.png`),

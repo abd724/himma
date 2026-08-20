@@ -5,6 +5,7 @@ import {
   createUnconfiguredAuthAdapter,
   createUnconfiguredModerationPort,
   createUnconfiguredProvidersPort,
+  createUnconfiguredTaxonomyPort,
   createUnconfiguredVerificationPort,
 } from '../auth/unconfigured';
 import type { AdminEnv } from '../api/env';
@@ -12,10 +13,12 @@ import type { AdminAccessPort } from '../access/contract';
 import type { AdminProvidersReadPort } from '../providers/contract';
 import type { AdminVerificationPort } from '../verification/contract';
 import type { AdminModerationPort } from '../moderation/contract';
+import type { AdminTaxonomyPort } from '../taxonomy/contract';
 import { createLiveAuthRuntime } from '../auth/live/live-auth-runtime';
 import { createLiveProvidersReadPort } from '../services/live/live-providers-port';
 import { createLiveVerificationPort } from '../services/live/live-verification-port';
 import { createLiveModerationPort } from '../services/live/live-moderation-port';
+import { createLiveTaxonomyPort } from '../services/live/live-taxonomy-port';
 import {
   createFixtureAdminRuntime,
   type FixtureAdminControls,
@@ -28,6 +31,7 @@ export interface AuthRuntime {
   readonly providersPort: AdminProvidersReadPort;
   readonly verificationPort: AdminVerificationPort;
   readonly moderationPort: AdminModerationPort;
+  readonly taxonomyPort: AdminTaxonomyPort;
 }
 
 declare global {
@@ -65,6 +69,7 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
       providersPort: createLiveProvidersReadPort(live.transport),
       verificationPort: createLiveVerificationPort(live.transport),
       moderationPort: createLiveModerationPort(live.transport),
+      taxonomyPort: createLiveTaxonomyPort(live.transport),
     };
   }
 
@@ -83,6 +88,7 @@ export function createAuthRuntime(env: AdminEnv): AuthRuntime {
       providersPort: fixture.providersPort,
       verificationPort: fixture.verificationPort,
       moderationPort: fixture.moderationPort,
+      taxonomyPort: fixture.taxonomyPort,
     };
   }
 
@@ -119,5 +125,6 @@ function unconfiguredRuntime(): AuthRuntime {
     providersPort: createUnconfiguredProvidersPort(),
     verificationPort: createUnconfiguredVerificationPort(),
     moderationPort: createUnconfiguredModerationPort(),
+    taxonomyPort: createUnconfiguredTaxonomyPort(),
   };
 }

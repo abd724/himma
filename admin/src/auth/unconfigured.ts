@@ -3,6 +3,7 @@ import type { AdminAccessPort } from '../access/contract';
 import type { AdminProvidersReadPort } from '../providers/contract';
 import type { AdminVerificationPort } from '../verification/contract';
 import type { AdminModerationPort } from '../moderation/contract';
+import type { AdminTaxonomyPort } from '../taxonomy/contract';
 
 /**
  * FAIL-CLOSED default: a production build with no configured authentication
@@ -44,6 +45,20 @@ export function createUnconfiguredModerationPort(): AdminModerationPort {
     reviewListing: async () => ({ kind: 'unavailable' }),
     startRevisionReview: async () => ({ kind: 'unavailable' }),
     decideRevision: async () => ({ kind: 'unavailable' }),
+  };
+}
+
+export function createUnconfiguredTaxonomyPort(): AdminTaxonomyPort {
+  return {
+    getTaxonomy: async () => ({ kind: 'unavailable' }),
+    createArea: async () => ({ kind: 'unavailable' }),
+    updateArea: async () => ({ kind: 'unavailable' }),
+    createCategory: async () => ({ kind: 'unavailable' }),
+    updateCategory: async () => ({ kind: 'unavailable' }),
+    createActivityType: async () => ({ kind: 'unavailable' }),
+    updateActivityType: async () => ({ kind: 'unavailable' }),
+    createCollection: async () => ({ kind: 'unavailable' }),
+    updateCollection: async () => ({ kind: 'unavailable' }),
   };
 }
 

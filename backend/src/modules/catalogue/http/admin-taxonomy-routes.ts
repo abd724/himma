@@ -1,9 +1,13 @@
 /**
  * Internal taxonomy administration routes (docs/28 §16.3 `/admin/taxonomy/…`).
  *
- * The `adminStepUp` policy (pre-split recent-factor semantics, retained by
- * the W3-1 baseline/step-up separation); the services require the `operations` role fresh
- * per transaction. Deliberate named services per entity — no generic table
+ * W3-7 policy split (the W3-1 ruling applied by the owning slice): the
+ * administration READ rides the `admin` baseline like every other ordinary
+ * internal read, while every taxonomy MUTATION keeps its pre-split
+ * recent-factor strength on `adminStepUp` (D-W3-5 — the final high-risk
+ * action set — stays owner-pending). The services require the
+ * `operations` role fresh per transaction. Deliberate named services per
+ * entity — no generic table
  * CRUD abstraction, no raw models. Slug immutability is structural: no
  * PATCH schema carries a slug (undeclared fields are stripped app-wide),
  * and the 0007 trigger stays the final authority. Retirement is the
@@ -175,7 +179,8 @@ export function registerAdminTaxonomyRoutes(
   app.get(
     '/admin/taxonomy',
     {
-      config: { authPolicy: 'adminStepUp' },
+      // W3-7: an ordinary internal READ — the admin BASELINE (W3-1 split).
+      config: { authPolicy: 'admin' },
       schema: {
         response: {
           200: Type.Object({

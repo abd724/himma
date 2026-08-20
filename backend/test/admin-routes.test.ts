@@ -147,6 +147,7 @@ describe('admin policy category', () => {
       '/admin/listings', // W3-6 moderation queue read
       '/admin/listings/:programId', // W3-6 moderation detail read
       '/admin/revisions', // W3-6 revision queue read
+      '/admin/taxonomy', // W3-7 taxonomy administration read
     ]);
     for (const route of adminRoutes) {
       const isRead = (route.method === 'GET' || route.method === 'HEAD') && BASELINE.has(route.url);

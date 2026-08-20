@@ -10,6 +10,7 @@ import { ProviderDetailPage } from '../pages/providers/provider-detail-page';
 import { ModerationQueuePage } from '../pages/moderation/moderation-queue-page';
 import { ModerationDetailPage } from '../pages/moderation/moderation-detail-page';
 import { RevisionQueuePage } from '../pages/moderation/revision-queue-page';
+import { TaxonomyPage } from '../pages/taxonomy/taxonomy-page';
 import {
   NoCapabilityPage,
   NotFoundPage,
@@ -72,16 +73,7 @@ export const adminRoutes: RouteObject[] = [
       { path: 'moderation', element: area(<ModerationQueuePage />) },
       { path: 'moderation/:programId', element: area(<ModerationDetailPage />) },
       { path: 'revisions', element: area(<RevisionQueuePage />) },
-      {
-        path: 'taxonomy',
-        element: area(
-          <PlaceholderPage
-            title="Taxonomy"
-            slice="W3-7"
-            description="Categories, activity types, areas, and collections management over the existing admin taxonomy contracts connects in W3-7."
-          />,
-        ),
-      },
+      { path: 'taxonomy', element: area(<TaxonomyPage />) },
       {
         path: 'access',
         element: area(

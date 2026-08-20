@@ -171,9 +171,9 @@ describe('capability-aware navigation and guards (task §16–§18, §30)', () =
   });
 
   test('placeholders are truthful: a future area names its W3 slice and shows no fake operational data', async () => {
-    renderAdmin({ asIdentity: 'ops@himma.demo', initialEntries: ['/taxonomy'] });
-    await screen.findByRole('heading', { name: 'Taxonomy' });
-    expect(screen.getByText(/Connected in W3-7/)).toBeInTheDocument();
+    renderAdmin({ asIdentity: 'access@himma.demo', initialEntries: ['/access'] });
+    await screen.findByRole('heading', { name: 'Access administration' });
+    expect(screen.getByText(/Connected in W3-9/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/\b\d+ (cases|providers|pending|queue)\b/i);
   });
 

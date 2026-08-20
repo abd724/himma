@@ -16,9 +16,11 @@ import type {
 import type { AdminProvidersReadPort } from '../../providers/contract';
 import type { AdminVerificationPort } from '../../verification/contract';
 import type { AdminModerationPort } from '../../moderation/contract';
+import type { AdminTaxonomyPort } from '../../taxonomy/contract';
 import { createFixtureProviderData, createFixtureProvidersPort } from './fixture-providers';
 import { createFixtureVerificationPort } from './fixture-verification';
 import { createFixtureModerationData, createFixtureModerationPort } from './fixture-moderation';
+import { createFixtureTaxonomyData, createFixtureTaxonomyPort } from './fixture-taxonomy';
 
 /**
  * Deterministic FIXTURE admin runtime — design/testing/demo identities
@@ -127,6 +129,7 @@ export interface FixtureAdminRuntime {
   providersPort: AdminProvidersReadPort;
   verificationPort: AdminVerificationPort;
   moderationPort: AdminModerationPort;
+  taxonomyPort: AdminTaxonomyPort;
   controls: FixtureAdminControls;
   /** Test-harness seeding: start signed in as a fixture identity. */
   seedSession(email: string): void;
@@ -322,6 +325,25 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     },
     createFixtureModerationData(),
   );
+  const taxonomyPort = createFixtureTaxonomyPort(
+    {
+      currentAuthority() {
+        const identity = state.current;
+        if (identity === null) return null;
+        const roles = state.revoked.has(identity.email) ? [] : identity.roles;
+        return {
+          hasTaxonomyCapability: fixtureCapabilities(roles).includes('taxonomy.manage'),
+        };
+      },
+      takeFailure() {
+        return state.providersOutage;
+      },
+      stepUpDemanded() {
+        return state.stepUpDemanded;
+      },
+    },
+    createFixtureTaxonomyData(),
+  );
 
   const controls: FixtureAdminControls = {
     failNextAccessResolve() {
@@ -362,6 +384,7 @@ export function createFixtureAdminRuntime(): FixtureAdminRuntime {
     providersPort,
     verificationPort,
     moderationPort,
+    taxonomyPort,
     controls,
     seedSession,
   };

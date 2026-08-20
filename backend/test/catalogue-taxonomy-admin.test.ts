@@ -150,6 +150,35 @@ describe('authorization (docs/24 §10.2: taxonomy is operations-only)', () => {
               WHERE user_id = ${shortLived.userId} AND role = 'operations'`.execute(testDb.db);
     expect((await inject('GET', '/admin/taxonomy', shortLived.bearer)).statusCode).toBe(403);
   });
+
+  it('W3-7 policy split: a STALE-factor operations admin can READ the administration view, but every mutation still demands a recent factor', async () => {
+    const stale = await bearerForUser(ctx, ops.userId, {
+      authTime: new Date(Date.now() - 3_600_000),
+    });
+    expect((await inject('GET', '/admin/taxonomy', stale.bearer)).statusCode).toBe(200);
+    const refusedCreate = await inject('POST', '/admin/taxonomy/areas', stale.bearer, {
+      slug: 'stale-split-area',
+      labelEn: 'Stale Split',
+    });
+    expect(refusedCreate.statusCode).toBe(403);
+    expect(refusedCreate.json().code).toBe('stepUpRequired');
+    const category = await createCategory('stale-split-cat');
+    const refusedPatch = await inject(
+      'PATCH',
+      `/admin/taxonomy/categories/${category.id}`,
+      stale.bearer,
+      { expectedVersion: category.version, active: false },
+    );
+    expect(refusedPatch.statusCode).toBe(403);
+    expect(refusedPatch.json().code).toBe('stepUpRequired');
+    // Nothing changed: the area was never created, the category stays active.
+    const area = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM area WHERE slug = 'stale-split-area'`.execute(testDb.db);
+    expect(Number(area.rows[0]?.n)).toBe(0);
+    const untouched = await sql<{ active: boolean }>`
+      SELECT active FROM category WHERE id = ${category.id}`.execute(testDb.db);
+    expect(untouched.rows[0]?.active).toBe(true);
+  });
 });
 
 describe('creation and editing (docs/24 §2.1 shapes; English required, Arabic optional)', () => {
@@ -507,8 +536,13 @@ describe('audit/outbox and route boundary', () => {
       ].sort(),
     );
     for (const route of taxonomyRoutes) {
-      // Retained recent-factor strength (W3-1 final split — not weakened).
-      expect(route.policy).toBe('adminStepUp');
+      // W3-7 policy split: the administration READ rides the admin
+      // baseline (W3-1 ruling); every MUTATION keeps its recent-factor
+      // strength on adminStepUp (D-W3-5 still owner-pending).
+      const isRead = route.method === 'GET' || route.method === 'HEAD';
+      expect(`${route.method} ${route.url} → ${route.policy}`).toBe(
+        `${route.method} ${route.url} → ${isRead ? 'admin' : 'adminStepUp'}`,
+      );
     }
     // The customer-public /listings, /catalogue/*, /providers/:id/listings,
     // and /search reads arrived legitimately with their owner-approved
