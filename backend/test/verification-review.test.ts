@@ -190,8 +190,8 @@ afterAll(async () => {
   await testDb.drop();
 });
 
-describe('route policies (W3-1: reads baseline, mutations on the safer adminStepUp — D-W3-5 stays open)', () => {
-  it('declares the read on the admin baseline and every mutation on adminStepUp', () => {
+describe('route policies (D-W3-5 owner ruling, resolved at W3-9)', () => {
+  it('declares reads + preparatory workflow on the baseline; the final decision and trust edges keep adminStepUp', () => {
     const verification = app.routePolicyInventory
       .filter((route) => route.url.includes('/verification') && route.url.startsWith('/admin'))
       .map((route) => `${route.method} ${route.url} → ${route.policy}`);
@@ -199,18 +199,65 @@ describe('route policies (W3-1: reads baseline, mutations on the safer adminStep
       new Set([
         'GET /admin/organizations/:organizationId/verification → admin',
         'HEAD /admin/organizations/:organizationId/verification → admin',
-        'POST /admin/organizations/:organizationId/verification/cases → adminStepUp',
-        'POST /admin/organizations/:organizationId/verification/cases/:caseId/review → adminStepUp',
+        // PREPARATORY (owner ruling): opening a round / starting review.
+        'POST /admin/organizations/:organizationId/verification/cases → admin',
+        'POST /admin/organizations/:organizationId/verification/cases/:caseId/review → admin',
+        // The FINAL decision keeps the recent-factor strength.
         'POST /admin/organizations/:organizationId/verification/cases/:caseId/decision → adminStepUp',
         'GET /admin/verification/evidence/:evidenceId/content → admin',
         'HEAD /admin/verification/evidence/:evidenceId/content → admin',
-        // The pre-existing standalone edges keep their certified strength
-        // (D-S3-3 defense-in-depth remains on verify/go-live).
-        'POST /admin/organizations/:organizationId/verification/start-review → adminStepUp',
+        // Standalone edges: the org's own start_review is the SAME
+        // preparatory class (and is what the composed review begins);
+        // verify/reject grant/remove trust and keep adminStepUp (D-S3-3
+        // defense-in-depth remains on verify/go-live).
+        'POST /admin/organizations/:organizationId/verification/start-review → admin',
         'POST /admin/organizations/:organizationId/verification/verify → adminStepUp',
         'POST /admin/organizations/:organizationId/verification/reject → adminStepUp',
       ]),
     );
+  });
+
+  it('D-W3-5 ruling behavior: a STALE-factor operations admin opens the round and starts review, but the DECISION refuses stepUpRequired with no change', async () => {
+    const { orgId } = await submittedOrg();
+    const stale = await bearerForUser(ctx, ops, {
+      authTime: new Date(Date.now() - 3_600_000),
+    });
+    const opened = await adminPost(
+      app,
+      stale.bearer,
+      `/admin/organizations/${orgId}/verification/cases`,
+    );
+    expect(opened.statusCode).toBe(200);
+    const caseId = (opened.json() as { caseId: string }).caseId;
+    const started = await adminPost(
+      app,
+      stale.bearer,
+      `/admin/organizations/${orgId}/verification/cases/${caseId}/review`,
+      { expectedCaseVersion: (opened.json() as { version: number }).version },
+    );
+    expect(started.statusCode).toBe(200);
+    await expect(orgState(orgId)).resolves.toMatchObject({ state: 'in_review' });
+
+    const refused = await adminPost(
+      app,
+      stale.bearer,
+      `/admin/organizations/${orgId}/verification/cases/${caseId}/decision`,
+      {
+        expectedCaseVersion: (started.json() as { caseVersion: number }).caseVersion,
+        outcome: 'rejected',
+        reasonCode: 'expired_document',
+        providerSafeMessage: 'Refused before this could ever apply.',
+      },
+    );
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().code).toBe('stepUpRequired');
+    await expect(orgState(orgId)).resolves.toMatchObject({ state: 'in_review' });
+    const decisions = await testDb.db
+      .selectFrom('verification_decision')
+      .select(['id'])
+      .where('case_id', '=', caseId)
+      .execute();
+    expect(decisions).toEqual([]);
   });
 });
 
@@ -586,7 +633,9 @@ describe('authorization and the content-safety invariant (§4/§5/§13)', () => 
     expect(mutate.statusCode).toBe(403);
 
     // A STALE-factor operations admin can still READ the workspace (W3-1
-    // baseline) but is step-up-refused on the mutation (adminStepUp).
+    // baseline) — and per the D-W3-5 ruling the preparatory open/start
+    // legs are baseline too (proven in the ruling-behavior test above);
+    // the FINAL DECISION keeps the recent-factor refusal.
     const staleBearer = (
       await bearerForUser(ctx, ops, { authTime: new Date(Date.now() - 3_600_000) })
     ).bearer;
@@ -596,13 +645,14 @@ describe('authorization and the content-safety invariant (§4/§5/§13)', () => 
       headers: { authorization: `Bearer ${staleBearer}` },
     });
     expect(staleRead.statusCode).toBe(200);
-    const staleMutation = await adminPost(
+    const staleDecision = await adminPost(
       app,
       staleBearer,
-      `/admin/organizations/${orgId}/verification/cases`,
+      `/admin/organizations/${orgId}/verification/cases/${newId()}/decision`,
+      { expectedCaseVersion: 1, outcome: 'approved' },
     );
-    expect(staleMutation.statusCode).toBe(403);
-    expect(staleMutation.json().code).toBe('stepUpRequired');
+    expect(staleDecision.statusCode).toBe(403);
+    expect(staleDecision.json().code).toBe('stepUpRequired');
   });
 
   it('while content safety is unavailable (the ONLY production-representable state), review and decision are refused with the typed safety condition', async () => {

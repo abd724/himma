@@ -5,8 +5,10 @@
  * provider/customer/anonymous callers:
  * - baseline `admin` assurance is NEVER authorization: each W3 read
  *   surface admits exactly its designated roles;
- * - the W3-1 split holds everywhere: stale-factor admins read their
- *   baseline surfaces but every sensitive mutation refuses stepUpRequired;
+ * - the FINAL D-W3-5 owner ruling holds composed: stale-factor admins
+ *   read their surfaces AND perform the preparatory baseline mutations,
+ *   while every retained authority/trust/availability action refuses
+ *   stepUpRequired with zero state change;
  * - provider and admin authority stay disjoint in BOTH directions;
  * - cross-organization provider reads stay fail-closed.
  * Per-domain depth (CAS, dual control, atomicity, hygiene) remains in the
@@ -139,10 +141,17 @@ describe('assurance is never authorization (docs/31 §9)', () => {
     }
   });
 
-  it('the W3-1 split holds composed: ONE stale operations bearer reads every operations baseline surface and is stepUpRequired on a mutation of every W3 mutation family', async () => {
+  it('the FINAL D-W3-5 set holds composed: ONE stale operations bearer performs every newly-baseline PREPARATORY action and is stepUpRequired on every retained high-risk action — with zero state change', async () => {
     const stale = await bearerForUser(ctx, admins.operations.userId, {
       authTime: new Date(Date.now() - 3_600_000),
     });
+    const post = (url: string, payload: Record<string, unknown> = {}) =>
+      app.inject({
+        method: 'POST',
+        url,
+        headers: { authorization: `Bearer ${stale.bearer}` },
+        payload,
+      });
     for (const url of [
       '/admin/organizations',
       '/admin/listings',
@@ -152,34 +161,135 @@ describe('assurance is never authorization (docs/31 §9)', () => {
     ]) {
       expect(`${url} → ${(await get(url, stale.bearer)).statusCode}`).toBe(`${url} → 200`);
     }
-    const mutations: Array<{ url: string; payload: Record<string, unknown> }> = [
-      // Organization lifecycle (S3-4/W3-2 family).
-      { url: `/admin/organizations/${orgA}/suspend`, payload: { expectedVersion: 1 } },
-      // Verification review (W3-5 family).
-      { url: `/admin/organizations/${orgA}/verification/cases`, payload: {} },
-      // Catalogue moderation (W3-6 family).
-      { url: `/admin/listings/${newId()}/review/start`, payload: { expectedVersion: 1 } },
-      // Taxonomy administration (W3-7 family).
-      { url: '/admin/taxonomy/areas', payload: { slug: 'never-lands', labelEn: 'Never' } },
+
+    // NEWLY-BASELINE preparatory actions succeed (or reach their DOMAIN
+    // outcome — never stepUpRequired) under the stale factor:
+    // (1) organization start_review — the ONE preparatory edge of the
+    // EIGHT lifecycle actions — moves a real submitted org to in_review.
+    const submitted = await createProviderOrg(testDb.db, { state: 'submitted', branches: 1 });
+    const startReview = await post(
+      `/admin/organizations/${submitted.orgId}/verification/start-review`,
+      { expectedVersion: 1 },
+    );
+    expect(startReview.statusCode).toBe(200);
+    const moved = await sql<{ s: string }>`
+      SELECT verification_state AS s FROM organization WHERE id = ${submitted.orgId}`.execute(
+      testDb.db,
+    );
+    expect(moved.rows[0]?.s).toBe('in_review');
+    // (2) verification round-opening reaches the DOMAIN (this composition
+    // has no policy provider, so the D-W3-3 fail-close answers — proving
+    // the pipeline no longer step-up-refuses it; full success is proven in
+    // the verification suite's ruling-behavior test).
+    const openRound = await post(`/admin/organizations/${submitted.orgId}/verification/cases`);
+    expect(`${openRound.statusCode}:${openRound.json().code}`).toBe(
+      '503:verificationPolicyUnavailable',
+    );
+    // (3) listing start-review reaches the DOMAIN (ghost id → notFound;
+    // full success is proven in the moderation suite's ruling test).
+    const listingStart = await post(`/admin/listings/${newId()}/review/start`, {
+      expectedVersion: 1,
+    });
+    expect(`${listingStart.statusCode}:${listingStart.json().code}`).toBe('404:notFound');
+    // (4) taxonomy creation + ordinary metadata edit succeed.
+    const createdArea = await post('/admin/taxonomy/areas', {
+      slug: 'ruling-baseline-area',
+      labelEn: 'Ruling Baseline Area',
+    });
+    expect(createdArea.statusCode).toBe(200);
+    const areaId = (createdArea.json() as { area: { id: string } }).area.id;
+    const metadata = await app.inject({
+      method: 'PATCH',
+      url: `/admin/taxonomy/areas/${areaId}`,
+      headers: { authorization: `Bearer ${stale.bearer}` },
+      payload: { expectedVersion: 1, sortHint: 7 },
+    });
+    expect(metadata.statusCode).toBe(200);
+
+    // RETAINED high-risk actions: stepUpRequired for the SAME bearer.
+    const retained: Array<{ label: string; method?: 'POST' | 'PATCH' | 'DELETE'; url: string; payload: Record<string, unknown> }> = [
+      // Organization lifecycle — the remaining SEVEN of the eight actions.
+      { label: 'org create', url: '/admin/organizations', payload: { legalName: 'Never LLC', tradeName: 'Never', foundingOwnerEmail: 'never@example.test' } },
+      { label: 'org verify', url: `/admin/organizations/${submitted.orgId}/verification/verify`, payload: { expectedVersion: 2 } },
+      { label: 'org reject', url: `/admin/organizations/${submitted.orgId}/verification/reject`, payload: { expectedVersion: 2 } },
+      { label: 'org go-live', url: `/admin/organizations/${submitted.orgId}/go-live`, payload: { expectedVersion: 2 } },
+      { label: 'org suspend', url: `/admin/organizations/${orgA}/suspend`, payload: { expectedVersion: 1 } },
+      { label: 'org reinstate', url: `/admin/organizations/${orgA}/reinstate`, payload: { expectedVersion: 1 } },
+      { label: 'org offboard', url: `/admin/organizations/${orgA}/offboard`, payload: { expectedVersion: 1 } },
+      // Final verification decision.
+      { label: 'verification decision', url: `/admin/organizations/${submitted.orgId}/verification/cases/${newId()}/decision`, payload: { expectedCaseVersion: 1, outcome: 'approved' } },
+      // Consequential moderation decisions.
+      { label: 'listing approve', url: `/admin/listings/${newId()}/review/approve`, payload: { expectedVersion: 1 } },
+      { label: 'listing request-changes', url: `/admin/listings/${newId()}/review/request-changes`, payload: { expectedVersion: 1 } },
+      { label: 'revision approve', url: `/admin/listings/${newId()}/revisions/${newId()}/approve`, payload: { expectedVersion: 1 } },
+      { label: 'revision reject', url: `/admin/listings/${newId()}/revisions/${newId()}/reject`, payload: { expectedVersion: 1 } },
+      // Taxonomy availability changes through the SAME PATCH surface.
+      { label: 'taxonomy deactivate', method: 'PATCH', url: `/admin/taxonomy/areas/${areaId}`, payload: { expectedVersion: 2, active: false } },
     ];
-    for (const mutation of mutations) {
+    for (const probe of retained) {
       const response = await app.inject({
-        method: 'POST',
-        url: mutation.url,
+        method: probe.method ?? 'POST',
+        url: probe.url,
         headers: { authorization: `Bearer ${stale.bearer}` },
-        payload: mutation.payload,
+        payload: probe.payload,
       });
-      expect(`${mutation.url} → ${response.statusCode}:${response.json().code}`).toBe(
-        `${mutation.url} → 403:stepUpRequired`,
+      expect(`${probe.label} → ${response.statusCode}:${response.json().code}`).toBe(
+        `${probe.label} → 403:stepUpRequired`,
       );
     }
-    // Nothing moved anywhere.
+    // Zero state change from every refusal: orgA untouched, the area still
+    // active at its metadata-edit version.
     const org = await sql<{ s: string }>`
       SELECT verification_state AS s FROM organization WHERE id = ${orgA}`.execute(testDb.db);
     expect(org.rows[0]?.s).toBe('live');
-    const area = await sql<{ n: string }>`
-      SELECT count(*) AS n FROM area WHERE slug = 'never-lands'`.execute(testDb.db);
-    expect(Number(area.rows[0]?.n)).toBe(0);
+    const area = await sql<{ active: boolean; version: number }>`
+      SELECT active, version FROM area WHERE id = ${areaId}`.execute(testDb.db);
+    expect(area.rows[0]).toEqual({ active: true, version: 2 });
+  });
+
+  it('role REQUEST keeps step-up even for an immediately-activating role: a stale access_admin is refused and NO assignment appears', async () => {
+    const stale = await bearerForUser(ctx, admins.access_admin.userId, {
+      authTime: new Date(Date.now() - 3_600_000),
+    });
+    const target = await createUser(testDb.db);
+    // `support` is NOT finance-capable: a fresh-factor request would
+    // ACTIVATE it immediately — which is exactly why request itself stays
+    // on adminStepUp (the owner ruling: request can grant authority).
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/admin/role-requests',
+      headers: { authorization: `Bearer ${stale.bearer}` },
+      payload: { targetUserId: target, role: 'support' },
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().code).toBe('stepUpRequired');
+    const rows = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM admin_role_assignment WHERE user_id = ${target}`.execute(
+      testDb.db,
+    );
+    expect(Number(rows.rows[0]?.n)).toBe(0);
+  });
+
+  it('capability/role refusal applies INDEPENDENTLY on newly-baseline mutations: a fresh access_admin gains nothing from the relaxed assurance', async () => {
+    const accessAdmin = admins.access_admin.bearer; // fresh factor
+    const taxonomy = await app.inject({
+      method: 'POST',
+      url: '/admin/taxonomy/areas',
+      headers: { authorization: `Bearer ${accessAdmin}` },
+      payload: { slug: 'never-created-by-access', labelEn: 'Never' },
+    });
+    expect(taxonomy.statusCode).toBe(403);
+    expect(taxonomy.json().code).toBe('forbidden');
+    const startReview = await app.inject({
+      method: 'POST',
+      url: `/admin/organizations/${orgA}/verification/start-review`,
+      headers: { authorization: `Bearer ${accessAdmin}` },
+      payload: { expectedVersion: 1 },
+    });
+    expect(startReview.statusCode).toBe(403);
+    const created = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM area WHERE slug = 'never-created-by-access'`.execute(testDb.db);
+    expect(Number(created.rows[0]?.n)).toBe(0);
   });
 });
 

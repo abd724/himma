@@ -125,7 +125,8 @@ export function createFixtureVerificationPort(
     async openCase(organizationId) {
       const refused = admit();
       if (refused !== null) return refused;
-      if (authority.stepUpDemanded()) return { kind: 'stepUpRequired' };
+      // D-W3-5 ruling: opening a round is PREPARATORY — baseline, never
+      // step-up (the decision below keeps the demand).
       const record = recordOf(organizationId);
       if (record === undefined) return { kind: 'notFound' };
       if (record.org.state !== 'submitted' && record.org.state !== 'in_review') {
@@ -176,7 +177,7 @@ export function createFixtureVerificationPort(
     async startReview(organizationId, input) {
       const refused = admit();
       if (refused !== null) return refused;
-      if (authority.stepUpDemanded()) return { kind: 'stepUpRequired' };
+      // D-W3-5 ruling: starting review is PREPARATORY — baseline.
       if (!authority.contentSafetyReady()) return { kind: 'safetyUnavailable' };
       const record = recordOf(organizationId);
       const round = record?.verification.find((entry) => entry.caseId === input.caseId);

@@ -1,11 +1,18 @@
 /**
  * Internal taxonomy administration routes (docs/28 §16.3 `/admin/taxonomy/…`).
  *
- * W3-7 policy split (the W3-1 ruling applied by the owning slice): the
- * administration READ rides the `admin` baseline like every other ordinary
- * internal read, while every taxonomy MUTATION keeps its pre-split
- * recent-factor strength on `adminStepUp` (D-W3-5 — the final high-risk
- * action set — stays owner-pending). The services require the
+ * D-W3-5 OWNER RULING (resolved at W3-9): ordinary taxonomy
+ * administration — creation and metadata edits (labels, city, sortHint,
+ * synonyms, editorial collection fields) — rides the `admin` BASELINE,
+ * while CHANGING ACTIVE AVAILABILITY (the `active` flag; a collection's
+ * lifecycle `state`) requires a recent-factor step-up. Because ONE PATCH
+ * route carries both, assurance is ACTION-SENSITIVE via the smallest
+ * existing seam: the pipeline exposes the already-computed recency truth
+ * as `principal.stepUp` (set only for a fresh factor or a live grant),
+ * and the handler refuses `stepUpRequired` BEFORE any service call when
+ * the patch touches availability — exactly the pre-split pipeline order
+ * (recency before the service's operations-role check), so nothing new
+ * leaks and no partial mutation can occur. The services require the
  * `operations` role fresh per transaction. Deliberate named services per
  * entity — no generic table
  * CRUD abstraction, no raw models. Slug immutability is structural: no
@@ -165,6 +172,23 @@ export interface TaxonomyRouteDeps {
   db: Db;
 }
 
+/** D-W3-5 action-sensitive assurance: a patch that changes ACTIVE
+ *  AVAILABILITY (`active`; collection `state`) demands the recent factor
+ *  the pipeline already computed (`principal.stepUp` — a fresh factor or
+ *  a live grant). Runs BEFORE any service call: no partial mutation, and
+ *  the refusal order matches the pre-split pipeline exactly. */
+function availabilityChangeAllowed(
+  reply: FastifyReply,
+  principal: { stepUp?: unknown },
+  touchesAvailability: boolean,
+): boolean {
+  if (touchesAvailability && principal.stepUp === undefined) {
+    sendOutcome(reply, 'stepUpRequired');
+    return false;
+  }
+  return true;
+}
+
 export function registerAdminTaxonomyRoutes(
   instance: FastifyInstance,
   deps: TaxonomyRouteDeps,
@@ -179,7 +203,6 @@ export function registerAdminTaxonomyRoutes(
   app.get(
     '/admin/taxonomy',
     {
-      // W3-7: an ordinary internal READ — the admin BASELINE (W3-1 split).
       config: { authPolicy: 'admin' },
       schema: {
         response: {
@@ -207,7 +230,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/areas',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -239,7 +262,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/areas/:areaId',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ areaId: Uuid }),
@@ -263,6 +286,9 @@ export function registerAdminTaxonomyRoutes(
     async (request, reply) => {
       const principal = requirePrincipal(request.principal);
       const { expectedVersion, ...patch } = request.body;
+      if (!availabilityChangeAllowed(reply, principal, patch.active !== undefined)) {
+        return reply;
+      }
       const result = await updateArea(serviceDeps, { userId: principal.userId }, {
         areaId: request.params.areaId,
         expectedVersion,
@@ -281,7 +307,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/categories',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -313,7 +339,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/categories/:categoryId',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ categoryId: Uuid }),
@@ -337,6 +363,9 @@ export function registerAdminTaxonomyRoutes(
     async (request, reply) => {
       const principal = requirePrincipal(request.principal);
       const { expectedVersion, ...patch } = request.body;
+      if (!availabilityChangeAllowed(reply, principal, patch.active !== undefined)) {
+        return reply;
+      }
       const result = await updateCategory(serviceDeps, { userId: principal.userId }, {
         categoryId: request.params.categoryId,
         expectedVersion,
@@ -355,7 +384,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/activity-types',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -397,7 +426,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/activity-types/:activityTypeId',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ activityTypeId: Uuid }),
@@ -424,6 +453,9 @@ export function registerAdminTaxonomyRoutes(
     async (request, reply) => {
       const principal = requirePrincipal(request.principal);
       const { expectedVersion, ...patch } = request.body;
+      if (!availabilityChangeAllowed(reply, principal, patch.active !== undefined)) {
+        return reply;
+      }
       const result = await updateActivityType(serviceDeps, { userId: principal.userId }, {
         activityTypeId: request.params.activityTypeId,
         expectedVersion,
@@ -444,7 +476,7 @@ export function registerAdminTaxonomyRoutes(
   app.post(
     '/admin/taxonomy/collections',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         body: Type.Object(
@@ -479,7 +511,7 @@ export function registerAdminTaxonomyRoutes(
   app.patch(
     '/admin/taxonomy/collections/:collectionId',
     {
-      config: { authPolicy: 'adminStepUp' },
+      config: { authPolicy: 'admin' },
       bodyLimit: TAXONOMY_BODY_LIMIT,
       schema: {
         params: Type.Object({ collectionId: Uuid }),
@@ -503,6 +535,9 @@ export function registerAdminTaxonomyRoutes(
     async (request, reply) => {
       const principal = requirePrincipal(request.principal);
       const { expectedVersion, ...patch } = request.body;
+      if (!availabilityChangeAllowed(reply, principal, patch.state !== undefined)) {
+        return reply;
+      }
       const result = await updateCollection(serviceDeps, { userId: principal.userId }, {
         collectionId: request.params.collectionId,
         expectedVersion,

@@ -206,7 +206,10 @@ export function registerAdminModerationRoutes(
     app.post(
       url,
       {
-        config: { authPolicy: 'adminStepUp' },
+        // D-W3-5 owner ruling (W3-9): START-REVIEW is preparatory — the
+        // admin BASELINE; the consequential decisions (approve /
+        // request-changes) keep the recent-factor adminStepUp strength.
+        config: { authPolicy: action === 'start_review' ? 'admin' : 'adminStepUp' },
         bodyLimit: MODERATION_BODY_LIMIT,
         schema: {
           params: Type.Object({ programId: Uuid }),
@@ -300,7 +303,9 @@ export function registerAdminModerationRoutes(
   app.post(
     '/admin/listings/:programId/revisions/:revisionId/review/start',
     {
-      config: { authPolicy: 'adminStepUp' },
+      // D-W3-5 owner ruling (W3-9): preparatory — the admin BASELINE
+      // (approve/reject below keep adminStepUp).
+      config: { authPolicy: 'admin' },
       bodyLimit: MODERATION_BODY_LIMIT,
       schema: {
         params: Type.Object({ programId: Uuid, revisionId: Uuid }),

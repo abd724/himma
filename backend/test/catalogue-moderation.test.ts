@@ -255,7 +255,7 @@ describe('authorization surface (docs/28 §16.3: admin policy + operations role)
     expect(await programState(programId)).toBe('submitted');
   });
 
-  it('W3-6 policy split: a STALE-factor operations admin can READ the queues/detail, but every decision still demands a recent factor', async () => {
+  it('D-W3-5 ruling: a STALE-factor operations admin reads queues/detail AND starts reviews (preparatory), but every consequential decision demands the recent factor', async () => {
     const { programId } = await submittedProgram('Stale Factor Split');
     const stale = await bearerForUser(ctx, ops.userId, {
       authTime: new Date(Date.now() - 3_600_000),
@@ -263,12 +263,30 @@ describe('authorization surface (docs/28 §16.3: admin policy + operations role)
     expect((await inject('GET', '/admin/listings?state=submitted', stale.bearer)).statusCode).toBe(200);
     expect((await inject('GET', `/admin/listings/${programId}`, stale.bearer)).statusCode).toBe(200);
     expect((await inject('GET', '/admin/revisions', stale.bearer)).statusCode).toBe(200);
-    const refused = await inject('POST', `/admin/listings/${programId}/review/start`, stale.bearer, {
-      expectedVersion: 2,
+    // PREPARATORY: start-review succeeds under the stale factor (baseline).
+    const started = await inject('POST', `/admin/listings/${programId}/review/start`, stale.bearer, {
+      expectedVersion: await programVersion(programId),
     });
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json().code).toBe('stepUpRequired');
-    expect(await programState(programId)).toBe('submitted');
+    expect(started.statusCode).toBe(200);
+    expect(await programState(programId)).toBe('in_review');
+    // CONSEQUENTIAL: both decisions refuse stepUpRequired with no change.
+    for (const decision of ['approve', 'request-changes']) {
+      const refused = await inject(
+        'POST',
+        `/admin/listings/${programId}/review/${decision}`,
+        stale.bearer,
+        { expectedVersion: await programVersion(programId) },
+      );
+      expect(`${decision}:${refused.statusCode}:${refused.json().code}`).toBe(
+        `${decision}:403:stepUpRequired`,
+      );
+    }
+    expect(await programState(programId)).toBe('in_review');
+    // The fresh-factor admin still decides — nothing tightened.
+    const approved = await inject('POST', `/admin/listings/${programId}/review/approve`, ops.bearer, {
+      expectedVersion: await programVersion(programId),
+    });
+    expect(approved.statusCode).toBe(200);
   });
 
   it('revoked admin authority bites on the very next request', async () => {
@@ -783,12 +801,14 @@ describe('event payload hygiene and route boundary', () => {
       ].sort(),
     );
     for (const route of moderation) {
-      // W3-6 policy split: queue/detail READS ride the admin baseline
-      // (W3-1 ruling); every DECISION mutation keeps its recent-factor
-      // strength on adminStepUp (D-W3-5 still owner-pending).
+      // D-W3-5 OWNER RULING (resolved at W3-9): reads AND the preparatory
+      // start-review legs ride the admin baseline; the consequential
+      // decisions (approve / request-changes / revision approve / revision
+      // reject) keep their recent-factor adminStepUp strength.
       const isRead = route.method === 'GET' || route.method === 'HEAD';
+      const isPreparatory = route.url.endsWith('/review/start');
       expect(`${route.method} ${route.url} → ${route.policy}`).toBe(
-        `${route.method} ${route.url} → ${isRead ? 'admin' : 'adminStepUp'}`,
+        `${route.method} ${route.url} → ${isRead || isPreparatory ? 'admin' : 'adminStepUp'}`,
       );
     }
     // Still no session/booking/payment surface. (The Slice-2 /auth/session

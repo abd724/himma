@@ -281,7 +281,11 @@ export function createFixtureModerationPort(
     async reviewListing(programId, action, input) {
       const refused = admit();
       if (refused !== null) return refused;
-      if (authority.stepUpDemanded()) return { kind: 'stepUpRequired' };
+      // D-W3-5 ruling: start-review is PREPARATORY (baseline); only the
+      // consequential decisions demand the recent factor.
+      if (action !== 'start_review' && authority.stepUpDemanded()) {
+        return { kind: 'stepUpRequired' };
+      }
       const listing = listingOf(programId);
       if (listing === undefined) return { kind: 'notFound' };
       const legal =
@@ -303,7 +307,7 @@ export function createFixtureModerationPort(
     async startRevisionReview(programId, revisionId, input) {
       const refused = admit();
       if (refused !== null) return refused;
-      if (authority.stepUpDemanded()) return { kind: 'stepUpRequired' };
+      // D-W3-5 ruling: preparatory — baseline.
       const listing = listingOf(programId);
       const revision = listing?.revision;
       if (listing === undefined || revision === null || revision === undefined || revision.id !== revisionId) {

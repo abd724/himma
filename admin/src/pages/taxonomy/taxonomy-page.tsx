@@ -884,7 +884,12 @@ function CollectionsSection({
           audience: draft.audience as 'all' | 'adults' | 'children',
           featured: draft.featured,
           seasonalLabel: draft.seasonalLabel.trim() === '' ? null : draft.seasonalLabel.trim(),
-          state: draft.state as 'draft' | 'published' | 'archived',
+          // D-W3-5: `state` is the AVAILABILITY seam (step-up server-side)
+          // — send it only when this save actually changes it, so ordinary
+          // metadata edits stay ordinary.
+          ...(selected !== null && draft.state !== selected.state
+            ? { state: draft.state as 'draft' | 'published' | 'archived' }
+            : {}),
         },
       }),
     async onSuccess(outcome) {

@@ -172,7 +172,10 @@ export function registerVerificationReviewRoutes(
   app.post(
     '/admin/organizations/:organizationId/verification/cases',
     {
-      config: { authPolicy: 'adminStepUp' },
+      // D-W3-5 owner ruling (W3-9): opening a round is PREPARATORY —
+      // the admin BASELINE (operations gate + every W3-3/W3-5 invariant
+      // unchanged; the final decision below keeps adminStepUp).
+      config: { authPolicy: 'admin' },
       bodyLimit: REVIEW_BODY_LIMIT,
       schema: {
         params: Type.Object({ organizationId: Uuid }),
@@ -225,7 +228,10 @@ export function registerVerificationReviewRoutes(
   app.post(
     '/admin/organizations/:organizationId/verification/cases/:caseId/review',
     {
-      config: { authPolicy: 'adminStepUp' },
+      // D-W3-5 owner ruling (W3-9): starting the review is PREPARATORY —
+      // the admin BASELINE; the org's own start_review edge it composes is
+      // the same preparatory class. The DECISION below keeps adminStepUp.
+      config: { authPolicy: 'admin' },
       bodyLimit: REVIEW_BODY_LIMIT,
       schema: {
         params: Type.Object({ organizationId: Uuid, caseId: Uuid }),

@@ -139,7 +139,16 @@ export function registerOrganizationAdminRoutes(
     app.post(
       url,
       {
-        config: { authPolicy: 'adminStepUp' },
+        // D-W3-5 owner ruling (W3-9): `start_review` (submitted→in_review)
+        // is purely PREPARATORY — it confers no trust, operating status,
+        // or public availability (both `verified` and `live` require their
+        // own step-up edges, and public visibility requires `live`) — so
+        // it rides the admin BASELINE. Every other edge grants/removes
+        // trust, operating status, or public availability and keeps the
+        // recent-factor `adminStepUp` strength. Organization CREATION
+        // (below) also keeps step-up: its founding invitation admits an
+        // external owner — an authority grant, not preparation.
+        config: { authPolicy: action === 'start_review' ? 'admin' : 'adminStepUp' },
         bodyLimit: ADMIN_ORG_BODY_LIMIT,
         schema: {
           params: Type.Object({ organizationId: Uuid }),

@@ -172,20 +172,24 @@ describe('authorization and the step-up seam (task §4/§5)', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  test('an action-level step-up demand interrupts the decision; re-verification clears it and the decision then succeeds', async () => {
+  test('D-W3-5 ruling: a step-up demand never interrupts the PREPARATORY start, only the DECISION; re-verification clears it and the decision then succeeds', async () => {
     const user = userEvent.setup();
     const runtime = opsRuntime();
     renderAdmin({ runtime, initialEntries: ['/moderation/listing-aquava-camp'] });
     await screen.findByRole('heading', { name: 'Junior Swim Camp' });
 
     runtime.controls.demandStepUp();
+    // PREPARATORY: start-review proceeds under the open demand (baseline).
     await user.click(screen.getByRole('button', { name: 'Start review' }));
+    await screen.findByRole('button', { name: 'Approve listing' });
+    // CONSEQUENTIAL: the decision is interrupted.
+    await user.click(screen.getByRole('button', { name: 'Approve listing' }));
     await screen.findByText(/needs a fresh verification of your identity/);
     await user.type(screen.getByLabelText('Verification code'), '246810');
     await user.click(screen.getByRole('button', { name: 'Confirm identity' }));
     await screen.findByText(/Identity re-verified/);
 
-    await user.click(screen.getByRole('button', { name: 'Start review' }));
-    await screen.findByRole('button', { name: 'Approve listing' });
+    await user.click(screen.getByRole('button', { name: 'Approve listing' }));
+    await screen.findByText('Approved');
   });
 });

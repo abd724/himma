@@ -186,14 +186,31 @@ describe('fixture semantics mirror the certified backend exactly', () => {
     );
   });
 
-  test('mutations honour the step-up demand while the administration READ stays baseline', async () => {
+  test('D-W3-5 ruling: only AVAILABILITY changes honour the step-up demand — reads, creation, and metadata edits stay baseline', async () => {
     const runtime = opsRuntime();
     runtime.controls.demandStepUp();
     await expect(runtime.taxonomyPort.getTaxonomy()).resolves.toMatchObject({ kind: 'loaded' });
+    // Ordinary administration proceeds under the open demand (baseline).
+    await expect(
+      runtime.taxonomyPort.createArea({ slug: 'ruling-area', labelEn: 'Ruling Area' }),
+    ).resolves.toEqual({ kind: 'completed' });
     await expect(
       runtime.taxonomyPort.updateArea('area-dubai-marina', {
         expectedVersion: 1,
+        patch: { labelEn: 'Dubai Marina West', sortHint: 11 },
+      }),
+    ).resolves.toEqual({ kind: 'completed' });
+    // Availability changes are interrupted — areas and collections alike.
+    await expect(
+      runtime.taxonomyPort.updateArea('area-dubai-marina', {
+        expectedVersion: 2,
         patch: { active: false },
+      }),
+    ).resolves.toEqual({ kind: 'stepUpRequired' });
+    await expect(
+      runtime.taxonomyPort.updateCollection('coll-summer-camps', {
+        expectedVersion: 2,
+        patch: { state: 'archived' },
       }),
     ).resolves.toEqual({ kind: 'stepUpRequired' });
   });

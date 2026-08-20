@@ -151,33 +151,91 @@ describe('authorization (docs/24 §10.2: taxonomy is operations-only)', () => {
     expect((await inject('GET', '/admin/taxonomy', shortLived.bearer)).statusCode).toBe(403);
   });
 
-  it('W3-7 policy split: a STALE-factor operations admin can READ the administration view, but every mutation still demands a recent factor', async () => {
+  it('D-W3-5 ruling: a STALE-factor operations admin performs ORDINARY administration (create + metadata edits), but any AVAILABILITY change demands the recent factor and refuses without ANY side effect', async () => {
     const stale = await bearerForUser(ctx, ops.userId, {
       authTime: new Date(Date.now() - 3_600_000),
     });
     expect((await inject('GET', '/admin/taxonomy', stale.bearer)).statusCode).toBe(200);
-    const refusedCreate = await inject('POST', '/admin/taxonomy/areas', stale.bearer, {
-      slug: 'stale-split-area',
-      labelEn: 'Stale Split',
+
+    // ORDINARY administration under a stale factor: allowed (baseline).
+    const created = await inject('POST', '/admin/taxonomy/areas', stale.bearer, {
+      slug: 'stale-ruling-area',
+      labelEn: 'Stale Ruling Area',
     });
-    expect(refusedCreate.statusCode).toBe(403);
-    expect(refusedCreate.json().code).toBe('stepUpRequired');
-    const category = await createCategory('stale-split-cat');
-    const refusedPatch = await inject(
+    expect(created.statusCode).toBe(200);
+    const areaId = (created.json() as { area: { id: string } }).area.id;
+    const metadataPatch = await inject(
       'PATCH',
-      `/admin/taxonomy/categories/${category.id}`,
+      `/admin/taxonomy/areas/${areaId}`,
       stale.bearer,
-      { expectedVersion: category.version, active: false },
+      { expectedVersion: 1, labelEn: 'Stale Ruling Area East', sortHint: 42 },
     );
-    expect(refusedPatch.statusCode).toBe(403);
-    expect(refusedPatch.json().code).toBe('stepUpRequired');
-    // Nothing changed: the area was never created, the category stays active.
-    const area = await sql<{ n: string }>`
-      SELECT count(*) AS n FROM area WHERE slug = 'stale-split-area'`.execute(testDb.db);
-    expect(Number(area.rows[0]?.n)).toBe(0);
-    const untouched = await sql<{ active: boolean }>`
-      SELECT active FROM category WHERE id = ${category.id}`.execute(testDb.db);
-    expect(untouched.rows[0]?.active).toBe(true);
+    expect(metadataPatch.statusCode).toBe(200);
+
+    // AVAILABILITY change through the SAME PATCH route: step-up demanded
+    // BEFORE any service call — no state, version, audit, or outbox effect.
+    const eventsBefore = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM outbox_event WHERE aggregate_id = ${areaId}`.execute(testDb.db);
+    const auditBefore = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM audit_event WHERE entity_id = ${areaId}`.execute(testDb.db);
+    const refusedDeactivate = await inject(
+      'PATCH',
+      `/admin/taxonomy/areas/${areaId}`,
+      stale.bearer,
+      { expectedVersion: 2, active: false },
+    );
+    expect(refusedDeactivate.statusCode).toBe(403);
+    expect(refusedDeactivate.json().code).toBe('stepUpRequired');
+    // Even a MIXED patch (metadata + availability) is refused whole.
+    const refusedMixed = await inject(
+      'PATCH',
+      `/admin/taxonomy/areas/${areaId}`,
+      stale.bearer,
+      { expectedVersion: 2, labelEn: 'Never Lands', active: false },
+    );
+    expect(refusedMixed.json().code).toBe('stepUpRequired');
+    const row = await sql<{ active: boolean; version: number; label_en: string }>`
+      SELECT active, version, label_en FROM area WHERE id = ${areaId}`.execute(testDb.db);
+    expect(row.rows[0]).toEqual({
+      active: true,
+      version: 2,
+      label_en: 'Stale Ruling Area East',
+    });
+    const eventsAfter = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM outbox_event WHERE aggregate_id = ${areaId}`.execute(testDb.db);
+    const auditAfter = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM audit_event WHERE entity_id = ${areaId}`.execute(testDb.db);
+    expect(eventsAfter.rows[0]?.n).toBe(eventsBefore.rows[0]?.n);
+    expect(auditAfter.rows[0]?.n).toBe(auditBefore.rows[0]?.n);
+
+    // Collections: the lifecycle `state` field is the availability seam.
+    const collection = await inject('POST', '/admin/taxonomy/collections', stale.bearer, {
+      titleEn: 'Stale Ruling Collection',
+    });
+    expect(collection.statusCode).toBe(200);
+    const collectionId = (collection.json() as { collection: { id: string } }).collection.id;
+    const refusedArchive = await inject(
+      'PATCH',
+      `/admin/taxonomy/collections/${collectionId}`,
+      stale.bearer,
+      { expectedVersion: 1, state: 'archived' },
+    );
+    expect(refusedArchive.json().code).toBe('stepUpRequired');
+    const editorial = await inject(
+      'PATCH',
+      `/admin/taxonomy/collections/${collectionId}`,
+      stale.bearer,
+      { expectedVersion: 1, subtitleEn: 'Editorial metadata stays ordinary.' },
+    );
+    expect(editorial.statusCode).toBe(200);
+
+    // A FRESH factor performs the availability change (nothing tightened).
+    const deactivated = await inject('PATCH', `/admin/taxonomy/areas/${areaId}`, ops.bearer, {
+      expectedVersion: 2,
+      active: false,
+    });
+    expect(deactivated.statusCode).toBe(200);
+    expect((deactivated.json() as { area: { active: boolean } }).area.active).toBe(false);
   });
 });
 
@@ -536,12 +594,13 @@ describe('audit/outbox and route boundary', () => {
       ].sort(),
     );
     for (const route of taxonomyRoutes) {
-      // W3-7 policy split: the administration READ rides the admin
-      // baseline (W3-1 ruling); every MUTATION keeps its recent-factor
-      // strength on adminStepUp (D-W3-5 still owner-pending).
-      const isRead = route.method === 'GET' || route.method === 'HEAD';
+      // D-W3-5 OWNER RULING (resolved at W3-9): ordinary taxonomy
+      // administration (creation + metadata edits) rides the admin
+      // BASELINE at the pipeline; AVAILABILITY changes (`active` /
+      // collection `state`) enforce ACTION-SENSITIVE step-up in the
+      // handler — behavior-pinned below and in the security suite.
       expect(`${route.method} ${route.url} → ${route.policy}`).toBe(
-        `${route.method} ${route.url} → ${isRead ? 'admin' : 'adminStepUp'}`,
+        `${route.method} ${route.url} → admin`,
       );
     }
     // The customer-public /listings, /catalogue/*, /providers/:id/listings,

@@ -20,8 +20,10 @@ import type {
  *   invalidTaxonomy) and can never be re-parented;
  * - every update is CAS-checked (stale → staleVersion, no partial change);
  * - ordering is the sortHint data only — no reorder operation exists;
- * - mutations honour the action-level step-up seam (D-W3-5); the
- *   administration READ rides the baseline and never demands step-up.
+ * - the D-W3-5 OWNER RULING is mirrored: creation and metadata edits are
+ *   ordinary baseline administration; ONLY availability changes (`active`
+ *   / collection `state`) honour the action-level step-up seam; the
+ *   administration READ never demands step-up.
  * Live mode can never reach this module (composition-locked).
  */
 
@@ -201,11 +203,15 @@ export function createFixtureTaxonomyPort(
     if (!auth.hasTaxonomyCapability) return { kind: 'forbidden' };
     return null;
   };
-  /** Mutations only: the action-level step-up seam (never the read). */
-  const admitMutation = (): TaxonomyActionOutcome | null => {
+  /** D-W3-5 ruling: ordinary administration (creation + metadata edits)
+   *  is baseline; ONLY availability changes (`active` / collection
+   *  `state`) demand the recent factor — mirrored per call site. */
+  const admitMutation = (touchesAvailability = false): TaxonomyActionOutcome | null => {
     const refused = admit();
     if (refused !== null) return refused;
-    if (authority.stepUpDemanded()) return { kind: 'stepUpRequired' };
+    if (touchesAvailability && authority.stepUpDemanded()) {
+      return { kind: 'stepUpRequired' };
+    }
     return null;
   };
   const nextId = (prefix: string): string => {
@@ -254,7 +260,7 @@ export function createFixtureTaxonomyPort(
     },
 
     async updateArea(areaId, input) {
-      const refused = admitMutation();
+      const refused = admitMutation(input.patch.active !== undefined);
       if (refused !== null) return refused;
       const area = data.areas.find((entry) => entry.id === areaId);
       if (area === undefined) return { kind: 'notFound' };
@@ -291,7 +297,7 @@ export function createFixtureTaxonomyPort(
     },
 
     async updateCategory(categoryId, input) {
-      const refused = admitMutation();
+      const refused = admitMutation(input.patch.active !== undefined);
       if (refused !== null) return refused;
       const index = data.categories.findIndex((entry) => entry.id === categoryId);
       if (index === -1) return { kind: 'notFound' };
@@ -333,7 +339,7 @@ export function createFixtureTaxonomyPort(
     },
 
     async updateActivityType(activityTypeId, input) {
-      const refused = admitMutation();
+      const refused = admitMutation(input.patch.active !== undefined);
       if (refused !== null) return refused;
       const index = data.activityTypes.findIndex((entry) => entry.id === activityTypeId);
       if (index === -1) return { kind: 'notFound' };
@@ -381,7 +387,7 @@ export function createFixtureTaxonomyPort(
     },
 
     async updateCollection(collectionId, input) {
-      const refused = admitMutation();
+      const refused = admitMutation(input.patch.state !== undefined);
       if (refused !== null) return refused;
       const index = data.collections.findIndex((entry) => entry.id === collectionId);
       if (index === -1) return { kind: 'notFound' };

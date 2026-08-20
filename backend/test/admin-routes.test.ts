@@ -133,15 +133,21 @@ async function bearerFor(
 }
 
 describe('admin policy category', () => {
-  it('declares every admin route with an explicit admin-category policy — the /admin/me bootstrap on the baseline, every sensitive operation on adminStepUp', () => {
+  it('declares every admin route with the FINAL D-W3-5 owner-ruled policy — reads + preparatory mutations on the baseline, authority/trust/availability actions on adminStepUp', () => {
     const adminRoutes = app.routePolicyInventory.filter((r) => r.url.startsWith('/admin'));
     expect(adminRoutes.length).toBeGreaterThanOrEqual(5);
-    // W3-1 final split (+ the W3-2 reads): ordinary internal READ surfaces
-    // sit on the baseline; the pre-existing sensitive set keeps its
-    // recent-factor strength — the split must never weaken it. NB the
-    // /admin/organizations URL carries BOTH: GET (read, baseline) and POST
-    // (creation, step-up) — the assertion is per method.
-    const BASELINE = new Set([
+    // D-W3-5 OWNER RULING (resolved at W3-9): every ordinary internal READ
+    // rides the baseline, PREPARATORY workflow mutations and ordinary
+    // taxonomy metadata administration ride the baseline, and adminStepUp
+    // is kept for actions that grant/revoke administrative authority, make
+    // final verification/trust decisions, materially change operating or
+    // public availability, make consequential moderation decisions, or
+    // deactivate/archive shared taxonomy. NB the taxonomy PATCH routes are
+    // baseline AT THE PIPELINE but enforce ACTION-SENSITIVE step-up in the
+    // handler when a patch changes active availability (`active` /
+    // collection `state`) — behavior-pinned in the taxonomy + security
+    // suites.
+    const BASELINE_READS = new Set([
       '/admin/me',
       '/admin/organizations',
       '/admin/organizations/:organizationId',
@@ -154,11 +160,73 @@ describe('admin policy category', () => {
       '/admin/role-assignments/:assignmentId',
       '/admin/audit-events', // W3-9 AD-18 audit explorer read
     ]);
+    const BASELINE_MUTATIONS = new Set([
+      // Organization lifecycle: of the EIGHT actions (create + 7 edges),
+      // ONLY start_review is purely preparatory (submitted→in_review —
+      // confers no trust/operating/public availability). Creation keeps
+      // step-up: its founding invitation admits an external owner.
+      'POST /admin/organizations/:organizationId/verification/start-review',
+      // Verification review: opening a round / starting review are
+      // preparatory; the DECISION keeps step-up.
+      'POST /admin/organizations/:organizationId/verification/cases',
+      'POST /admin/organizations/:organizationId/verification/cases/:caseId/review',
+      // Catalogue moderation: start-review legs are preparatory; the
+      // consequential decisions keep step-up.
+      'POST /admin/listings/:programId/review/start',
+      'POST /admin/listings/:programId/revisions/:revisionId/review/start',
+      // Taxonomy: creation + ordinary metadata edits are baseline; the
+      // SAME PATCH routes enforce in-handler step-up for availability
+      // changes (active / collection state).
+      'POST /admin/taxonomy/areas',
+      'PATCH /admin/taxonomy/areas/:areaId',
+      'POST /admin/taxonomy/categories',
+      'PATCH /admin/taxonomy/categories/:categoryId',
+      'POST /admin/taxonomy/activity-types',
+      'PATCH /admin/taxonomy/activity-types/:activityTypeId',
+      'POST /admin/taxonomy/collections',
+      'PATCH /admin/taxonomy/collections/:collectionId',
+    ]);
+    // The RETAINED adminStepUp set — pinned exhaustively so a new sensitive
+    // route can never slip to the baseline unnoticed.
+    const STEP_UP = new Set([
+      // Role administration (ALL FOUR — request itself can grant authority:
+      // non-finance-capable roles activate immediately on request).
+      'POST /admin/role-requests',
+      'POST /admin/role-requests/:assignmentId/approve',
+      'POST /admin/role-requests/:assignmentId/deny',
+      'DELETE /admin/role-assignments/:assignmentId',
+      // Organization lifecycle (7 of 8).
+      'POST /admin/organizations',
+      'POST /admin/organizations/:organizationId/verification/verify',
+      'POST /admin/organizations/:organizationId/verification/reject',
+      'POST /admin/organizations/:organizationId/go-live',
+      'POST /admin/organizations/:organizationId/suspend',
+      'POST /admin/organizations/:organizationId/reinstate',
+      'POST /admin/organizations/:organizationId/offboard',
+      // Final verification decision.
+      'POST /admin/organizations/:organizationId/verification/cases/:caseId/decision',
+      // Consequential moderation decisions.
+      'POST /admin/listings/:programId/review/approve',
+      'POST /admin/listings/:programId/review/request-changes',
+      'POST /admin/listings/:programId/revisions/:revisionId/approve',
+      'POST /admin/listings/:programId/revisions/:revisionId/reject',
+    ]);
     for (const route of adminRoutes) {
-      const isRead = (route.method === 'GET' || route.method === 'HEAD') && BASELINE.has(route.url);
-      expect(`${route.method} ${route.url} → ${route.policy}`).toBe(
-        `${route.method} ${route.url} → ${isRead ? 'admin' : 'adminStepUp'}`,
-      );
+      const key = `${route.method} ${route.url}`;
+      const isRead = route.method === 'GET' || route.method === 'HEAD';
+      let expected: string;
+      if (isRead) {
+        expect(BASELINE_READS.has(route.url)).toBe(true);
+        expected = 'admin';
+      } else if (BASELINE_MUTATIONS.has(key)) {
+        expected = 'admin';
+      } else {
+        // Deny-by-default for the lock itself: an unclassified mutation is
+        // a test failure, never silently accepted at either policy.
+        expect(STEP_UP.has(key)).toBe(true);
+        expected = 'adminStepUp';
+      }
+      expect(`${key} → ${route.policy}`).toBe(`${key} → ${expected}`);
     }
   });
 
