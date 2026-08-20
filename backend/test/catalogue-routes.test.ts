@@ -469,6 +469,7 @@ describe('response hygiene', () => {
         'media',
         'offers',
         'openRevision',
+        'latestDecision', // W3-8: provider-safe correction feedback
       ].sort(),
     );
     // No snake_case column leaks through any nested view.

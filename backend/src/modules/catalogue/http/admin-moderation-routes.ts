@@ -47,6 +47,9 @@ const MODERATION_ERRORS = {
 
 /** Safe machine-readable reason slug — never free-text review notes. */
 const ReasonCode = Type.Optional(Type.String({ pattern: '^[a-z0-9_]{1,64}$' }));
+/** W3-8 (D-W3-2): the reviewer-authored provider-visible correction text —
+ *  optional on request-changes only; same bound as verification_decision. */
+const ProviderMessage = Type.Optional(Type.String({ minLength: 1, maxLength: 2000 }));
 const ExpectedVersion = Type.Integer({ minimum: 1 });
 const QueueQuery = Type.Object({
   state: Type.Optional(Type.Union([Type.Literal('submitted'), Type.Literal('in_review')])),
@@ -207,8 +210,15 @@ export function registerAdminModerationRoutes(
         bodyLimit: MODERATION_BODY_LIMIT,
         schema: {
           params: Type.Object({ programId: Uuid }),
+          // W3-8 (D-W3-2): ONLY request-changes may carry the optional
+          // reviewer-authored provider-visible message — start/approve
+          // declare no such field, so it cannot even be expressed there.
           body: Type.Object(
-            { expectedVersion: ExpectedVersion, reasonCode: ReasonCode },
+            {
+              expectedVersion: ExpectedVersion,
+              reasonCode: ReasonCode,
+              ...(action === 'request_changes' ? { providerMessage: ProviderMessage } : {}),
+            },
             { additionalProperties: false },
           ),
           response: {
@@ -223,12 +233,18 @@ export function registerAdminModerationRoutes(
       },
       async (request, reply) => {
         const principal = requirePrincipal(request.principal);
+        const body = request.body as {
+          expectedVersion: number;
+          reasonCode?: string;
+          providerMessage?: string;
+        };
         const result = await reviewProgram(serviceDeps, { userId: principal.userId }, {
           programId: request.params.programId,
           action,
-          expectedVersion: request.body.expectedVersion,
-          ...(request.body.reasonCode !== undefined
-            ? { reasonCode: request.body.reasonCode }
+          expectedVersion: body.expectedVersion,
+          ...(body.reasonCode !== undefined ? { reasonCode: body.reasonCode } : {}),
+          ...(action === 'request_changes' && body.providerMessage !== undefined
+            ? { providerMessage: body.providerMessage }
             : {}),
         });
         if (result.kind === 'programReviewed') {

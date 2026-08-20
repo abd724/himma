@@ -103,7 +103,7 @@ const STAGE_COPY: Record<OnboardingStage, { badge: string; heading: string; body
   rejected: {
     badge: 'Changes needed',
     heading: 'Your submission needs attention',
-    body: 'Himma couldn’t approve your organization yet. Your Himma contact will share what needs to change — once it’s addressed, you can submit again below.',
+    body: 'Himma couldn’t approve your organization yet. Once the points below are addressed, you can submit again.',
   },
   verified: {
     badge: 'Verified',
@@ -151,6 +151,7 @@ function OnboardingContent({
         </div>
         <h2 className={styles.statusHeading}>{copy.heading}</h2>
         <p className={styles.statusBody}>{copy.body}</p>
+        {view.stage === 'rejected' ? <RejectionFeedback snapshot={snapshot} /> : null}
         <SubmitArea snapshot={snapshot} view={view} onChanged={onChanged} />
         {view.stage === 'live' ? (
           <p className={styles.statusAction}>
@@ -185,6 +186,55 @@ function OnboardingContent({
           </p>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * W3-8 (docs/31 §5): the REAL provider-safe correction feedback from the
+ * latest verification decision — the reviewer-authored message and the
+ * machine reason, nothing internal (the backend seam cannot even select
+ * internal notes or reviewer identity). Renders only in the rejected
+ * stage; when no reviewer message exists the truthful Support fallback
+ * copy remains.
+ */
+function RejectionFeedback({ snapshot }: { snapshot: OnboardingSnapshot }) {
+  const decision = snapshot.verification?.latestDecision;
+  if (decision === null || decision === undefined || decision.outcome !== 'rejected') {
+    return (
+      <div className={styles.feedbackCard} role="note" aria-label="What needs to change">
+        <p className={styles.feedbackBody}>
+          Your Himma contact will share what needs to change. If you haven’t heard from us,
+          contact Himma support.
+        </p>
+      </div>
+    );
+  }
+  const decidedOn = new Intl.DateTimeFormat('en-AE', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(decision.decidedAt));
+  return (
+    <div className={styles.feedbackCard} role="note" aria-label="What needs to change">
+      <p className={styles.feedbackTitle}>What needs to change</p>
+      {decision.providerMessage !== null ? (
+        <p className={styles.feedbackBody}>{decision.providerMessage}</p>
+      ) : (
+        <p className={styles.feedbackBody}>
+          Your Himma contact will share the details. If you haven’t heard from us, contact Himma
+          support.
+        </p>
+      )}
+      <p className={styles.feedbackMeta}>
+        Reviewed on {decidedOn}
+        {decision.reasonCode !== null ? (
+          <>
+            {' · reference '}
+            <code className={styles.feedbackCode}>{decision.reasonCode}</code>
+          </>
+        ) : null}
+      </p>
     </div>
   );
 }

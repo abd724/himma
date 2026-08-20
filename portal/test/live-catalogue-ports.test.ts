@@ -163,6 +163,7 @@ const DETAIL_BODY = {
     },
   ],
   openRevision: null,
+  latestDecision: null,
 };
 
 const ACTIVITY_TYPES_BODY = {
@@ -354,6 +355,22 @@ describe('live listing detail', () => {
     expect(outcome.program).toEqual(DETAIL_BODY);
   });
 
+  test('W3-8: the latest request-changes feedback maps field for field', async () => {
+    const latestDecision = {
+      reasonCode: 'incomplete_description',
+      providerMessage: 'Describe the sessions in more detail.',
+      decidedAt: '2026-08-14T09:30:00.000Z',
+    };
+    const { transport } = makeTransport(() => ({
+      status: 200,
+      body: { program: { ...DETAIL_BODY, latestDecision } },
+    }));
+    const { listingsPort } = createLiveCatalogueReadPorts(transport);
+    const outcome = await listingsPort.loadListing(ORG, PROGRAM);
+    if (outcome.kind !== 'loaded') throw new Error(outcome.kind);
+    expect(outcome.program.latestDecision).toEqual(latestDecision);
+  });
+
   test('an open protected revision maps only what the read contract exposes', async () => {
     const openRevision = {
       id: '018f0000-0000-7000-8000-00000000c901',
@@ -377,6 +394,7 @@ describe('live listing detail', () => {
     ['a malformed media row', { ...DETAIL_BODY, media: [{ id: 'x' }] }],
     ['a malformed offer', { ...DETAIL_BODY, offers: [{ id: 'x' }] }],
     ['a malformed open revision', { ...DETAIL_BODY, openRevision: { id: 'x' } }],
+    ['a malformed W3-8 decision projection', { ...DETAIL_BODY, latestDecision: { decidedAt: 7 } }],
     ['a missing lifecycle state', { ...DETAIL_BODY, listingState: undefined }],
   ])('%s fails the WHOLE detail read closed', async (_label, program) => {
     const { transport } = makeTransport(() => ({ status: 200, body: { program } }));

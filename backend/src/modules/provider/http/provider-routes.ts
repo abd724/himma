@@ -124,6 +124,22 @@ const OrganizationViewSchema = Type.Object({
     version: Type.Integer(),
   }),
   branches: Type.Array(BranchViewSchema),
+  // W3-8 (docs/31 §5): provider-safe verification projection over the W3-3
+  // structural seam — internal notes/reviewer identity are unselectable.
+  verification: Type.Union([
+    Type.Object({
+      latestDecision: Type.Union([
+        Type.Object({
+          outcome: Type.String(),
+          reasonCode: Type.Union([Type.String(), Type.Null()]),
+          providerMessage: Type.Union([Type.String(), Type.Null()]),
+          decidedAt: Type.String(),
+        }),
+        Type.Null(),
+      ]),
+    }),
+    Type.Null(),
+  ]),
   membership: Type.Object({
     id: Uuid,
     role: Type.String(),

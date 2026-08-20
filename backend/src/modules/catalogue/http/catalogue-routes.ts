@@ -177,6 +177,17 @@ export const ProgramDetailViewSchema = Type.Object({
     }),
     Type.Null(),
   ]),
+  // W3-8 (docs/31 §5): the latest request-changes correction feedback —
+  // provider-safe by construction (only the two provider-visible layers
+  // exist in the underlying table).
+  latestDecision: Type.Union([
+    Type.Object({
+      reasonCode: Type.Union([Type.String(), Type.Null()]),
+      providerMessage: Type.Union([Type.String(), Type.Null()]),
+      decidedAt: Type.String(),
+    }),
+    Type.Null(),
+  ]),
 });
 
 const RevisionSubmittedBody = Type.Object({

@@ -128,6 +128,48 @@ describe('organization view / profile port', () => {
     });
   });
 
+  test('W3-8: the provider-safe verification projection maps field-for-field; absent stays null', async () => {
+    // Absent on old-shaped payloads / no case ever: null, never invented.
+    const bare = makeTransport(() => ({ status: 200, body: VIEW_BODY }));
+    const bareOutcome = await createLiveDomainPorts(bare.transport).profilePort.loadOrganizationView(ORG);
+    if (bareOutcome.kind !== 'loaded') throw new Error(bareOutcome.kind);
+    expect(bareOutcome.view.verification).toBeNull();
+
+    const verification = {
+      latestDecision: {
+        outcome: 'rejected',
+        reasonCode: 'expired_document',
+        providerMessage: 'Your licence has expired.',
+        decidedAt: '2026-08-12T10:00:00.000Z',
+      },
+    };
+    const withDecision = makeTransport(() => ({
+      status: 200,
+      body: { ...VIEW_BODY, verification },
+    }));
+    const outcome = await createLiveDomainPorts(withDecision.transport).profilePort.loadOrganizationView(ORG);
+    if (outcome.kind !== 'loaded') throw new Error(outcome.kind);
+    expect(outcome.view.verification).toEqual(verification);
+
+    // Undecided round: the truthful null decision.
+    const undecided = makeTransport(() => ({
+      status: 200,
+      body: { ...VIEW_BODY, verification: { latestDecision: null } },
+    }));
+    const undecidedOutcome = await createLiveDomainPorts(undecided.transport).profilePort.loadOrganizationView(ORG);
+    if (undecidedOutcome.kind !== 'loaded') throw new Error(undecidedOutcome.kind);
+    expect(undecidedOutcome.view.verification).toEqual({ latestDecision: null });
+
+    // A malformed decision fails the WHOLE view closed.
+    const malformed = makeTransport(() => ({
+      status: 200,
+      body: { ...VIEW_BODY, verification: { latestDecision: { outcome: 7 } } },
+    }));
+    await expect(
+      createLiveDomainPorts(malformed.transport).profilePort.loadOrganizationView(ORG),
+    ).resolves.toEqual({ kind: 'unavailable' });
+  });
+
   test('a contract-violating view (unknown role) FAILS CLOSED — never partial truth, never fixture data', async () => {
     const broken = {
       ...VIEW_BODY,
@@ -212,6 +254,7 @@ describe('onboarding port', () => {
           capabilities: ['org.read', 'profile.edit', 'branch.create'],
         },
         listingCount: null,
+        verification: null,
       },
     });
     expect(calls.some((call) => call.path.includes('/listings'))).toBe(false);

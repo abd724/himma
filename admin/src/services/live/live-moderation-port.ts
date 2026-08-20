@@ -331,6 +331,11 @@ export function createLiveModerationPort(transport: LiveTransport): AdminModerat
       return act(`/admin/listings/${encodeURIComponent(programId)}/review/${segment}`, {
         expectedVersion: input.expectedVersion,
         ...(input.reasonCode !== undefined ? { reasonCode: input.reasonCode } : {}),
+        // W3-8: the provider-visible message rides ONLY the
+        // request-changes leg (the certified schema declares it nowhere else).
+        ...(action === 'request_changes' && input.providerMessage !== undefined
+          ? { providerMessage: input.providerMessage }
+          : {}),
       });
     },
 

@@ -143,8 +143,40 @@ export function ListingLifecyclePanel({
       ? AWAITING_PUBLISHER_COPY[program.listingState]
       : null;
 
+  const feedback =
+    program.listingState === 'changes_requested' ? program.latestDecision : null;
+
   return (
     <div className={styles.lifecycleBlock}>
+      {program.listingState === 'changes_requested' ? (
+        <div className={styles.feedbackCard} role="note" aria-label="What Himma asked to change">
+          <p className={styles.feedbackTitle}>What Himma asked to change</p>
+          {feedback !== null && feedback.providerMessage !== null ? (
+            <p className={styles.feedbackBody}>{feedback.providerMessage}</p>
+          ) : (
+            <p className={styles.feedbackBody}>
+              Himma reviewed this listing and asked for changes. If you’re unsure what to update,
+              contact Himma support.
+            </p>
+          )}
+          {feedback !== null ? (
+            <p className={styles.feedbackMeta}>
+              Reviewed on{' '}
+              {new Intl.DateTimeFormat('en-AE', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+              }).format(new Date(feedback.decidedAt))}
+              {feedback.reasonCode !== null ? (
+                <>
+                  {' · reference '}
+                  <code className={styles.feedbackCode}>{feedback.reasonCode}</code>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {plan.actions.includes('submit') || plan.actions.includes('resubmit') ? (
         <p className={styles.supportingText}>{SUBMIT_READY_COPY}</p>
       ) : null}

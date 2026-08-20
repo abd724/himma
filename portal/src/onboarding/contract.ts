@@ -1,4 +1,5 @@
 import type { ProviderRole } from '../provider-access/contract';
+import type { VerificationProjection } from '../profile/contract';
 
 /**
  * Onboarding/readiness read model — an explicit COMPOSITION of real
@@ -35,6 +36,11 @@ export interface OnboardingSnapshot {
   };
   /** Null when the membership cannot read the catalogue (`catalogue.read`). */
   readonly listingCount: number | null;
+  /** W3-8 (docs/31 §5): the provider-safe verification projection from the
+   *  org view — null when no review round has ever existed. The only
+   *  reviewer text it can ever carry is the provider-safe message; internal
+   *  notes and reviewer identity are unselectable server-side. */
+  readonly verification: VerificationProjection | null;
 }
 
 export type OnboardingSnapshotOutcome =

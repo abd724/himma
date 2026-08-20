@@ -244,7 +244,7 @@ describe('submission & resubmission (§31)', () => {
     expect([...refused.missing].sort()).toEqual(['activeBranch', 'activePriceOption']);
   });
 
-  test('changes_requested resubmits through the SAME submit action; no reviewer feedback exists anywhere on the provider surface', async () => {
+  test('changes_requested resubmits through the SAME submit action; the W3-8 provider-safe correction feedback rides the detail read', async () => {
     const { session, orgId, branchIds } = await provisionOrgWithRole('owner');
     const programId = await completeDraft(session, orgId, branchIds[0]!, 'Resubmit Me');
     let version = (await detailOf(session, orgId, programId)).version;
@@ -264,18 +264,27 @@ describe('submission & resubmission (§31)', () => {
       action: 'request_changes',
       expectedVersion: version,
       reasonCode: 'content_incomplete',
+      providerMessage: 'Add a full description of what each session covers.',
     });
     expect(changes.kind).toBe('programReviewed');
 
     const detail = await detailOf(session, orgId, programId);
     expect(detail.listingState).toBe('changes_requested');
-    // The provider read exposes NO reason/reviewer field of any kind —
-    // the rejection-reason gap stays truthfully carried.
-    expect(JSON.stringify(detail)).not.toContain('content_incomplete');
+    // W3-8 closes the W2 carried gap: the provider read now carries exactly
+    // the two provider-safe layers (machine reason + reviewer-authored
+    // provider message) — and nothing else exists in this domain to leak.
+    expect(detail.latestDecision).toMatchObject({
+      reasonCode: 'content_incomplete',
+      providerMessage: 'Add a full description of what each session covers.',
+    });
+    expect(typeof detail.latestDecision?.decidedAt).toBe('string');
 
     const resubmitted = await session.lifecycle.submitProgram(orgId, programId, detail.version);
     if (resubmitted.kind !== 'programSubmitted') throw new Error(resubmitted.kind);
-    expect((await detailOf(session, orgId, programId)).listingState).toBe('submitted');
+    const after = await detailOf(session, orgId, programId);
+    expect(after.listingState).toBe('submitted');
+    // The historical feedback stays truthful after resubmission.
+    expect(after.latestDecision?.reasonCode).toBe('content_incomplete');
   });
 
   test('authority: a Listings Editor submits; coach/front_desk/finance are refused; a stale version is refused', async () => {

@@ -20,6 +20,7 @@ import { parseStaffInvitationConfig } from '../src/modules/provider/staff-invita
 import {
   addProgramBranch,
   createProgram,
+  getProviderProgram,
   publishProgram,
   submitProgram,
   updateProgram,
@@ -340,6 +341,98 @@ describe('program review machine (docs/24 §5.3; D-S4-2)', () => {
       testDb.db,
     );
     expect(event.rows[0]?.payload.reasonCode).toBe('unclear_title');
+  });
+
+  it('W3-8: request-changes records the provider-facing feedback atomically — one append-only row, message NEVER in audit/outbox, provider read carries it', async () => {
+    const { programId } = await submittedProgram('Feedback Path');
+    const base = `/admin/listings/${programId}`;
+    await inject('POST', `${base}/review/start`, ops.bearer, {
+      expectedVersion: await programVersion(programId),
+    });
+    // The provider read BEFORE any request-changes decision: null.
+    const before = await getProviderProgram(deps, scope, { programId });
+    if (before.kind !== 'programView') throw new Error(before.kind);
+    expect(before.program.latestDecision).toBeNull();
+
+    const changes = await inject('POST', `${base}/review/request-changes`, ops.bearer, {
+      expectedVersion: await programVersion(programId),
+      reasonCode: 'incomplete_description',
+      providerMessage: 'Please describe the weekly schedule and what participants should bring.',
+    });
+    expect(changes.statusCode).toBe(200);
+
+    // Exactly one provider-visible feedback row, written atomically.
+    const rows = await sql<{ reason_code: string | null; provider_safe_message: string | null }>`
+      SELECT reason_code, provider_safe_message FROM listing_moderation_feedback
+      WHERE program_id = ${programId}`.execute(testDb.db);
+    expect(rows.rows).toEqual([
+      {
+        reason_code: 'incomplete_description',
+        provider_safe_message:
+          'Please describe the weekly schedule and what participants should bring.',
+      },
+    ]);
+    // Hygiene: the reviewer text never enters audit/outbox payloads.
+    const payloads = await sql<{ payload: Record<string, unknown> }>`
+      SELECT payload FROM outbox_event WHERE aggregate_id = ${programId}`.execute(testDb.db);
+    const auditRows = await sql<{ row: Record<string, unknown> }>`
+      SELECT to_jsonb(audit_event) AS row FROM audit_event
+      WHERE entity_id = ${programId}`.execute(testDb.db);
+    const serialized = JSON.stringify([...payloads.rows, ...auditRows.rows]);
+    expect(serialized).not.toContain('weekly schedule');
+    expect(serialized).toContain('incomplete_description'); // the machine layer stays
+
+    // The provider detail read now carries the provider-safe projection.
+    const after = await getProviderProgram(deps, scope, { programId });
+    if (after.kind !== 'programView') throw new Error(after.kind);
+    expect(after.program.latestDecision).toMatchObject({
+      reasonCode: 'incomplete_description',
+      providerMessage:
+        'Please describe the weekly schedule and what participants should bring.',
+    });
+
+    // Resubmission stays certified — and the feedback stays truthful history.
+    const resubmitted = await submitProgram(deps, scope, providerActor, {
+      programId,
+      expectedVersion: await programVersion(programId),
+    });
+    expect(resubmitted.kind).toBe('programSubmitted');
+    const resubmittedView = await getProviderProgram(deps, scope, { programId });
+    if (resubmittedView.kind !== 'programView') throw new Error(resubmittedView.kind);
+    expect(resubmittedView.program.latestDecision?.reasonCode).toBe('incomplete_description');
+
+    // Append-only history is database-enforced, not an application promise.
+    await expect(
+      sql`UPDATE listing_moderation_feedback SET provider_safe_message = 'rewritten'
+          WHERE program_id = ${programId}`.execute(testDb.db),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  it('W3-8: start/approve write NO feedback rows — providerMessage is undeclared there and stripped app-wide, and the service only records it on request_changes', async () => {
+    const { programId } = await submittedProgram('No Feedback On Approve');
+    const base = `/admin/listings/${programId}`;
+    // Undeclared fields are stripped app-wide (the certified Fastify
+    // convention) — the message can never reach the service from start.
+    const started = await inject('POST', `${base}/review/start`, ops.bearer, {
+      expectedVersion: await programVersion(programId),
+      providerMessage: 'should not be accepted here',
+    });
+    expect(started.statusCode).toBe(200);
+    const approved = await inject('POST', `${base}/review/approve`, ops.bearer, {
+      expectedVersion: await programVersion(programId),
+      providerMessage: 'nor here',
+    });
+    expect(approved.statusCode).toBe(200);
+    const rows = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM listing_moderation_feedback
+      WHERE program_id = ${programId}`.execute(testDb.db);
+    expect(Number(rows.rows[0]?.n)).toBe(0);
+    const stray = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM listing_moderation_feedback
+      WHERE provider_safe_message IN ('should not be accepted here', 'nor here')`.execute(
+      testDb.db,
+    );
+    expect(Number(stray.rows[0]?.n)).toBe(0);
   });
 
   it('refuses invalid review transitions with typed outcomes and never leaks trigger names', async () => {

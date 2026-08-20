@@ -205,6 +205,15 @@ export interface ProgramDetailRecord {
   readonly media: readonly ProgramMediaRecord[];
   readonly offers: readonly OfferRecord[];
   readonly openRevision: OpenRevisionRecord | null;
+  /** W3-8 (docs/31 §5): the latest request-changes correction feedback the
+   *  real backend stores provider-safely (machine reasonCode + the
+   *  reviewer-authored provider message — no internal layer exists in this
+   *  domain). Null until a request-changes decision has been recorded. */
+  readonly latestDecision: {
+    readonly reasonCode: string | null;
+    readonly providerMessage: string | null;
+    readonly decidedAt: string;
+  } | null;
 }
 
 export type ListListingsOutcome =

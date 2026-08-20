@@ -392,6 +392,17 @@ export async function loadProgramDetailInTrx(
       .where('program_id', '=', input.programId)
       .orderBy('created_at')
       .execute();
+    // W3-8 (docs/31 §5): the latest request-changes feedback — the table
+    // holds only provider-visible layers, so this read is provider-safe by
+    // construction (shared with the internal-admin projection unchanged).
+    const latestFeedback = await trx
+      .selectFrom('listing_moderation_feedback')
+      .select(['reason_code', 'provider_safe_message', 'decided_at'])
+      .where('program_id', '=', input.programId)
+      .orderBy('decided_at', 'desc')
+      .orderBy('id', 'desc')
+      .limit(1)
+      .executeTakeFirst();
     const openRevision = await trx
       .selectFrom('program_revision')
       .select(['id', 'state', 'created_at', 'version'])
@@ -463,6 +474,14 @@ export async function loadProgramDetailInTrx(
                 state: openRevision.state,
                 createdAt: openRevision.created_at.toISOString(),
                 version: openRevision.version,
+              },
+        latestDecision:
+          latestFeedback === undefined
+            ? null
+            : {
+                reasonCode: latestFeedback.reason_code,
+                providerMessage: latestFeedback.provider_safe_message,
+                decidedAt: latestFeedback.decided_at.toISOString(),
               },
     };
 }

@@ -147,7 +147,14 @@ export interface AdminModerationPort {
   reviewListing(
     programId: string,
     action: ListingReviewAction,
-    input: { expectedVersion: number; reasonCode?: string },
+    input: {
+      expectedVersion: number;
+      reasonCode?: string;
+      /** W3-8 (D-W3-2): the reviewer-authored PROVIDER-VISIBLE correction
+       *  text — carried only on request_changes (the certified schema
+       *  declares it nowhere else) and never placed in audit/outbox. */
+      providerMessage?: string;
+    },
   ): Promise<ModerationActionOutcome>;
   startRevisionReview(
     programId: string,

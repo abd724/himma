@@ -6,8 +6,19 @@
  * MFA over the deterministic fake Cognito boundary). Every route, policy,
  * capability check, CAS conflict, and DTO below is the real thing.
  */
+import { sql } from 'kysely';
+
 import { newId } from '../../backend/src/db/ids';
-import { createIdentity, createUser } from '../../backend/test/helpers/identity-fixtures';
+import { openVerificationCase } from '../../backend/src/modules/provider/services/verification-case';
+import {
+  beginVerificationReview,
+  decideVerification,
+} from '../../backend/src/modules/provider/services/verification-review';
+import {
+  bootstrapAccessAdmins,
+  createIdentity,
+  createUser,
+} from '../../backend/test/helpers/identity-fixtures';
 import {
   addMembership,
   createProviderOrg,
@@ -184,6 +195,94 @@ describe('organization view & profile (§25.1–6)', () => {
         displayName: 'Escalated',
       }),
     ).resolves.toEqual({ kind: 'forbidden' });
+  });
+
+  test('W3-8: the REAL rejection decision surfaces as the provider-safe latestDecision on the org view and onboarding snapshot — nothing internal leaks, and resubmission stays certified', async () => {
+    const { session, orgId } = await provisionOrgWithRole('owner', { state: 'submitted' });
+
+    // Before any round: null, never invented.
+    const bare = await session.ports.profilePort.loadOrganizationView(orgId);
+    if (bare.kind !== 'loaded') throw new Error(bare.kind);
+    expect(bare.view.verification).toBeNull();
+
+    // Drive the CERTIFIED W3-3/W3-5 review path service-side (an operations
+    // admin; the test composition reports content safety ready — the only
+    // state in which real decisions are mechanically possible).
+    const { adminA, adminB } = await bootstrapAccessAdmins(harness.testDb.db);
+    const opsUserId = await createUser(harness.testDb.db);
+    await sql`INSERT INTO admin_role_assignment (id, user_id, role, state, requested_by, approved_by)
+              VALUES (${newId()}, ${opsUserId}, 'operations', 'active', ${adminA}, ${adminB})`.execute(
+      harness.testDb.db,
+    );
+    const opsActor = { userId: opsUserId };
+    const caseDeps = {
+      db: harness.testDb.db,
+      policyProvider: {
+        currentPolicy: async () => ({
+          policyVersion: 'domain-contract-v1',
+          requirements: [
+            { key: 'business_document', labelEn: 'Business document', required: true },
+          ],
+        }),
+      },
+    };
+    const reviewDeps = {
+      db: harness.testDb.db,
+      lifecycle: { nodeEnv: 'test' as const, verificationEvidenceCapabilityReady: false },
+      contentSafetyReady: true,
+    };
+    const opened = await openVerificationCase(caseDeps, opsActor, { organizationId: orgId });
+    if (opened.kind !== 'caseOpened') throw new Error(opened.kind);
+    const begun = await beginVerificationReview(reviewDeps, opsActor, {
+      organizationId: orgId,
+      caseId: opened.caseId,
+      expectedCaseVersion: opened.version,
+    });
+    if (begun.kind !== 'reviewStarted') throw new Error(begun.kind);
+    const decided = await decideVerification(reviewDeps, opsActor, {
+      organizationId: orgId,
+      caseId: opened.caseId,
+      expectedCaseVersion: begun.caseVersion,
+      outcome: 'rejected',
+      reasonCode: 'expired_document',
+      providerSafeMessage: 'Your trade licence has expired — upload a current one.',
+      internalNote: 'Registry lookup failed twice. Escalated internally.',
+    });
+    if (decided.kind !== 'verificationDecided') throw new Error(decided.kind);
+
+    // The provider org view: exactly the provider-safe layers.
+    const rejected = await session.ports.profilePort.loadOrganizationView(orgId);
+    if (rejected.kind !== 'loaded') throw new Error(rejected.kind);
+    expect(rejected.view.organization.verificationState).toBe('rejected');
+    expect(rejected.view.verification).toEqual({
+      latestDecision: {
+        outcome: 'rejected',
+        reasonCode: 'expired_document',
+        providerMessage: 'Your trade licence has expired — upload a current one.',
+        decidedAt: expect.any(String),
+      },
+    });
+    const serialized = JSON.stringify(rejected.view);
+    expect(serialized).not.toContain('Escalated internally');
+    expect(serialized).not.toContain(opsUserId); // reviewer identity
+    expect(serialized).not.toContain('internalNote');
+
+    // The onboarding snapshot carries the SAME projection...
+    const snapshot = await session.ports.onboardingPort.loadSnapshot(orgId);
+    if (snapshot.kind !== 'loaded') throw new Error(snapshot.kind);
+    expect(snapshot.snapshot.verification?.latestDecision?.reasonCode).toBe('expired_document');
+
+    // ...and the certified resubmission edge is unchanged, with the
+    // historical decision staying truthfully visible.
+    const resubmitted = await session.ports.onboardingPort.submitForVerification(
+      orgId,
+      snapshot.snapshot.organization.version,
+    );
+    expect(resubmitted.kind).toBe('organizationSubmitted');
+    const after = await session.ports.onboardingPort.loadSnapshot(orgId);
+    if (after.kind !== 'loaded') throw new Error(after.kind);
+    expect(after.snapshot.organization.verificationState).toBe('submitted');
+    expect(after.snapshot.verification?.latestDecision?.outcome).toBe('rejected');
   });
 
   test('onboarding snapshot composes from the same authoritative view and submission runs the real lifecycle edge', async () => {

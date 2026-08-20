@@ -75,11 +75,17 @@ describe('listing review decisions (task §2/§6)', () => {
       screen.getByLabelText(/Reason code/),
       'incomplete_description',
     );
+    // W3-8: the reviewer-authored PROVIDER-VISIBLE correction text.
+    await user.type(
+      screen.getByLabelText(/Message to the provider/),
+      'Describe the weekly schedule.',
+    );
     await user.click(screen.getByRole('button', { name: 'Request changes' }));
     await screen.findByText('Changes requested');
     expect(reviewSpy).toHaveBeenLastCalledWith('listing-marina-clinic', 'request_changes', {
       expectedVersion: 3,
       reasonCode: 'incomplete_description',
+      providerMessage: 'Describe the weekly schedule.',
     });
   });
 

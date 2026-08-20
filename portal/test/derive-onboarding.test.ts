@@ -38,6 +38,7 @@ function snapshot(overrides: {
           : ['org.read']),
     },
     listingCount: overrides.listingCount === undefined ? 0 : overrides.listingCount,
+    verification: null,
   };
 }
 

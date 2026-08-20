@@ -245,6 +245,15 @@ export interface ProgramDetailView {
   media: ProgramMediaView[];
   offers: OfferView[];
   openRevision: OpenRevisionView | null;
+  /** W3-8 (docs/31 §5): the latest request-changes correction feedback —
+   *  provider-safe BY CONSTRUCTION (the underlying row carries only the two
+   *  provider-visible layers; no internal-note column exists in this
+   *  domain). Null until a request-changes decision has been recorded. */
+  latestDecision: {
+    reasonCode: string | null;
+    providerMessage: string | null;
+    decidedAt: string;
+  } | null;
 }
 
 export function toOptionView(row: {

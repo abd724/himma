@@ -21,6 +21,7 @@ import type { Trx } from '../../../db/transaction';
 import { withTransaction } from '../../../db/transaction';
 import { appendOutboxEvent } from '../../../outbox/outbox';
 import { branchInScope, type OrgScope } from './provider-principal';
+import { getProviderSafeVerificationSummary } from './verification-case';
 
 export interface ProviderServiceDeps {
   db: Db;
@@ -72,6 +73,19 @@ export interface ProviderOrganizationView {
     version: number;
   };
   branches: BranchView[];
+  /** W3-8 (docs/31 §5): the provider-safe verification projection over the
+   *  W3-3 structural seam — null when no review round has ever existed;
+   *  `latestDecision` null while the current round is undecided. Internal
+   *  reviewer notes and reviewer identity are UNSELECTABLE through the
+   *  seam, so this view cannot leak them. */
+  verification: {
+    latestDecision: {
+      outcome: string;
+      reasonCode: string | null;
+      providerMessage: string | null;
+      decidedAt: string;
+    } | null;
+  } | null;
   membership: {
     id: string;
     role: string;
@@ -142,6 +156,15 @@ export async function getProviderOrganizationView(
       .orderBy('created_at')
       .execute();
 
+    // W3-8: the provider-safe verification summary rides the W3-3 seam —
+    // structurally unable to select internal notes or reviewer identity.
+    // Transaction<DB> extends Kysely<DB>, so the seam reads the SAME
+    // transaction snapshot as the rest of the view.
+    const verification = await getProviderSafeVerificationSummary(
+      { db: trx },
+      { organizationId: scope.organizationId },
+    );
+
     return {
       organization: {
         id: org.id,
@@ -171,6 +194,20 @@ export async function getProviderOrganizationView(
         version: profile.version,
       },
       branches: branches.map(toBranchView),
+      verification:
+        verification.kind === 'noCase'
+          ? null
+          : {
+              latestDecision:
+                verification.summary.decision === null
+                  ? null
+                  : {
+                      outcome: verification.summary.decision.outcome,
+                      reasonCode: verification.summary.decision.reasonCode,
+                      providerMessage: verification.summary.decision.providerSafeMessage,
+                      decidedAt: verification.summary.decision.decidedAt,
+                    },
+            },
       membership: {
         id: scope.membershipId,
         role: scope.role,

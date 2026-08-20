@@ -218,6 +218,15 @@ export interface InboxEvent {
   processed_at: Generated<Timestamp>;
 }
 
+export interface ListingModerationFeedback {
+  created_at: Generated<Timestamp>;
+  decided_at: Generated<Timestamp>;
+  id: string;
+  program_id: string;
+  provider_safe_message: string | null;
+  reason_code: string | null;
+}
+
 export interface LoginSession {
   client_kind: string;
   created_at: Generated<Timestamp>;
@@ -647,6 +656,7 @@ export interface DB {
   customer_account: CustomerAccount;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
+  listing_moderation_feedback: ListingModerationFeedback;
   login_session: LoginSession;
   mfa_challenge: MfaChallenge;
   mfa_method: MfaMethod;

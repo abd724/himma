@@ -176,6 +176,35 @@ function organizationViewFrom(body: unknown): OrganizationView | null {
   }
   const nullableString = (value: unknown): string | null =>
     typeof value === 'string' ? value : null;
+  // W3-8: the provider-safe verification projection — validated
+  // fail-closed like every other consumed field.
+  let verification: OrganizationView['verification'] = null;
+  if (raw.verification !== null && raw.verification !== undefined) {
+    const rawVerification = raw.verification as Record<string, unknown>;
+    if (rawVerification.latestDecision === null) {
+      verification = { latestDecision: null };
+    } else {
+      const decision = rawVerification.latestDecision as Record<string, unknown> | undefined;
+      if (
+        typeof decision !== 'object' ||
+        decision === null ||
+        typeof decision.outcome !== 'string' ||
+        !(typeof decision.reasonCode === 'string' || decision.reasonCode === null) ||
+        !(typeof decision.providerMessage === 'string' || decision.providerMessage === null) ||
+        typeof decision.decidedAt !== 'string'
+      ) {
+        return null;
+      }
+      verification = {
+        latestDecision: {
+          outcome: decision.outcome,
+          reasonCode: decision.reasonCode,
+          providerMessage: decision.providerMessage,
+          decidedAt: decision.decidedAt,
+        },
+      };
+    }
+  }
   return {
     organization: {
       id: organization.id,
@@ -205,6 +234,7 @@ function organizationViewFrom(body: unknown): OrganizationView | null {
       version: profile.version,
     },
     branches,
+    verification,
     membership: {
       id: membership.id,
       role,
@@ -348,6 +378,7 @@ export function createLiveDomainPorts(transport: LiveTransport): LiveDomainPorts
             capabilities: view.membership.capabilities,
           },
           listingCount,
+          verification: view.verification,
         },
       };
     },

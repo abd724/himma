@@ -233,12 +233,28 @@ describe('the real moderation journeys through the live admin transport', () => 
       port.reviewListing(listing.programId, 'request_changes', {
         expectedVersion: inReview.view.program.version,
         reasonCode: 'incomplete_description',
+        providerMessage: 'Add a description of what each session covers.',
       }),
     ).resolves.toEqual({ kind: 'completed' });
 
     const returned = await port.getListing(listing.programId);
     if (returned.kind !== 'loaded') throw new Error(returned.kind);
     expect(returned.view.program.listingState).toBe('changes_requested');
+
+    // W3-8: the decision recorded exactly the two provider-visible layers
+    // through the canonical service path (provider-side exposure is
+    // certified by the backend + Provider Portal contract suites).
+    const feedback = await harness.testDb.db
+      .selectFrom('listing_moderation_feedback')
+      .select(['reason_code', 'provider_safe_message'])
+      .where('program_id', '=', listing.programId)
+      .execute();
+    expect(feedback).toEqual([
+      {
+        reason_code: 'incomplete_description',
+        provider_safe_message: 'Add a description of what each session covers.',
+      },
+    ]);
 
     // The certified provider resubmission path is UNCHANGED.
     const resubmitted = await submitProgram(

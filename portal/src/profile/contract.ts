@@ -64,10 +64,26 @@ export interface BranchRecord {
   readonly version: number;
 }
 
+/** W3-8 (docs/31 §5): the provider-safe verification projection the real
+ *  backend serves over its W3-3 structural seam. Internal reviewer notes
+ *  and reviewer identity are UNSELECTABLE server-side — this contract can
+ *  only ever carry the two provider-visible layers. Null when no review
+ *  round has ever existed; `latestDecision` null while a round is
+ *  undecided. */
+export interface VerificationProjection {
+  readonly latestDecision: {
+    readonly outcome: string;
+    readonly reasonCode: string | null;
+    readonly providerMessage: string | null;
+    readonly decidedAt: string;
+  } | null;
+}
+
 export interface OrganizationView {
   readonly organization: OrganizationRecord;
   readonly profile: PublicProfileRecord;
   readonly branches: readonly BranchRecord[];
+  readonly verification: VerificationProjection | null;
   readonly membership: {
     readonly id: string;
     readonly role: ProviderRole;

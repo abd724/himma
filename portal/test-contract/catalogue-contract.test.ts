@@ -584,7 +584,7 @@ describe('listing detail (§27)', () => {
     expect(Object.keys(program).sort()).toEqual([
       'activityType', 'allAges', 'archivedAt', 'branches', 'createdAt',
       'descriptionAr', 'descriptionEn', 'eligibilityNotes', 'genderEligibility',
-      'id', 'listingState', 'maxAge', 'media', 'minAge', 'offers',
+      'id', 'latestDecision', 'listingState', 'maxAge', 'media', 'minAge', 'offers',
       'openRevision', 'organizationId', 'priceOptions', 'publishedAt',
       'sensitiveFieldsVersion', 'setting', 'skillLevel', 'titleAr', 'titleEn',
       'updatedAt', 'version',

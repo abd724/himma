@@ -316,6 +316,23 @@ function detailRecordFrom(raw: unknown): ProgramDetailRecord | null {
   }
   const openRevision = openRevisionFrom(row.openRevision);
   if (openRevision === undefined) return null;
+  // W3-8: the provider-safe correction feedback — validated fail-closed.
+  let latestDecision: ProgramDetailRecord['latestDecision'] = null;
+  if (row.latestDecision !== null && row.latestDecision !== undefined) {
+    const decision = row.latestDecision as Record<string, unknown>;
+    if (
+      !(typeof decision.reasonCode === 'string' || decision.reasonCode === null) ||
+      !(typeof decision.providerMessage === 'string' || decision.providerMessage === null) ||
+      typeof decision.decidedAt !== 'string'
+    ) {
+      return null;
+    }
+    latestDecision = {
+      reasonCode: decision.reasonCode,
+      providerMessage: decision.providerMessage,
+      decidedAt: decision.decidedAt,
+    };
+  }
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -349,6 +366,7 @@ function detailRecordFrom(raw: unknown): ProgramDetailRecord | null {
     media,
     offers,
     openRevision,
+    latestDecision,
   };
 }
 

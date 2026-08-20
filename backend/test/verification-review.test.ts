@@ -658,6 +658,99 @@ describe('authorization and the content-safety invariant (§4/§5/§13)', () => 
     expect((view.json() as { policyConfigured: boolean }).policyConfigured).toBe(false);
   });
 
+  it('W3-8: the provider org view carries the provider-safe latestDecision — and structurally NOTHING internal', async () => {
+    const { orgId, ownerBearer } = await submittedOrg();
+    const orgViewUrl = `/provider/organizations/${orgId}`;
+    const providerGet = () =>
+      app.inject({ method: 'GET', url: orgViewUrl, headers: { authorization: `Bearer ${ownerBearer}` } });
+
+    // Before any review round: verification is null, never invented.
+    const before = await providerGet();
+    expect(before.statusCode).toBe(200);
+    expect((before.json() as { verification: unknown }).verification).toBeNull();
+
+    // An OPEN round with no decision yet: a truthful undecided projection.
+    const opened = await openCase(orgId);
+    const undecided = await providerGet();
+    expect((undecided.json() as { verification: { latestDecision: unknown } }).verification).toEqual({
+      latestDecision: null,
+    });
+
+    // Reject with all three D-W3-2 layers through the certified W3-5 path.
+    const started = await adminPost(
+      app,
+      opsBearer,
+      `/admin/organizations/${orgId}/verification/cases/${opened.caseId}/review`,
+      { expectedCaseVersion: opened.version },
+    );
+    await adminPost(
+      app,
+      opsBearer,
+      `/admin/organizations/${orgId}/verification/cases/${opened.caseId}/decision`,
+      {
+        expectedCaseVersion: (started.json() as { caseVersion: number }).caseVersion,
+        outcome: 'rejected',
+        reasonCode: 'expired_document',
+        providerSafeMessage: 'Your trade licence has expired — upload a current one.',
+        internalNote: 'Registry lookup failed twice. Escalated internally.',
+      },
+    );
+
+    const rejected = await providerGet();
+    expect(rejected.statusCode).toBe(200);
+    const body = rejected.json() as {
+      organization: { verificationState: string };
+      verification: { latestDecision: Record<string, unknown> | null };
+    };
+    expect(body.organization.verificationState).toBe('rejected');
+    expect(body.verification.latestDecision).toMatchObject({
+      outcome: 'rejected',
+      reasonCode: 'expired_document',
+      providerMessage: 'Your trade licence has expired — upload a current one.',
+    });
+    // Structural: the serialized provider view carries NO internal layer,
+    // reviewer identity, storage material, or admin data.
+    const serialized = rejected.body;
+    expect(serialized).not.toContain('Escalated internally');
+    expect(serialized).not.toContain('internalNote');
+    expect(serialized).not.toContain(ops); // reviewer identity
+    expect(serialized).not.toContain('storage');
+    expect(serialized).not.toContain('sha256');
+
+    // The certified resubmission path is unchanged — and the historical
+    // decision stays truthfully visible afterwards.
+    const current = await orgState(orgId);
+    const resubmitted = await app.inject({
+      method: 'POST',
+      url: `/provider/organizations/${orgId}/submit`,
+      headers: { authorization: `Bearer ${ownerBearer}` },
+      payload: { expectedVersion: current.version },
+    });
+    expect(resubmitted.statusCode).toBe(200);
+    const afterResubmit = await providerGet();
+    const resubmitBody = afterResubmit.json() as {
+      organization: { verificationState: string };
+      verification: { latestDecision: { outcome: string } | null };
+    };
+    expect(resubmitBody.organization.verificationState).toBe('submitted');
+    expect(resubmitBody.verification.latestDecision?.outcome).toBe('rejected');
+  });
+
+  it('W3-8: a DIFFERENT organization\'s staff can never reach this org\'s verification truth (fail-closed scoping)', async () => {
+    const { orgId } = await submittedOrg();
+    const other = await submittedOrg();
+    const crossOrg = await app.inject({
+      method: 'GET',
+      url: `/provider/organizations/${orgId}`,
+      headers: { authorization: `Bearer ${other.ownerBearer}` },
+    });
+    // The certified org-scoping shape: a foreign org id resolves to the
+    // same refusal a nonexistent org gets — nothing about verification
+    // state or decisions leaks across organizations.
+    expect(crossOrg.statusCode).toBeGreaterThanOrEqual(403);
+    expect(crossOrg.body).not.toContain('latestDecision');
+  });
+
   it('the provider-safe seam still exposes ONLY provider-safe fields after a W3-5 decision', async () => {
     const { orgId } = await submittedOrg();
     const opened = await openCase(orgId);

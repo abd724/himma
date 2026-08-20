@@ -100,6 +100,7 @@ describe('listings read port (fixture semantics, W2-7)', () => {
       'eligibilityNotes',
       'genderEligibility',
       'id',
+      'latestDecision',
       'listingState',
       'maxAge',
       'media',

@@ -109,6 +109,7 @@ import type {
   OrganizationViewOutcome,
   ProfilePatch,
   UpdateProfileOutcome,
+  VerificationProjection,
 } from '../../profile/contract';
 import type {
   BranchScope,
@@ -522,6 +523,12 @@ interface FixtureProgramState {
   readonly media: readonly FixtureProgramMedia[];
   readonly offers: readonly FixtureOffer[];
   readonly openRevision: { id: string; state: string; createdAt: string; version: number } | null;
+  /** W3-8: the latest request-changes correction feedback (provider-safe). */
+  readonly latestDecision: {
+    reasonCode: string | null;
+    providerMessage: string | null;
+    decidedAt: string;
+  } | null;
 }
 
 /** Mirrors organization_public_profile — the storefront record (own version). */
@@ -545,6 +552,9 @@ interface FixtureOrganizationState {
   readonly tradeName: string;
   readonly legalName: string;
   verificationState: string;
+  /** W3-8: the provider-safe verification projection (null = no round has
+   *  ever existed) — mirrors the real org view exactly. */
+  verification: VerificationProjection | null;
   version: number;
   profile: FixtureProfileState;
   branches: FixtureBranchState[];
@@ -682,6 +692,7 @@ const programRow = (
   media: options.media ?? [],
   offers: options.offers ?? [],
   openRevision: options.openRevision ?? null,
+  latestDecision: options.latestDecision ?? null,
 });
 
 const association = (branchId: string, active = true): FixtureProgramBranch => ({
@@ -796,6 +807,14 @@ function blueWaveProgramRows(): FixtureProgramState[] {
       priceOptions: [priceOption('10', 'dropIn', 10_000)],
       media: [mediaRow('07', 'Gentle guided movement in warm water')],
       branchAssociations: [association(fixtureBranches.blueWaveMarina)],
+      // W3-8: the real changes_requested shape carries the reviewer's
+      // provider-safe correction feedback.
+      latestDecision: {
+        reasonCode: 'incomplete_description',
+        providerMessage:
+          'Describe who leads each session and the qualifications they hold, so customers know what to expect.',
+        decidedAt: '2026-06-14T09:30:00.000Z',
+      },
     }),
     programRow(fixtureListings.mastersTraining, 'Masters Training', fixtureActivityTypes.swimming, 'paused', '2026-06-18T08:00:00.000Z', {
       minAge: 18,
@@ -976,12 +995,14 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
       branches?: FixtureBranchState[];
       programs?: FixtureProgramState[];
       staff?: FixtureOrganizationState['staff'];
+      verification?: VerificationProjection | null;
     } = {},
   ): FixtureOrganizationState => ({
     organizationId: ref.organizationId,
     tradeName: ref.displayName,
     legalName: options.legalName ?? `${ref.displayName} LLC`,
     verificationState,
+    verification: options.verification ?? null,
     version: 3,
     staff: options.staff ?? { memberships: [], invitations: [] },
     profile: {
@@ -1159,6 +1180,16 @@ function organizationDirectory(): Map<string, FixtureOrganizationState> {
       org(fixtureOrganizations.desertBloom, 'rejected', {
         profile: { descriptionEn: 'Yoga and mindfulness studio for all levels.' },
         staff: soleOwnerStaff('11', fixtureUsers.hudaStages),
+        // W3-8: the real rejected shape carries the provider-safe decision.
+        verification: {
+          latestDecision: {
+            outcome: 'rejected',
+            reasonCode: 'expired_document',
+            providerMessage:
+              'Your trade licence on file has expired. Upload a licence that is currently valid, then submit again.',
+            decidedAt: '2026-08-12T10:00:00.000Z',
+          },
+        },
       }),
       // Verified + published storefront, NOT yet live: publication alone
       // never makes a provider publicly visible (live AND published).
@@ -1735,6 +1766,15 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       listingCount: capabilities.includes('catalogue.read')
         ? organization.programs.length
         : null,
+      verification:
+        organization.verification === null
+          ? null
+          : {
+              latestDecision:
+                organization.verification.latestDecision === null
+                  ? null
+                  : { ...organization.verification.latestDecision },
+            },
     };
     return { kind: 'loaded', snapshot };
   };
@@ -1842,6 +1882,15 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         },
         profile: { ...organization.profile, galleryMediaRefs: [...organization.profile.galleryMediaRefs] },
         branches: organization.branches.map((branch) => ({ ...branch, facilities: [...branch.facilities] })),
+        verification:
+          organization.verification === null
+            ? null
+            : {
+                latestDecision:
+                  organization.verification.latestDecision === null
+                    ? null
+                    : { ...organization.verification.latestDecision },
+              },
         membership: {
           // The caller's own ACTIVE staff row — the same id the staff read
           // returns, so the Team surface can recognize "You".
@@ -2567,6 +2616,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
       media,
       offers,
       openRevision,
+      latestDecision: row.latestDecision === null ? null : { ...row.latestDecision },
     };
   };
 
@@ -2977,6 +3027,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
         media: [],
         offers: [],
         openRevision: null,
+        latestDecision: null,
       };
       context.organization.programs.push(row);
       return { kind: 'programCreated', program: { id, listingState: 'draft', version: 1 } };

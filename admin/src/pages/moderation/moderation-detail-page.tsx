@@ -98,6 +98,7 @@ export function ModerationDetailPage() {
   const [stepUpNeeded, setStepUpNeeded] = useState(false);
   const [stepUpCode, setStepUpCode] = useState('');
   const [reasonCode, setReasonCode] = useState('');
+  const [providerMessage, setProviderMessage] = useState('');
 
   const query = useQuery({
     queryKey: ['admin-moderation-listing', programId],
@@ -116,6 +117,7 @@ export function ModerationDetailPage() {
       setActionError(null);
       setStepUpNeeded(false);
       setReasonCode('');
+      setProviderMessage('');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin-moderation-listing', programId] }),
         queryClient.invalidateQueries({ queryKey: ['admin-moderation-queue'] }),
@@ -142,6 +144,10 @@ export function ModerationDetailPage() {
         expectedVersion: input.expectedVersion,
         ...(input.action === 'request_changes' && reasonCode.trim() !== ''
           ? { reasonCode: reasonCode.trim() }
+          : {}),
+        // W3-8: the provider-visible correction text (optional, D-W3-2).
+        ...(input.action === 'request_changes' && providerMessage.trim() !== ''
+          ? { providerMessage: providerMessage.trim() }
           : {}),
       }),
     onSuccess: afterAction,
@@ -309,6 +315,22 @@ export function ModerationDetailPage() {
                   placeholder="e.g. incomplete_description"
                   value={reasonCode}
                   onChange={(event) => setReasonCode(event.target.value)}
+                />
+              </div>
+            ) : null}
+            {program.listingState === 'in_review' ? (
+              <div className={styles.field} style={{ marginTop: 'var(--hp-space-sm)' }}>
+                <label className={styles.fieldLabel} htmlFor="moderation-provider-message">
+                  Message to the provider (visible to them, used on request-changes)
+                </label>
+                <textarea
+                  id="moderation-provider-message"
+                  className={styles.searchInput}
+                  rows={3}
+                  maxLength={2000}
+                  placeholder="What should the provider change? They will see exactly this text."
+                  value={providerMessage}
+                  onChange={(event) => setProviderMessage(event.target.value)}
                 />
               </div>
             ) : null}

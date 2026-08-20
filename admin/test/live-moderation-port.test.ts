@@ -141,13 +141,28 @@ describe('live moderation port', () => {
       review.port.reviewListing(QUEUE_ROW.id, 'request_changes', {
         expectedVersion: 3,
         reasonCode: 'incomplete_description',
+        providerMessage: 'Describe the weekly schedule.',
       }),
     ).resolves.toEqual({ kind: 'completed' });
     expect(review.requests[0]!.url).toContain(`/admin/listings/${QUEUE_ROW.id}/review/request-changes`);
     expect(JSON.parse(String(review.requests[0]!.init.body))).toEqual({
       expectedVersion: 3,
       reasonCode: 'incomplete_description',
+      providerMessage: 'Describe the weekly schedule.',
     });
+
+    // W3-8: the provider-visible message can never ride start/approve —
+    // the port drops it exactly like the certified schema refuses it.
+    const approve = await signedInPort(() =>
+      jsonResponse(200, { status: 'programReviewed', state: 'approved', version: 5 }),
+    );
+    await expect(
+      approve.port.reviewListing(QUEUE_ROW.id, 'approve', {
+        expectedVersion: 4,
+        providerMessage: 'never sent on approve',
+      }),
+    ).resolves.toEqual({ kind: 'completed' });
+    expect(JSON.parse(String(approve.requests[0]!.init.body))).toEqual({ expectedVersion: 4 });
 
     const revisionApprove = await signedInPort(() =>
       jsonResponse(200, { status: 'revisionApproved', programVersion: 7 }),

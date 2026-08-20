@@ -87,7 +87,7 @@ describe('listing lifecycle UX — submit path (W2-9)', () => {
     expect(screen.getAllByText('Draft').length).toBeGreaterThan(0);
   });
 
-  test('changes requested: truthful generic state, resubmit through the same action, and NO invented reviewer feedback', async () => {
+  test('changes requested: the REAL provider-safe correction feedback renders (W3-8), and resubmission works through the same action', async () => {
     const user = userEvent.setup();
     renderPortal({
       asIdentity: 'owner@bluewave.demo',
@@ -95,13 +95,23 @@ describe('listing lifecycle UX — submit path (W2-9)', () => {
     });
     await screen.findByRole('heading', { level: 1, name: 'Aqua Therapy Sessions' });
     expect(screen.getAllByText('Changes requested').length).toBeGreaterThan(0);
-    // The truthful generic explanation — no reviewer name, no reason text,
-    // no note vocabulary (no provider-facing feedback contract exists).
+    // W3-8: the reviewer-authored provider-safe message and the machine
+    // reference — exactly the two layers the backend stores provider-
+    // visibly; no internal reviewer identity or note vocabulary exists.
+    const feedback = screen.getByRole('note', { name: 'What Himma asked to change' });
+    expect(
+      within(feedback).getByText(/Describe who leads each session and the qualifications/),
+    ).toBeInTheDocument();
+    expect(within(feedback).getByText('incomplete_description')).toBeInTheDocument();
+    expect(within(feedback).getByText(/Reviewed on 14 June 2026/)).toBeInTheDocument();
     const main = screen.getByRole('main');
-    expect(main.textContent).not.toMatch(/reviewer|reason:|note from|feedback:/i);
+    expect(main.textContent).not.toMatch(/internal note|reviewed by|reviewer name/i);
 
     await user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
     expect(await screen.findByText('Resubmitted to Himma for review.')).toBeInTheDocument();
+    // Back in review: the state changed; the historical feedback is no
+    // longer presented as the current ask.
+    expect(screen.queryByRole('note', { name: 'What Himma asked to change' })).toBeNull();
   });
 
   test('duplicate lifecycle submission executes exactly once (busy guard)', async () => {

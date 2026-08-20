@@ -388,6 +388,11 @@ export async function reviewProgram(
     expectedVersion: number;
     /** Safe machine-readable code only — never free-text review notes. */
     reasonCode?: string;
+    /** W3-8 (D-W3-2): the reviewer-authored PROVIDER-VISIBLE correction
+     *  text — optional on request_changes (the only action that records
+     *  it), stored in listing_moderation_feedback in the same transaction and
+     *  NEVER placed in audit/outbox payloads. */
+    providerMessage?: string;
   },
 ): Promise<ReviewProgramResult> {
   const spec = REVIEW_TRANSITIONS[input.action];
@@ -411,6 +416,21 @@ export async function reviewProgram(
       .returning('version')
       .executeTakeFirst();
     if (updated === undefined) return { kind: 'staleVersion' as const };
+    if (input.action === 'request_changes') {
+      // W3-8 (docs/31 §5): record the provider-facing correction feedback
+      // atomically with the state edge. Append-only history; the row holds
+      // ONLY the two provider-visible layers (no internal-note column
+      // exists), and the provider-safe message never enters audit/outbox.
+      await trx
+        .insertInto('listing_moderation_feedback')
+        .values({
+          id: newId(),
+          program_id: input.programId,
+          reason_code: input.reasonCode ?? null,
+          provider_safe_message: input.providerMessage ?? null,
+        })
+        .execute();
+    }
     await emitModerationEvent(trx, actor, input.programId, program.organization_id, spec.audit, spec.event, {
       previousState: program.listing_state,
       ...(input.reasonCode !== undefined ? { reasonCode: input.reasonCode } : {}),

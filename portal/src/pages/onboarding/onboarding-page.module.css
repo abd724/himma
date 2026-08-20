@@ -239,3 +239,39 @@
     min-height: 40px;
   }
 }
+
+/* W3-8: provider-safe rejection feedback */
+.feedbackCard {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--hp-color-border, #e4e0d8);
+  border-left: 3px solid var(--hp-color-accent, #c96f4a);
+  border-radius: 10px;
+  background: var(--hp-color-surface, #fffdf9);
+}
+
+.feedbackTitle {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.feedbackBody {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.feedbackMeta {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--hp-color-text-secondary, #6f6a60);
+}
+
+.feedbackCode {
+  font-size: 0.78rem;
+  background: var(--hp-color-surface-sunken, #f4f1ea);
+  border-radius: 4px;
+  padding: 1px 5px;
+}

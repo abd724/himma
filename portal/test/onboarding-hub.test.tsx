@@ -66,16 +66,27 @@ describe('onboarding hub (readiness orchestration over canonical states)', () =>
     }
   });
 
-  test('a rejected organization can resubmit, and the hub reflects the new submitted state', async () => {
+  test('a rejected organization sees the REAL provider-safe decision feedback (W3-8), can resubmit, and the hub reflects the new submitted state', async () => {
     renderPortal({
       asIdentity: 'stages@himma.demo',
       initialEntries: [onboardingPath(fixtureOrganizations.desertBloom)],
     });
     expect(await screen.findByText('Changes needed')).toBeInTheDocument();
+    // W3-8: the reviewer-authored provider-safe message + machine
+    // reference + decision date — and structurally nothing internal.
+    const feedback = screen.getByRole('note', { name: 'What needs to change' });
+    expect(
+      within(feedback).getByText(/Your trade licence on file has expired/),
+    ).toBeInTheDocument();
+    expect(within(feedback).getByText('expired_document')).toBeInTheDocument();
+    expect(within(feedback).getByText(/Reviewed on 12 August 2026/)).toBeInTheDocument();
+    expect(screen.getByRole('main').textContent).not.toMatch(/internal note|reviewed by/i);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Submit again' }));
     expect(await screen.findByText('Submitted for review')).toBeInTheDocument();
+    // Back under review — the correction panel is no longer the current ask.
+    expect(screen.queryByRole('note', { name: 'What needs to change' })).toBeNull();
   });
 
   test('a verified organization shows go-live with Himma and never offers a provider go-live control', async () => {
