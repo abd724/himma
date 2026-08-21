@@ -104,6 +104,32 @@ async function pendingBookingFor(
   return { quoteId, holdId, bookingId: initiate.outcome.booking.bookingId };
 }
 
+/** quote → claim ONLY: the free/trial rest state (no pending Booking exists —
+ *  zero-total intents confirm through §7.3 directly). */
+async function freeHoldFor(
+  customer: Customer,
+  unit: UnitRef,
+  optionId: string,
+  options: { serviceDeps?: BookingServiceDeps; offerId?: string } = {},
+): Promise<{ quoteId: string; holdId: string }> {
+  const serviceDeps = options.serviceDeps ?? deps;
+  const quoteId = await quoteFor(customer, unit, optionId, options.offerId);
+  const claim = await claimHold(serviceDeps, { accountId: customer.accountId }, {
+    unit,
+    participantId: customer.participantId,
+    quoteId,
+    idempotencyKey: newId(),
+  });
+  if (claim.outcome.kind !== 'holdClaimed') throw new Error(claim.outcome.kind);
+  return { quoteId, holdId: claim.outcome.hold.holdId };
+}
+
+async function bookingCountForHold(holdId: string): Promise<number> {
+  const rows = await sql<{ n: string }>`
+    SELECT count(*) AS n FROM booking WHERE hold_id = ${holdId}`.execute(testDb.db);
+  return Number(rows.rows[0]!.n);
+}
+
 async function holdAndBooking(holdId: string, bookingId: string) {
   const hold = await sql<{ state: string; consumed_by_booking_id: string | null }>`
     SELECT state, consumed_by_booking_id FROM capacity_hold WHERE id = ${holdId}`.execute(
@@ -278,6 +304,40 @@ describe('paid initiation — the §7.4a rest state (minus PaymentIntent)', () =
     expect(Number(rows.rows[0]!.n)).toBe(1);
   });
 
+  it('OWNER-PROBE regression: a zero-total quote (free option AND valid freeTrial) can NEVER create a pending_payment Booking — typed paymentNotRequired before any insert/audit', async () => {
+    const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 3 }) };
+    const freeTrial = await createOffer(f, { kind: 'freeTrial' });
+    for (const [optionId, offerId] of [
+      [freeOption, undefined],
+      [monthlyOption, freeTrial],
+    ] as const) {
+      const c = await createCustomer(testDb.db);
+      const rest = await freeHoldFor(c, unit, optionId, {
+        ...(offerId !== undefined ? { offerId } : {}),
+      });
+      const run = await initiateBooking(deps, { accountId: c.accountId }, {
+        holdId: rest.holdId,
+        quoteId: rest.quoteId,
+        idempotencyKey: newId(),
+      });
+      expect(run.outcome).toEqual({ kind: 'paymentNotRequired' });
+      // Refusal happened BEFORE insertion: no Booking row of any state, the
+      // hold untouched and active, the claimed seat still merely held.
+      expect(await bookingCountForHold(rest.holdId)).toBe(0);
+      const hold = await sql<{ state: string }>`
+        SELECT state FROM capacity_hold WHERE id = ${rest.holdId}`.execute(testDb.db);
+      expect(hold.rows[0]!.state).toBe('active');
+    }
+    const rec = await reconcileUnit(testDb.db, unit);
+    expect(rec.heldCount).toBe(2);
+    expect(rec.bookedCount).toBe(0);
+    // No booking audit/outbox rows exist for this unit at all.
+    const outbox = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM outbox_event
+      WHERE aggregate_type = 'booking' AND payload->>'unitId' = ${unit.id}`.execute(testDb.db);
+    expect(Number(outbox.rows[0]!.n)).toBe(0);
+  });
+
   it('fails closed: foreign hold, wrong quote, released hold, lapsed hold (settled truthfully as expiry)', async () => {
     const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 3 }) };
     const c = await createCustomer(testDb.db);
@@ -345,7 +405,7 @@ describe('paid initiation — the §7.4a rest state (minus PaymentIntent)', () =
 });
 
 describe('D-8 policy fail-close (must precede EVERY confirmation mutation)', () => {
-  it('with NO active template anywhere, confirmation refuses typed and changes NOTHING — then the same key confirms once a template exists', async () => {
+  it('with NO active template anywhere, confirmation refuses typed and changes NOTHING — no Booking row at all — then the same intent confirms once a template exists', async () => {
     // Runs BEFORE any test activates a template in this database.
     const active = await sql<{ n: string }>`
       SELECT count(*) AS n FROM cancellation_policy_template WHERE state = 'active'`.execute(
@@ -355,17 +415,21 @@ describe('D-8 policy fail-close (must precede EVERY confirmation mutation)', () 
 
     const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 1 }) };
     const c = await createCustomer(testDb.db);
-    const { holdId, bookingId } = await pendingBookingFor(c, unit, freeOption);
+    const { holdId } = await freeHoldFor(c, unit, freeOption);
     const key = newId();
     const refused = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: key,
     });
     expect(refused.outcome.kind).toBe('policyUnavailable');
-    const state = await holdAndBooking(holdId, bookingId);
-    expect(state.hold.state).toBe('active');
-    expect(state.hold.consumed_by_booking_id).toBeNull();
-    expect(state.booking.state).toBe('pending_payment');
+    // Fail-closed BEFORE hold consumption, counter movement, booking
+    // insertion, and enrolment: literally nothing exists but the live hold.
+    expect(await bookingCountForHold(holdId)).toBe(0);
+    const hold = await sql<{ state: string; consumed_by_booking_id: string | null }>`
+      SELECT state, consumed_by_booking_id FROM capacity_hold WHERE id = ${holdId}`.execute(
+      testDb.db,
+    );
+    expect(hold.rows[0]).toEqual({ state: 'active', consumed_by_booking_id: null });
     const rec = await reconcileUnit(testDb.db, unit);
     expect(rec.heldCount).toBe(1);
     expect(rec.bookedCount).toBe(0);
@@ -373,12 +437,12 @@ describe('D-8 policy fail-close (must precede EVERY confirmation mutation)', () 
     await createActivePolicyTemplate(testDb.db);
     // The refusal was the stored outcome for THAT key; a fresh key confirms.
     const replay = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: key,
     });
     expect(replay).toEqual({ replayed: true, outcome: { kind: 'policyUnavailable' } });
     const confirmed = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: newId(),
     });
     expect(confirmed.outcome.kind).toBe('bookingConfirmed');
@@ -386,17 +450,23 @@ describe('D-8 policy fail-close (must precede EVERY confirmation mutation)', () 
 });
 
 describe('§7.3 free confirmation — the atomic consumption transaction', () => {
-  it('confirms a zero-price booking through FULL hold consumption: reciprocal identity, one-seat counter move, write-once facts, events', async () => {
+  it('creates AND confirms the zero-price booking in ONE transaction: full hold consumption, reciprocal identity, one-seat counter move, write-once facts, events — never a committed pending_payment', async () => {
     const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 1 }) };
     const c = await createCustomer(testDb.db);
-    const { holdId, bookingId } = await pendingBookingFor(c, unit, freeOption);
+    const { holdId } = await freeHoldFor(c, unit, freeOption);
     expect((await reconcileUnit(testDb.db, unit)).state).toBe('full');
+    expect(await bookingCountForHold(holdId)).toBe(0); // no rest state exists
 
     const run = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: newId(),
     });
     if (run.outcome.kind !== 'bookingConfirmed') throw new Error(run.outcome.kind);
+    const bookingId = run.outcome.booking.bookingId;
+    // Exactly ONE booking exists for this hold, committed CONFIRMED — a
+    // zero-price booking can never strand at pending_payment (none was ever
+    // committed in that state).
+    expect(await bookingCountForHold(holdId)).toBe(1);
     expect(run.outcome.booking.referenceCode).toMatch(/^HM-[A-Z2-9]{8}$/);
     expect(run.outcome.booking.enrolmentCreated).toBe(false);
 
@@ -428,58 +498,58 @@ describe('§7.3 free confirmation — the atomic consumption transaction', () =>
 
     // Duplicate confirmation: a NEW key is typed; the seat never moves twice.
     const again = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: newId(),
     });
     expect(again.outcome.kind).toBe('alreadyConfirmed');
     expect((await reconcileUnit(testDb.db, unit)).bookedCount).toBe(1);
+    expect(await bookingCountForHold(holdId)).toBe(1);
   });
 
-  it('a PAID booking can never confirm through the free path', async () => {
+  it('a PAID intent can never confirm through the free path', async () => {
     const unit = { kind: 'session' as const, id: await createSession(f) };
     const c = await createCustomer(testDb.db);
-    const { bookingId } = await pendingBookingFor(c, unit, dropInOption);
+    const { holdId } = await pendingBookingFor(c, unit, dropInOption);
     const run = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: newId(),
     });
     expect(run.outcome.kind).toBe('notFreeQuote');
   });
 
-  it('confirmation NEVER succeeds on a dead hold: lapsed → truthful expiry (no booked seat), released → typed refusal', async () => {
-    // Lapsed: a short-TTL hold that dies between initiation and confirmation.
+  it('confirmation NEVER succeeds on a dead hold: lapsed → truthful expiry with NO booking created, released → typed refusal', async () => {
+    // Lapsed: a short-TTL free hold that dies before confirmation.
     const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 2 }) };
     const c = await createCustomer(testDb.db);
     const shortDeps: BookingServiceDeps = { db: testDb.db, holdTtlSeconds: 1 };
-    const { holdId, bookingId } = await pendingBookingFor(c, unit, freeOption, {
-      serviceDeps: shortDeps,
-    });
+    const { holdId } = await freeHoldFor(c, unit, freeOption, { serviceDeps: shortDeps });
     await new Promise((resolve) => setTimeout(resolve, 1100));
     const run = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: newId(),
     });
     expect(run.outcome.kind).toBe('holdExpired');
-    const state = await holdAndBooking(holdId, bookingId);
-    expect(state.hold.state).toBe('expired');
-    expect(state.booking.state).toBe('expired'); // unwound, never confirmed
+    const hold = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold WHERE id = ${holdId}`.execute(testDb.db);
+    expect(hold.rows[0]!.state).toBe('expired');
+    expect(await bookingCountForHold(holdId)).toBe(0); // nothing was created
     const rec = await reconcileUnit(testDb.db, unit);
     expect(rec.bookedCount).toBe(0);
     expect(rec.heldCount).toBe(0);
 
-    // Released: release unwinds the pending booking; confirmation then sees
-    // a dead booking, and nothing can resurrect the hold.
+    // Released: nothing can resurrect the hold and no booking appears.
     const c2 = await createCustomer(testDb.db);
-    const rest2 = await pendingBookingFor(c2, unit, freeOption);
+    const rest2 = await freeHoldFor(c2, unit, freeOption);
     await releaseHold(deps, { accountId: c2.accountId }, {
       holdId: rest2.holdId,
       idempotencyKey: newId(),
     });
     const run2 = await confirmFreeBooking(deps, { accountId: c2.accountId }, {
-      bookingId: rest2.bookingId,
+      holdId: rest2.holdId,
       idempotencyKey: newId(),
     });
-    expect(run2.outcome).toEqual({ kind: 'invalidBookingState', state: 'expired' });
+    expect(run2.outcome).toEqual({ kind: 'holdNotActive', state: 'released' });
+    expect(await bookingCountForHold(rest2.holdId)).toBe(0);
     const hold2 = await sql<{ state: string }>`
       SELECT state FROM capacity_hold WHERE id = ${rest2.holdId}`.execute(testDb.db);
     expect(hold2.rows[0]!.state).toBe('released');
@@ -488,21 +558,22 @@ describe('§7.3 free confirmation — the atomic consumption transaction', () =>
   it('idempotent replay returns the identical confirmed view without re-execution', async () => {
     const unit = { kind: 'session' as const, id: await createSession(f) };
     const c = await createCustomer(testDb.db);
-    const { bookingId } = await pendingBookingFor(c, unit, freeOption);
+    const { holdId } = await freeHoldFor(c, unit, freeOption);
     const key = newId();
     const first = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: key,
     });
     if (first.outcome.kind !== 'bookingConfirmed') throw new Error(first.outcome.kind);
     const replay = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: key,
     });
     expect(replay.replayed).toBe(true);
     expect(replay.outcome).toEqual(first.outcome);
     const outbox = await sql<{ n: string }>`
-      SELECT count(*) AS n FROM outbox_event WHERE aggregate_id = ${bookingId}`.execute(testDb.db);
+      SELECT count(*) AS n FROM outbox_event
+      WHERE aggregate_id = ${first.outcome.booking.bookingId}`.execute(testDb.db);
     expect(Number(outbox.rows[0]!.n)).toBe(1);
   });
 });
@@ -537,11 +608,20 @@ describe('the trusted paid-confirmation seam (§7.4b shape — internal only)', 
       WHERE entity_id = ${bookingId} AND action = 'booking.confirmed'`.execute(testDb.db);
     expect(audit.rows[0]!.actor_type).toBe('system');
 
-    // Free bookings have no payment to confirm — §7.3 owns them.
+    // Free intents have no payment to confirm — §7.3 owns them. The service
+    // layer can no longer even CREATE a zero-price pending booking
+    // (paymentNotRequired), so build the adversarial state with direct SQL
+    // and prove the seam still refuses it.
     const cFree = await createCustomer(testDb.db);
-    const rest = await pendingBookingFor(cFree, unit, freeOption);
+    const rest = await freeHoldFor(cFree, unit, freeOption);
+    const rogueBookingId = newId();
+    await sql`INSERT INTO booking (id, account_id, participant_id, program_id, organization_id,
+                                   branch_id, option_kind, session_id, quote_id, hold_id)
+              VALUES (${rogueBookingId}, ${cFree.accountId}, ${cFree.participantId},
+                      ${f.programId}, ${f.org.orgId}, ${f.org.branchIds[0]}, 'free',
+                      ${unit.id}, ${rest.quoteId}, ${rest.holdId})`.execute(testDb.db);
     const refused = await confirmPaidBooking(deps, {
-      bookingId: rest.bookingId,
+      bookingId: rogueBookingId,
       holdId: rest.holdId,
       idempotencyKey: newId(),
     });
@@ -600,14 +680,13 @@ describe('D-4 Enrolment — cohort participation, atomic with confirmation', () 
     const unit = { kind: 'enrolmentCohort' as const, id: cohortId };
     const c = await createCustomer(testDb.db);
     const freeTrial = await createOffer(f, { kind: 'freeTrial' });
-    const { holdId, bookingId } = await pendingBookingFor(c, unit, monthlyOption, {
-      offerId: freeTrial,
-    });
+    const { holdId } = await freeHoldFor(c, unit, monthlyOption, { offerId: freeTrial });
     const run = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: newId(),
     });
     if (run.outcome.kind !== 'bookingConfirmed') throw new Error(run.outcome.kind);
+    const bookingId = run.outcome.booking.bookingId;
     expect(run.outcome.booking.enrolmentCreated).toBe(true);
 
     const enrolment = await sql<{ cadence: string; cohort_id: string; renewal_policy: string | null }>`
@@ -645,14 +724,12 @@ describe('deterministic failure injection (§18): every sabotage leaves the pre-
     'bookingConfirmed',
     'enrolmentInserted',
     'beforeCommit',
-  ] as const)('confirmation sabotaged at %s → hold active, counters unmoved, booking pending, no enrolment, no events, key reusable', async (phase) => {
+  ] as const)('confirmation sabotaged at %s → hold active, counters unmoved, NO booking row, no enrolment, no events, key reusable', async (phase) => {
     const cohortId = await createCohort(f, 2);
     const unit = { kind: 'enrolmentCohort' as const, id: cohortId };
     const c = await createCustomer(testDb.db);
     const freeTrial = await createOffer(f, { kind: 'freeTrial' });
-    const { holdId, bookingId } = await pendingBookingFor(c, unit, monthlyOption, {
-      offerId: freeTrial,
-    });
+    const { holdId } = await freeHoldFor(c, unit, monthlyOption, { offerId: freeTrial });
     const key = newId();
     const sabotaged: BookingServiceDeps = {
       db: testDb.db,
@@ -662,24 +739,28 @@ describe('deterministic failure injection (§18): every sabotage leaves the pre-
     };
     await expect(
       confirmFreeBooking(sabotaged, { accountId: c.accountId }, {
-        bookingId,
+        holdId,
         idempotencyKey: key,
       }),
     ).rejects.toThrow(`sabotage:${phase}`);
 
-    const state = await holdAndBooking(holdId, bookingId);
-    expect(state.hold.state).toBe('active');
-    expect(state.hold.consumed_by_booking_id).toBeNull();
-    expect(state.booking.state).toBe('pending_payment');
-    expect(state.booking.reference_code).toBeNull();
+    // Full rollback to the exact pre-operation state: the live hold is the
+    // ONLY artifact — no booking (of any state), no enrolment, no events.
+    const hold = await sql<{ state: string; consumed_by_booking_id: string | null }>`
+      SELECT state, consumed_by_booking_id FROM capacity_hold WHERE id = ${holdId}`.execute(
+      testDb.db,
+    );
+    expect(hold.rows[0]).toEqual({ state: 'active', consumed_by_booking_id: null });
+    expect(await bookingCountForHold(holdId)).toBe(0);
     const rec = await reconcileUnit(testDb.db, unit);
     expect(rec.heldCount).toBe(1);
     expect(rec.bookedCount).toBe(0);
     const enrolment = await sql<{ n: string }>`
-      SELECT count(*) AS n FROM enrolment WHERE booking_id = ${bookingId}`.execute(testDb.db);
+      SELECT count(*) AS n FROM enrolment WHERE cohort_id = ${cohortId}`.execute(testDb.db);
     expect(Number(enrolment.rows[0]!.n)).toBe(0);
     const outbox = await sql<{ n: string }>`
-      SELECT count(*) AS n FROM outbox_event WHERE aggregate_id = ${bookingId}`.execute(testDb.db);
+      SELECT count(*) AS n FROM outbox_event
+      WHERE aggregate_type = 'booking' AND payload->>'unitId' = ${cohortId}`.execute(testDb.db);
     expect(Number(outbox.rows[0]!.n)).toBe(0);
     const keys = await sql<{ n: string }>`
       SELECT count(*) AS n FROM idempotency_key WHERE idempotency_key = ${key}`.execute(testDb.db);
@@ -687,7 +768,7 @@ describe('deterministic failure injection (§18): every sabotage leaves the pre-
 
     // The key was not poisoned; the same key completes the confirmation.
     const retry = await confirmFreeBooking(deps, { accountId: c.accountId }, {
-      bookingId,
+      holdId,
       idempotencyKey: key,
     });
     expect(retry).toMatchObject({ replayed: false, outcome: { kind: 'bookingConfirmed' } });

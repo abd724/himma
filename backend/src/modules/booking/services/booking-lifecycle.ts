@@ -164,6 +164,10 @@ export type InitiateBookingResult =
   /** The hold had lapsed — settled as expiry in this boundary (§7.2). */
   | { kind: 'holdExpired' }
   | { kind: 'quoteMismatch' }
+  /** Zero-total quote: `pending_payment` is RESERVED for bookings that
+   *  actually require the later payment boundary — free/trial intents ride
+   *  `confirmFreeBooking` (S5-3 owner probe invariant). */
+  | { kind: 'paymentNotRequired' }
   | { kind: 'alreadyBooked' }
   | { kind: 'idempotencyConflict' };
 
@@ -203,6 +207,13 @@ export async function initiateBooking(
       };
     }
     if (hold.quote_id !== input.quoteId) return { kind: 'quoteMismatch' };
+    // The paid/free boundary (owner probe invariant): a zero-total quote has
+    // no payment to await, so it may never rest at `pending_payment` —
+    // refused BEFORE any booking insert/audit; hold, counters, and quote
+    // untouched. Free/trial intents confirm through §7.3 instead.
+    if ((await quoteTotal(trx, hold.quote_id)) === 0) {
+      return { kind: 'paymentNotRequired' };
+    }
     if (hold.expires_at <= lockedUnit.db_now) {
       // Lapsed under the lock: settle truthfully instead of building a
       // Booking on a dead hold (§7.2 recognized at the mutation boundary).
@@ -462,8 +473,9 @@ async function quoteTotal(trx: Trx, quoteId: string): Promise<number> {
 
 export type ConfirmFreeBookingResult =
   | ConfirmCoreResult
-  | { kind: 'bookingNotFound' }
+  | { kind: 'holdNotFound' }
   | { kind: 'notFreeQuote' }
+  | { kind: 'alreadyBooked' }
   | { kind: 'idempotencyConflict' };
 
 export interface ConfirmFreeBookingRun {
@@ -473,26 +485,90 @@ export interface ConfirmFreeBookingRun {
 
 const CONFIRM_FREE_SCOPE = 'booking.confirm.free';
 
+/**
+ * The §7.3 free/trial boundary — creation AND confirmation in ONE
+ * transaction. Because `pending_payment` is reserved for bookings that
+ * actually await the payment boundary (`initiateBooking` refuses zero-total
+ * quotes with `paymentNotRequired`), the zero-price Booking is inserted and
+ * confirmed HERE atomically: no committed state ever holds a zero-price
+ * Booking at `pending_payment`, so none can strand there. Same inventory
+ * authority as the paid path — the hold is consumed through the identical
+ * core, no capacity shortcut.
+ */
 export async function confirmFreeBooking(
   deps: BookingServiceDeps,
   actor: CustomerActor,
-  input: { bookingId: string; idempotencyKey: string },
+  input: { holdId: string; idempotencyKey: string },
 ): Promise<ConfirmFreeBookingRun> {
   const ctx = {
     principalRef: `customer:${actor.accountId}`,
     endpointScope: CONFIRM_FREE_SCOPE,
     idempotencyKey: input.idempotencyKey,
-    requestDigest: requestDigest({ bookingId: input.bookingId }),
+    requestDigest: requestDigest({ holdId: input.holdId }),
   };
   const run = await runIdempotent<ConfirmFreeBookingResult>(deps.db, ctx, async (trx) => {
-    const booking = await readBooking(trx, input.bookingId);
-    if (booking === undefined || booking.account_id !== actor.accountId) {
-      return { kind: 'bookingNotFound' };
+    const preread = await readHold(trx, input.holdId);
+    if (preread === undefined || preread.account_id !== actor.accountId) {
+      return { kind: 'holdNotFound' };
     }
     // §7.3 precondition: this path exists ONLY for a zero-total quote — a
-    // paid booking can never confirm here, whatever the client claims.
-    if ((await quoteTotal(trx, booking.quote_id)) !== 0) return { kind: 'notFreeQuote' };
-    return confirmCore(deps, trx, booking, { type: 'user', accountId: actor.accountId });
+    // paid intent can never confirm here, whatever the client claims.
+    if ((await quoteTotal(trx, preread.quote_id)) !== 0) return { kind: 'notFreeQuote' };
+
+    const unit = unitRefOf(preread);
+    const spec = unitSpec(unit.kind);
+    const lockedUnit = await lockUnitRow(trx, unit);
+    if (lockedUnit === undefined) return { kind: 'holdNotFound' };
+    const hold = await lockHold(trx, input.holdId);
+
+    // A consumed hold means this free intent already confirmed (a fresh key
+    // against a finished operation); expired/released holds are dead.
+    if (hold.state === 'consumed') return { kind: 'alreadyConfirmed' };
+    if (hold.state !== 'active') {
+      return { kind: 'holdNotActive', state: hold.state as 'expired' | 'released' };
+    }
+    if (hold.expires_at <= lockedUnit.db_now) {
+      await settleHold(trx, unit, hold, 'expired', { type: 'system' });
+      return { kind: 'holdExpired' };
+    }
+    const liveBooking = await trx
+      .selectFrom('booking')
+      .select('id')
+      .where(spec.holdColumn, '=', unit.id)
+      .where('participant_id', '=', hold.participant_id)
+      .where('state', 'in', ['pending_payment', 'confirmed'])
+      .executeTakeFirst();
+    if (liveBooking !== undefined) return { kind: 'alreadyBooked' };
+
+    // D-8 fail-close BEFORE the booking insert — a missing policy template
+    // must leave NO booking row of any kind behind.
+    const provider = deps.policyProvider ?? dbActivePolicyTemplateProvider;
+    if ((await provider.resolveActiveTemplate(trx)) === undefined) {
+      return { kind: 'policyUnavailable' };
+    }
+
+    const quote = await trx
+      .selectFrom('price_quote')
+      .select('option_kind')
+      .where('id', '=', hold.quote_id)
+      .executeTakeFirstOrThrow();
+    const bookingId = newId();
+    await sql`
+      INSERT INTO booking (id, account_id, participant_id, program_id, organization_id,
+                           branch_id, option_kind, ${sql.id(spec.holdColumn)}, quote_id, hold_id)
+      VALUES (${bookingId}, ${hold.account_id}, ${hold.participant_id},
+              ${lockedUnit.program_id}, ${lockedUnit.organization_id}, ${lockedUnit.branch_id},
+              ${quote.option_kind}, ${unit.id}, ${hold.quote_id}, ${hold.id})`.execute(trx);
+    await appendAuditEvent(trx, {
+      actorType: 'user',
+      actorId: actor.accountId,
+      principalContext: 'customer',
+      action: 'booking.created',
+      entityType: 'booking',
+      entityId: bookingId,
+    });
+    const booking = await readBooking(trx, bookingId);
+    return confirmCore(deps, trx, booking!, { type: 'user', accountId: actor.accountId });
   });
   if (run.kind === 'idempotencyConflict') {
     return { replayed: false, outcome: { kind: 'idempotencyConflict' } };

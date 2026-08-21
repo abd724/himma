@@ -97,6 +97,50 @@ async function restFor(
   };
 }
 
+interface FreeRest {
+  customer: Customer;
+  quoteId: string;
+  holdId: string;
+}
+
+/** quote → claim only: zero-total intents confirm directly through §7.3. */
+async function freeHoldFor(
+  unit: { kind: 'session'; id: string },
+  serviceDeps: BookingServiceDeps = deps,
+): Promise<FreeRest> {
+  const customer = await createCustomer(testDb.db);
+  const quote = await requestQuote(deps, { accountId: customer.accountId }, {
+    programId: f.programId,
+    priceOptionId: freeOption,
+    unit,
+    participantId: customer.participantId,
+  });
+  if (quote.kind !== 'quoteIssued') throw new Error(quote.kind);
+  const claim = await claimHold(serviceDeps, { accountId: customer.accountId }, {
+    unit,
+    participantId: customer.participantId,
+    quoteId: quote.quote.quoteId,
+    idempotencyKey: newId(),
+  });
+  if (claim.outcome.kind !== 'holdClaimed') throw new Error(claim.outcome.kind);
+  return { customer, quoteId: quote.quote.quoteId, holdId: claim.outcome.hold.holdId };
+}
+
+async function holdJointState(holdId: string) {
+  const rows = await sql<{
+    hold_state: string;
+    consumed_by: string | null;
+    booking_state: string | null;
+    booking_count: string;
+  }>`
+    SELECT h.state AS hold_state, h.consumed_by_booking_id AS consumed_by,
+           (SELECT b.state FROM booking b WHERE b.hold_id = h.id LIMIT 1) AS booking_state,
+           (SELECT count(*) FROM booking b WHERE b.hold_id = h.id) AS booking_count
+    FROM capacity_hold h WHERE h.id = ${holdId}`.execute(testDb.db);
+  const row = rows.rows[0]!;
+  return { ...row, booking_count: Number(row.booking_count) };
+}
+
 async function jointState(rest: Rest) {
   const rows = await sql<{ booking_state: string; hold_state: string; consumed_by: string | null }>`
     SELECT b.state AS booking_state, h.state AS hold_state,
@@ -106,34 +150,32 @@ async function jointState(rest: Rest) {
   return rows.rows[0]!;
 }
 
-it('the same booking confirmed twice CONCURRENTLY → exactly one confirmation, one counter move, one event set', async () => {
+it('the same free intent confirmed twice CONCURRENTLY → exactly one Booking/confirmation, one counter move, one event set', async () => {
   const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 2 }) };
-  const rest = await restFor(unit, freeOption);
+  const rest = await freeHoldFor(unit);
   const runs = await race([
     () =>
       confirmFreeBooking(deps, { accountId: rest.customer.accountId }, {
-        bookingId: rest.bookingId,
+        holdId: rest.holdId,
         idempotencyKey: newId(),
       }),
     () =>
       confirmFreeBooking(deps, { accountId: rest.customer.accountId }, {
-        bookingId: rest.bookingId,
+        holdId: rest.holdId,
         idempotencyKey: newId(),
       }),
   ]);
   const kinds = runs.map((run) => run.outcome.kind).sort();
   expect(kinds).toEqual(['alreadyConfirmed', 'bookingConfirmed']);
-  const state = await jointState(rest);
-  expect(state).toEqual({
-    booking_state: 'confirmed',
-    hold_state: 'consumed',
-    consumed_by: rest.bookingId,
-  });
+  const state = await holdJointState(rest.holdId);
+  expect(state.hold_state).toBe('consumed');
+  expect(state.booking_count).toBe(1);
+  expect(state.booking_state).toBe('confirmed');
   const rec = await reconcileUnit(testDb.db, unit);
   expect(rec.bookedCount).toBe(1);
   expect(rec.heldCount).toBe(0);
   const outbox = await sql<{ n: string }>`
-    SELECT count(*) AS n FROM outbox_event WHERE aggregate_id = ${rest.bookingId}`.execute(
+    SELECT count(*) AS n FROM outbox_event WHERE aggregate_id = ${state.consumed_by!}`.execute(
     testDb.db,
   );
   expect(Number(outbox.rows[0]!.n)).toBe(1);
@@ -142,34 +184,35 @@ it('the same booking confirmed twice CONCURRENTLY → exactly one confirmation, 
 it('confirmation racing hold EXPIRY at the TTL boundary → confirmed XOR expired; a booking never confirms on a dead hold', async () => {
   const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 1 }) };
   const shortDeps: BookingServiceDeps = { db: racePool.db, holdTtlSeconds: 1 };
-  const rest = await restFor(unit, freeOption, shortDeps);
+  const rest = await freeHoldFor(unit, shortDeps);
   // Land the race window right at expires_at.
   await new Promise((resolve) => setTimeout(resolve, 950));
   const [confirmRun, expiry] = await Promise.all([
     confirmFreeBooking(deps, { accountId: rest.customer.accountId }, {
-      bookingId: rest.bookingId,
+      holdId: rest.holdId,
       idempotencyKey: newId(),
     }),
     expireHold(deps, { holdId: rest.holdId }),
   ]);
 
-  const state = await jointState(rest);
+  const state = await holdJointState(rest.holdId);
   const rec = await reconcileUnit(testDb.db, unit);
-  if (state.booking_state === 'confirmed') {
+  if (state.hold_state === 'consumed') {
     // Confirmation won while the hold was still valid.
-    expect(state.hold_state).toBe('consumed');
-    expect(state.consumed_by).toBe(rest.bookingId);
+    expect(confirmRun.outcome.kind).toBe('bookingConfirmed');
+    expect(state.booking_count).toBe(1);
+    expect(state.booking_state).toBe('confirmed');
     expect(rec.bookedCount).toBe(1);
     expect(rec.heldCount).toBe(0);
     expect(['notLapsed', 'alreadyTerminal']).toContain(expiry.kind);
   } else {
-    // Expiry won: the seat NEVER moved into booked_count.
-    expect(state.booking_state).toBe('expired');
+    // Expiry won: NO booking exists and the seat NEVER reached booked_count.
     expect(state.hold_state).toBe('expired');
     expect(state.consumed_by).toBeNull();
+    expect(state.booking_count).toBe(0);
     expect(rec.bookedCount).toBe(0);
     expect(rec.heldCount).toBe(0);
-    expect(['holdExpired', 'invalidBookingState', 'alreadyConfirmed', 'holdNotActive']).toContain(
+    expect(['holdExpired', 'holdNotActive', 'alreadyConfirmed']).toContain(
       confirmRun.outcome.kind,
     );
   }
@@ -178,10 +221,10 @@ it('confirmation racing hold EXPIRY at the TTL boundary → confirmed XOR expire
 
 it('confirmation racing customer RELEASE → exactly one truthful winner, coherent joint state either way', async () => {
   const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 1 }) };
-  const rest = await restFor(unit, freeOption);
+  const rest = await freeHoldFor(unit);
   const [confirmRun, releaseRun] = await Promise.all([
     confirmFreeBooking(deps, { accountId: rest.customer.accountId }, {
-      bookingId: rest.bookingId,
+      holdId: rest.holdId,
       idempotencyKey: newId(),
     }),
     releaseHold(deps, { accountId: rest.customer.accountId }, {
@@ -189,18 +232,20 @@ it('confirmation racing customer RELEASE → exactly one truthful winner, cohere
       idempotencyKey: newId(),
     }),
   ]);
-  const state = await jointState(rest);
+  const state = await holdJointState(rest.holdId);
   const rec = await reconcileUnit(testDb.db, unit);
-  if (state.booking_state === 'confirmed') {
-    expect(state.hold_state).toBe('consumed');
+  if (state.hold_state === 'consumed') {
+    expect(confirmRun.outcome.kind).toBe('bookingConfirmed');
+    expect(state.booking_count).toBe(1);
+    expect(state.booking_state).toBe('confirmed');
     expect(releaseRun.outcome.kind).toBe('alreadyConsumed');
     expect(rec.bookedCount).toBe(1);
     expect(rec.heldCount).toBe(0);
   } else {
-    expect(state.booking_state).toBe('expired'); // unwound by the release
     expect(state.hold_state).toBe('released');
+    expect(state.booking_count).toBe(0); // no booking was ever created
     expect(releaseRun.outcome.kind).toBe('holdReleased');
-    expect(['invalidBookingState', 'holdNotActive']).toContain(confirmRun.outcome.kind);
+    expect(confirmRun.outcome).toEqual({ kind: 'holdNotActive', state: 'released' });
     expect(rec.bookedCount).toBe(0);
     expect(rec.heldCount).toBe(0);
   }
@@ -208,7 +253,7 @@ it('confirmation racing customer RELEASE → exactly one truthful winner, cohere
 
 it('free confirmation racing a rival CLAIM for the final seat → occupied inventory constant, zero oversell', async () => {
   const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 1 }) };
-  const rest = await restFor(unit, freeOption);
+  const rest = await freeHoldFor(unit);
   const rival = await createCustomer(testDb.db);
   const rivalQuote = await requestQuote(deps, { accountId: rival.accountId }, {
     programId: f.programId,
@@ -220,7 +265,7 @@ it('free confirmation racing a rival CLAIM for the final seat → occupied inven
 
   const [confirmRun, rivalClaim] = await Promise.all([
     confirmFreeBooking(deps, { accountId: rest.customer.accountId }, {
-      bookingId: rest.bookingId,
+      holdId: rest.holdId,
       idempotencyKey: newId(),
     }),
     claimHold(deps, { accountId: rival.accountId }, {
@@ -280,6 +325,37 @@ it('duplicate INITIATION storm (one key × 10) → exactly one Booking row, nine
   const rec = await reconcileUnit(testDb.db, unit);
   expect(rec.heldCount).toBe(1);
   expect(rec.bookedCount).toBe(0);
+});
+
+it('duplicate FREE-confirmation storm (one key × 10) → ONE Booking, ONE consumption, ONE event set, nine replays', async () => {
+  const unit = { kind: 'session' as const, id: await createSession(f, { capacity: 2 }) };
+  const rest = await freeHoldFor(unit);
+  const key = newId();
+  const runs = await race(
+    Array.from({ length: 10 }, () => () =>
+      confirmFreeBooking(deps, { accountId: rest.customer.accountId }, {
+        holdId: rest.holdId,
+        idempotencyKey: key,
+      }),
+    ),
+  );
+  expect(runs.every((run) => run.outcome.kind === 'bookingConfirmed')).toBe(true);
+  expect(runs.filter((run) => !run.replayed)).toHaveLength(1);
+  const state = await holdJointState(rest.holdId);
+  expect(state.hold_state).toBe('consumed');
+  expect(state.booking_count).toBe(1);
+  expect(state.booking_state).toBe('confirmed');
+  const rec = await reconcileUnit(testDb.db, unit);
+  expect(rec.bookedCount).toBe(1);
+  expect(rec.heldCount).toBe(0);
+  const outbox = await sql<{ n: string }>`
+    SELECT count(*) AS n FROM outbox_event WHERE aggregate_id = ${state.consumed_by!}`.execute(
+    testDb.db,
+  );
+  expect(Number(outbox.rows[0]!.n)).toBe(1);
+  const keyRows = await sql<{ n: string }>`
+    SELECT count(*) AS n FROM idempotency_key WHERE idempotency_key = ${key}`.execute(testDb.db);
+  expect(Number(keyRows.rows[0]!.n)).toBe(1);
 });
 
 it('duplicate trusted PAID-confirmation storm (one key × 10) → one consumption, one counter move, nine replays', async () => {
