@@ -32,6 +32,7 @@ import {
   type BookingFixture,
 } from './helpers/booking-fixtures';
 import { createAccount, createSelfParticipant, createUser } from './helpers/identity-fixtures';
+import { claimHold } from '../src/modules/booking/services/hold-claim';
 import { bearerForUser, type ProviderTestContext } from './helpers/provider-fixtures';
 import type { TestDb } from './helpers/test-db';
 import { createMigratedTestDb } from './helpers/test-db';
@@ -385,6 +386,47 @@ describe('the approved customer journey over the wire', () => {
     });
     expect(again.statusCode).toBe(200);
     expect((await reconcileUnit(testDb.db, unit)).heldCount).toBe(0);
+  });
+
+  it('OWNER PROBE over the wire: a lapsed-but-unswept hold reads as expired, and availability reflects effective capacity — never a stale full', async () => {
+    const sessionId = await createSession(f, { capacity: 1 });
+    const customer = await httpCustomer();
+    const quote = await quoteViaHttp(customer, sessionId, dropInOption);
+    // Claim with TTL 0 through the certified service (the route TTL is the
+    // production 10 minutes): instantly lapsed, row NOT swept.
+    const claim = await claimHold(
+      { db: testDb.db, holdTtlSeconds: 0 },
+      { accountId: customer.accountId },
+      {
+        unit: { kind: 'session', id: sessionId },
+        participantId: customer.participantId,
+        quoteId: quote['quoteId'] as string,
+        idempotencyKey: newId(),
+      },
+    );
+    if (claim.outcome.kind !== 'holdClaimed') throw new Error(claim.outcome.kind);
+
+    const status = await inject(
+      'GET',
+      `/customer/holds/${claim.outcome.hold.holdId}`,
+      customer.bearer,
+    );
+    expect(status.statusCode).toBe(200);
+    expect(status.json().hold.state).toBe('expired'); // effective truth
+    const avail = await inject(
+      'GET',
+      `/customer/programs/${f.programId}/availability?kind=session`,
+      customer.bearer,
+    );
+    const view = avail.json().units.find((u: { unitId: string }) => u.unitId === sessionId);
+    expect(view.availability).toBe('fewLeft'); // NOT full — the seat is reclaimable
+    expect(view.spotsLeft).toBe(1);
+    // The reads mutated nothing: the physical row still awaits its
+    // authoritative S5-2 transition.
+    const row = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold
+      WHERE id = ${claim.outcome.hold.holdId}`.execute(testDb.db);
+    expect(row.rows[0]!.state).toBe('active');
   });
 
   it('smuggled money/counters/state are inexpressible: a client-authored total never reaches the quote, and booking bodies strip undeclared fields', async () => {

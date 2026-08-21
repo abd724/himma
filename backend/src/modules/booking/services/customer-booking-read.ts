@@ -70,7 +70,7 @@ export async function listAvailability(
       state: string;
       capacity: number;
       booked_count: number;
-      held_count: number;
+      effective_held: string;
       cutoff_at: Date;
       lapsed: boolean;
       start_at: Date | null;
@@ -80,7 +80,17 @@ export async function listAvailability(
       effective_start: Date | null;
       effective_end: Date | null;
     }>`
-      SELECT id, state, capacity, booked_count, held_count,
+      SELECT u.id, u.state, u.capacity, u.booked_count,
+             -- EFFECTIVE domain truth (owner probe): a lapsed-but-unswept
+             -- hold physically keeps state='active' and its held_count seat
+             -- until an authoritative S5-2 boundary settles it, but it is no
+             -- longer usable — the customer projection counts only ACTIVE,
+             -- UNEXPIRED holds. Pure read: no mutation, no second expiry
+             -- implementation; the claim path's certified reclamation frees
+             -- the seat for real when someone takes it.
+             (SELECT count(*) FROM capacity_hold h
+               WHERE h.${sql.id(spec.holdColumn)} = u.id
+                 AND h.state = 'active' AND h.expires_at > now()) AS effective_held,
              ${sql.id(spec.cutoffColumn)} AS cutoff_at,
              ${sql.id(spec.cutoffColumn)} <= now() AS lapsed,
              ${sql.raw(
@@ -95,9 +105,9 @@ export async function listAvailability(
                       NULL::date AS start_date, NULL::date AS end_date,
                       effective_start, effective_end`,
              )}
-      FROM ${sql.id(spec.table)}
-      WHERE program_id = ${input.programId}
-        AND state IN ('scheduled', 'open', 'full', 'closed')
+      FROM ${sql.id(spec.table)} u
+      WHERE u.program_id = ${input.programId}
+        AND u.state IN ('scheduled', 'open', 'full', 'closed')
       ORDER BY ${sql.raw(
         input.unitKind === 'session'
           ? 'start_at'
@@ -110,9 +120,10 @@ export async function listAvailability(
       value === null ? null : value.toISOString().slice(0, 10);
     const units = rows.rows.map((row): AvailabilityView => {
       // Derived truth only (docs/32 §12): effective availability is
-      // capacity − booked − held at read time; the counters themselves
-      // never reach the wire.
-      const remaining = Math.max(0, row.capacity - row.booked_count - row.held_count);
+      // capacity − booked − ACTIVE UNEXPIRED holds at read time; neither
+      // the stored counters nor the projection internals reach the wire,
+      // and a lapsed hold can never present a unit as full until a sweep.
+      const remaining = Math.max(0, row.capacity - row.booked_count - Number(row.effective_held));
       const closed = row.state === 'scheduled' || row.state === 'closed' || row.lapsed;
       const availability = closed
         ? ('closed' as const)

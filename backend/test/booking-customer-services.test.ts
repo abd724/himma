@@ -23,7 +23,7 @@ import {
   paidCheckoutBoundary,
 } from '../src/modules/booking/services/customer-booking-read';
 import { claimHold } from '../src/modules/booking/services/hold-claim';
-import { releaseHold } from '../src/modules/booking/services/hold-lifecycle';
+import { expireHold, releaseHold } from '../src/modules/booking/services/hold-lifecycle';
 import { requestQuote } from '../src/modules/booking/services/quote-service';
 import {
   createActivePolicyTemplate,
@@ -399,6 +399,154 @@ describe('availability projection + hold status (derived truth, no counters)', (
     });
     if (lapsedStatus.kind !== 'holdStatus') throw new Error(lapsedStatus.kind);
     expect(lapsedStatus.hold.state).toBe('expired');
+  });
+});
+
+describe('OWNER PROBE — expired-hold customer truth (reads project, S5-2 stays the only authority)', () => {
+  it('a lapsed-but-unswept hold is never presented as usable: status projects expired, availability reflects EFFECTIVE capacity, and the next claim reclaims the seat exactly once', async () => {
+    const sessionId = await createSession(f, { capacity: 1 });
+    const unit = { kind: 'session' as const, id: sessionId };
+    const c = await createCustomer(testDb.db);
+    const q = await quoteFor(c, c.participantId, unit, dropInOption);
+    if (q.kind !== 'quoteIssued') throw new Error(q.kind);
+    const lapsedDeps: BookingServiceDeps = { db: racePool.db, holdTtlSeconds: 0 };
+    const claim = await claimHold(lapsedDeps, { accountId: c.accountId }, {
+      unit,
+      participantId: c.participantId,
+      quoteId: q.quote.quoteId,
+      idempotencyKey: newId(),
+    });
+    if (claim.outcome.kind !== 'holdClaimed') throw new Error(claim.outcome.kind);
+    const lapsedHoldId = claim.outcome.hold.holdId;
+
+    // PHYSICAL row truth (S5-2 preserved): still state='active', seat still
+    // in held_count — no sweep has run.
+    const before = await reconcileUnit(testDb.db, unit);
+    expect(before.heldCount).toBe(1);
+    expect(before.activeHolds).toBe(1);
+    expect(before.activeUnexpiredHolds).toBe(0);
+
+    // (A) Hold status PROJECTS the effective state — no mutation.
+    const status = await holdStatus(deps, { accountId: c.accountId }, { holdId: lapsedHoldId });
+    if (status.kind !== 'holdStatus') throw new Error(status.kind);
+    expect(status.hold.state).toBe('expired');
+
+    // (B) Availability reflects EFFECTIVE capacity, not the stale counter:
+    // the elapsed hold must not present the session as full pre-sweep.
+    const avail = await listAvailability(deps, { programId: f.programId, unitKind: 'session' });
+    if (avail.kind !== 'availability') throw new Error(avail.kind);
+    const view = avail.units.find((u) => u.unitId === sessionId)!;
+    expect(view.availability).toBe('fewLeft');
+    expect(view.spotsLeft).toBe(1);
+
+    // Reads MUTATED NOTHING: the row is untouched (compatible with later
+    // authoritative expiry; nothing can decrement twice).
+    const untouched = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold WHERE id = ${lapsedHoldId}`.execute(testDb.db);
+    expect(untouched.rows[0]!.state).toBe('active');
+    expect((await reconcileUnit(testDb.db, unit)).heldCount).toBe(1);
+
+    // The subsequent S5-2 claim path reclaims the lapsed hold UNDER THE
+    // UNIT LOCK and takes the seat — no oversell, one transition, one
+    // decrement (the reclaimed seat is immediately re-claimed).
+    const rival = await createCustomer(testDb.db);
+    const rivalQuote = await quoteFor(rival, rival.participantId, unit, dropInOption);
+    if (rivalQuote.kind !== 'quoteIssued') throw new Error(rivalQuote.kind);
+    const rivalClaim = await claimHold(deps, { accountId: rival.accountId }, {
+      unit,
+      participantId: rival.participantId,
+      quoteId: rivalQuote.quote.quoteId,
+      idempotencyKey: newId(),
+    });
+    expect(rivalClaim.outcome.kind).toBe('holdClaimed');
+    const settled = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold WHERE id = ${lapsedHoldId}`.execute(testDb.db);
+    expect(settled.rows[0]!.state).toBe('expired'); // transitioned exactly once
+    const after = await reconcileUnit(testDb.db, unit);
+    expect(after.heldCount).toBe(1); // the rival's live hold only
+    expect(after.activeUnexpiredHolds).toBe(1);
+    expect(after.bookedCount + after.heldCount).toBeLessThanOrEqual(after.capacity);
+    // Availability now truthfully reports full (a genuinely live hold).
+    const availAfter = await listAvailability(deps, { programId: f.programId, unitKind: 'session' });
+    if (availAfter.kind !== 'availability') throw new Error(availAfter.kind);
+    expect(availAfter.units.find((u) => u.unitId === sessionId)!.availability).toBe('full');
+  });
+
+  it('TTL-boundary race: reads racing authoritative expiry and a fresh claim never double-release capacity or expose impossible truth', async () => {
+    const sessionId = await createSession(f, { capacity: 1 });
+    const unit = { kind: 'session' as const, id: sessionId };
+    const holder = await createCustomer(testDb.db);
+    const q = await quoteFor(holder, holder.participantId, unit, dropInOption);
+    if (q.kind !== 'quoteIssued') throw new Error(q.kind);
+    const lapsedDeps: BookingServiceDeps = { db: racePool.db, holdTtlSeconds: 0 };
+    const claim = await claimHold(lapsedDeps, { accountId: holder.accountId }, {
+      unit,
+      participantId: holder.participantId,
+      quoteId: q.quote.quoteId,
+      idempotencyKey: newId(),
+    });
+    if (claim.outcome.kind !== 'holdClaimed') throw new Error(claim.outcome.kind);
+    const lapsedHoldId = claim.outcome.hold.holdId;
+    const rival = await createCustomer(testDb.db);
+    const rivalQuote = await quoteFor(rival, rival.participantId, unit, dropInOption);
+    if (rivalQuote.kind !== 'quoteIssued') throw new Error(rivalQuote.kind);
+
+    const [availRun, statusRun, expiry, rivalClaim] = await Promise.all([
+      listAvailability(deps, { programId: f.programId, unitKind: 'session' }),
+      holdStatus(deps, { accountId: holder.accountId }, { holdId: lapsedHoldId }),
+      expireHold(deps, { holdId: lapsedHoldId }),
+      claimHold(deps, { accountId: rival.accountId }, {
+        unit,
+        participantId: rival.participantId,
+        quoteId: rivalQuote.quote.quoteId,
+        idempotencyKey: newId(),
+      }),
+    ]);
+    // Reads succeeded and never claimed the lapsed hold was usable.
+    expect(availRun.kind).toBe('availability');
+    if (statusRun.kind === 'holdStatus') expect(statusRun.hold.state).toBe('expired');
+    // Exactly one authoritative settlement between expiry and reclamation.
+    expect(['holdExpired', 'alreadyTerminal']).toContain(expiry.kind);
+    expect(['holdClaimed', 'sessionFull']).toContain(rivalClaim.outcome.kind);
+    const settled = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold WHERE id = ${lapsedHoldId}`.execute(testDb.db);
+    expect(settled.rows[0]!.state).toBe('expired');
+    const rec = await reconcileUnit(testDb.db, unit);
+    expect(rec.heldCount).toBe(rec.activeHolds); // never negative/double-released
+    expect(rec.heldCount).toBe(rivalClaim.outcome.kind === 'holdClaimed' ? 1 : 0);
+    expect(rec.bookedCount + rec.heldCount).toBeLessThanOrEqual(rec.capacity);
+  });
+
+  it('(D) a stale "active" response can never resurrect a lapsed hold: confirmation independently re-checks expires_at under the authoritative locks', async () => {
+    const sessionId = await createSession(f, { capacity: 2 });
+    const unit = { kind: 'session' as const, id: sessionId };
+    const c = await createCustomer(testDb.db);
+    const q = await quoteFor(c, c.participantId, unit, freeOption);
+    if (q.kind !== 'quoteIssued') throw new Error(q.kind);
+    const shortDeps: BookingServiceDeps = { db: racePool.db, holdTtlSeconds: 1 };
+    const claim = await claimHold(shortDeps, { accountId: c.accountId }, {
+      unit,
+      participantId: c.participantId,
+      quoteId: q.quote.quoteId,
+      idempotencyKey: newId(),
+    });
+    if (claim.outcome.kind !== 'holdClaimed') throw new Error(claim.outcome.kind);
+    // The client legitimately reads ACTIVE while the hold is still valid…
+    const staleView = await holdStatus(deps, { accountId: c.accountId }, {
+      holdId: claim.outcome.hold.holdId,
+    });
+    if (staleView.kind !== 'holdStatus') throw new Error(staleView.kind);
+    expect(staleView.hold.state).toBe('active');
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    // …but the stale response is not authority: confirmation re-decides.
+    const run = await confirmFreeBooking(deps, { accountId: c.accountId }, {
+      holdId: claim.outcome.hold.holdId,
+      idempotencyKey: newId(),
+    });
+    expect(run.outcome.kind).toBe('holdExpired');
+    const rec = await reconcileUnit(testDb.db, unit);
+    expect(rec.bookedCount).toBe(0);
+    expect(rec.heldCount).toBe(0);
   });
 });
 
