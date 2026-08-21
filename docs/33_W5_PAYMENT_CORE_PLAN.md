@@ -1,0 +1,214 @@
+# 33 — W5 Payment Core: Gateway, PaymentIntent & Paid-Checkout Orchestration — Workstream Plan (W5-0)
+
+**Status: W5-0 planning document — committed, AWAITING OWNER REVIEW. No implementation, migration, SDK installation, booking-service change, or frontend change was made by this task. The Slice-5 checkpoint is FROZEN at `691aafb`; this plan consumes the certified Slice-5 architecture and does not modify it. Owner decisions D-W5-1…D-W5-6 (§14) are open; W5-1 does not start without owner approval of this document AND its named blocking decisions.**
+
+Authority: docs/23 §3 (W5 workstream definition), §4 (dependency graph: booking/capacity → payments W5 → payouts/refunds), §10.12/§10.13 (payments infrastructure + saga requirements), §11.1 (correctness gates), §12.3–§12.4/§12.10 (failure scenarios), §13 (PCI/SAQ-A + payment security), §15 G4/G5 (launch gates), §16 (P2 "W5 gateway sandbox integration starts", P3 "W4 payments slice with W5 (sandbox end-to-end)", P4 "Payments end-to-end in staging"), §18 #4/#11/#14 (blocking owner decisions), §19 (standing prohibition on real payment submission); docs/24 §4 (payment entities), §4.2 (money rules), §5.6–§5.10 (machines), §6 (database invariants), §7.4/§7.8 (transaction boundaries), §8 (checkout/payment saga — the BINDING orchestration design), §9 (outbox/inbox), §13 (slice footer: payments follow as W5 activates), §14.B2/B3/B4/B5/B6 (decision register); docs/25 (backend engineering contract); docs/22 + docs/09 §22 (approved checkout contracts incl. §22.7/§22.11); docs/32 + the shipped Slice-5 code (the certified booking/capacity authority this plan must consume, not bypass).
+
+---
+
+## 1. The authoritative workstream (reconciled, not inferred)
+
+**Exact title (docs/23 §3):** W5 — **"Payments & integrations"**.
+
+**Exact contents (docs/23 §3, verbatim):** "Payment gateway (cards + Apple Pay/Google Pay), refunds, provider payouts, webhooks; auth identity providers (Apple/Google sign-in); push notifications; maps; calendar export; email/SMS".
+
+**Ownership split the roadmap actually draws:**
+
+| Part | Owner | Evidence |
+|---|---|---|
+| Payment domain schema/services (PaymentIntent, attempts, ledger, gateway events, saga) | **W4 backend slice executed WITH W5** | docs/23 §16 P3 "W4 payments slice with W5 (sandbox end-to-end)"; docs/24 §13 footer "Payments (W5 gateway integration, §8 saga end-to-end) … follow as their workstreams … activate" |
+| Gateway integration, webhooks, sandbox/live certification | **W5** | docs/23 §3, §10.12, §16 P2 |
+| Booking/capacity authority consumed by payments (holds, `pending_payment`, `confirmPaidBooking`, counters) | **W4 Slice 5 — CLOSED at `691aafb`; frozen** | docs/32; the §4 dependency edge "booking/capacity → payments W5" |
+| Refund EXECUTION + payouts | Follow payments: "payments W5 → payouts/refunds" (§4); refund/payout workflows live in P4 | docs/23 §4, §16 P4; docs/24 §13 footer |
+| Auth identity providers (Apple/Google sign-in) | W5 list, but ALREADY structurally delivered by Slice 2's Cognito `AuthProviderAdapter` (D1); production pool/region remain open | docs/26; HANDOFF |
+| Push notifications, maps, calendar export, email/SMS | W5 list — **NOT part of the payment core; excluded from this plan** (each needs its own bounded plan when activated) | docs/23 §3 |
+| W1 Payment & Confirmation customer milestone | W1, "now honestly plannable" only in P3 after gateway selection | docs/23 §16 P3, §16 rescope note |
+
+**Ordered internal slices:** the roadmap deliberately does NOT enumerate W5-internal slices — docs/23 §3 requires each workstream to get "its own planning documents on the docs/20–22 pattern … as it activates," and docs/24 §13 specifies only the seven W4 slices (closed through Slice 5) with payments in the footer. The §17 decomposition below is therefore THIS plan's proposal, derived from the docs/24 §8 saga steps, for owner approval.
+
+**Dependencies (docs/23 §4/§16/§19):** booking/capacity closed (✔ Slice 5) · gateway selection §18 #4 (OPEN — D-W5-1) · legal text before real payment (§19; counsel §18 #5 engaged per owner record) · VAT §18 #11 for launch-compliant amounts (not for sandbox structure — §12 below) · W6 public webhook ingress + secret store for staging/production (sandbox development can run with tunneled/local ingress) · G4/G5 gates for live certification.
+
+**Joint booking dependencies (frozen interfaces this plan consumes):** `Booking.pending_payment` rest on an active hold (§7.4a minus the PaymentIntent insert — that insert is "the payment slice's first move", docs/32 §2) · hold TTL as the universal saga backstop · internal route-less `confirmPaidBooking` · `payment_failed` representable-but-unreachable · the S5-5 fail-closed customer boundary (`paymentUnavailable` 503 before any Booking exists) · §7.5 cancellation's system-initiated Refund (future refunds slice).
+
+**Decisions blocking the FIRST implementation slice:** none block W5-1's gateway-neutral schema structurally, but **D-W5-1/D-W5-2 (gateway + interaction model) are required at W5-0 anyway** — they determine attempt/3-DS field semantics, the checkout-creation shape, and every slice after W5-1; implementing W5-1 before them risks rework and is not recommended. §14 is the full table.
+
+---
+
+## 2. Repository reconciliation (verified 2026-08-21 at `691aafb`)
+
+### 2.1 What exists
+
+| Area | Finding |
+|---|---|
+| `Booking.pending_payment` | Shipped (0013, §5.6 vocabulary): a NONZERO-quote Booking rests at `pending_payment` on an ACTIVE hold via `initiateBooking`; zero-total refused there (`paymentNotRequired`); the S5-1 paid-intermediate-state regression pins hold-ACTIVE + booking-`pending_payment` coexistence. |
+| `confirmPaidBooking` | Shipped, INTERNAL, route-less (`booking-lifecycle.ts`): trusted identifiers + optional version + idempotency key only; scope `booking.confirm.paid`, system principal `system:payments`; refuses zero-total (`notPaidQuote`); reciprocal hold↔booking identity cross-checked caller-side AND in the core; a lapsed hold refuses truthfully (nothing resurrects it). Structural locks prove no HTTP module references it and no route URL matches confirm-paid/capture/payment-succeeded. |
+| Payment failure | `payment_failed` is a representable Booking state (0013 CHECK) with NO reachable transition — reachability is explicitly this workstream's. |
+| Idempotency | The 0001 `idempotency_key` store + the certified S5-2 `runIdempotent` primitive (key row `in_progress` first-statement, domain fn same transaction, outcome snapshot, replay/conflict semantics, crash-unpoisoned). W5 reuses it as-is for every internal command. |
+| Audit/outbox/inbox | 0001 `audit_event` · `outbox_event` · `inbox_event` tables + `appendAuditEvent`/`appendOutboxEvent`/`markInboxProcessed` (same-transaction discipline certified platform-wide). **NO relay/publisher process and NO queue exist** — Slice-5 correctness is worker-free by design; W5's webhook processing must likewise not depend on an unbuilt relay (§10). |
+| Quotes / tax | `price_quote` immutable, deferred total=Σ(lines), line kinds `base·discount·fee·tax·credit` ALREADY in the CHECK vocabulary, `tax_treatment` full typed vocabulary with **only `'notConfigured'` ever emitted** (§18 #11 open). The quote structure is payment-ready without schema change. |
+| Config/secrets | Typed `env.ts`: production NEVER falls back to defaults, fails closed without explicit configuration (managed-secret-store delivery per docs/23 §10.3). NO payment configuration keys exist. |
+| Fail-closed capability precedents | B2-6C production admin capability gate (surface registers only when every capability reports ready) · D-S3-3 verification-evidence flag · W3-4 content-safety capability (a fake `true` claim is structurally impossible in production) · D-8 `CancellationPolicyProvider` (production confirmation fails closed without owner-approved content) · captured dev/test `MailSender` (D2). W5's provider composition (§13) follows exactly these precedents. |
+| TTLs | Hold TTL 600 s / quote TTL 900 s, injectable per-service (`holdTtlSeconds`/`quoteTtlSeconds` deps; D-6 "both configurable"; docs/24 §14.C "Hold TTL (per gateway flow)"). |
+| Structural boundary locks | `program-schema.test.ts`/`provider-org-schema.test.ts` FORBID payment/gateway-event/refund/payout tables "until their owning slice" — W5-1 is that owning slice and amends the lock deliberately (the certified S5-1/S5-5 amendment pattern). |
+| Frontends | Customer App checkout is mock-driven: generic `Card payment` contract method, `PaymentSubmitRequest/Result` declared and NEVER invoked (docs/22 §11/§22.11), no `Total` label, no acknowledgments UI (§22.7). Provider/Admin portals have no payment surface. NO frontend change is in this plan's scope. |
+
+### 2.2 What does NOT exist (all of it is W5-or-later work)
+
+`payment_intent` · `payment_attempt` · `payment_transaction` (ledger) · `gateway_event` (webhook inbox) · `refund` · `credit_ledger_entry` · `reconciliation_event` · `payout_statement`/`payout` tables — none exist (0001–0014 verified; the structural lock pins their absence). No gateway SDK, driver, or HTTP client; no payment-provider port; no webhook ingress route; no signature-verification code; no reconciliation job; no payment secrets/config; no queue/relay; no VAT/fee configuration; no invoice/receipt entity; no Apple Pay/Google Pay entitlement work (W1/§14.5, gateway-dependent).
+
+**The frozen Slice-5 invariant (restated, binding on every §17 slice):** a paid Booking is confirmed ONLY through the trusted internal `confirmPaidBooking` boundary after genuine trusted payment success; no customer/provider/Admin HTTP route may invoke it directly, and no readiness flag may fake the capability.
+
+---
+
+## 3. Authority boundary
+
+| Truth | Owner | W5 core? |
+|---|---|---|
+| PaymentIntent/PaymentAttempt lifecycle, gateway checkout creation, webhook ingestion/verification, capture evidence, §8 saga orchestration, §8.6 reversal compensation, `payment_failed` reachability | **W5 core (this plan)** | YES |
+| PaymentTransaction append-only ledger + GatewayEvent inbox | **W5 core** | YES |
+| Booking/hold/counter/enrolment/redemption settlement at confirmation | **Slice 5 (frozen)** — W5 CALLS `confirmPaidBooking`; it never duplicates, re-implements, or partially copies the confirmation transaction | CONSUMED |
+| Quote money truth | Slice 5 (frozen; base-only until §18 #11) | CONSUMED |
+| Discretionary Refunds (§5.7 machine, Finance dual control), credits ledger, payouts, reconciliation operations UI (AD-09/AD-11) | Future refunds/payouts slices + W3 finance surfaces (docs/23 §16 P4) | NO — §11 defines only the seam |
+| Customer payment UX (W1 Payment & Confirmation milestone), acknowledgments UI (§22.7) | W1, plannable after D-W5-1 | NO — §15 defines the backend contract only |
+| Recurring billing (§18 #12), packages, waitlists | Own owner decisions; NOT consumed by one-off payment | NO |
+| Production/live-mode activation | §19 + G4 gates; owner decision with counsel | NO — everything here is sandbox/staging until §19 lifts |
+
+---
+
+## 4. Payment entity model (docs/24 §4.1 — implemented, not re-designed)
+
+W5-1 materializes exactly the docs/24 §4.1 entities needed by the checkout saga — `payment_intent`, `payment_attempt`, `payment_transaction`, `gateway_event` — with the documented fields, plus the §6 invariants: integer fils + `currency = 'AED'` CHECKs; `payment_intent.idempotency_key` unique; `payment_transaction.gateway_transaction_id` unique; `gateway_event.gateway_event_id` unique (duplicate delivery insert-conflicts into a no-op, §6.7); append-only enforcement on `payment_attempt` (post-terminal), `payment_transaction`, `gateway_event` (INSERT-only grants + `forbid_mutation`-pattern triggers, the certified repo convention); composite/FK binding intent→booking (and via booking →hold/quote), attempt→intent with `sequence_no`, transaction→attempt. `Refund`, `credit_ledger_entry`, `reconciliation_event`, payout tables are NOT created by W5 core (their owning slices create them; the structural lock keeps forbidding them until then — narrowed only for the four W5-core tables).
+
+**One intent per intended checkout confirmation** (docs/24 §4.1): the intent's unique idempotency key derives from the customer's checkout confirmation command, so a retried confirmation REJOINS the same intent (§8.7/§8.8); a NEW checkout (new hold/quote) is a new intent. One Booking may accumulate multiple intents only across genuinely separate checkout attempts (a fresh hold after expiry ⇒ fresh booking per Slice-5 semantics, so in practice intent:booking is 1:1 at rest; the schema still records the general shape via booking_id + history).
+
+## 5. State machines (docs/24 §5.8 verbatim — no invented states)
+
+**PaymentIntent:** `created → in_progress → succeeded | failed | expired | cancelled`.
+**PaymentAttempt:** `started ⇄ requires_action` (3-DS) · `started → authorized → captured` · `started|authorized → declined | errored` (terminal per attempt; retry = NEW attempt, same intent). Authorized-not-captured is voided by a `reversal` posting.
+**PaymentTransaction:** NO machine — append-only postings (`authorization·capture·refund·reversal·adjustment`).
+**GatewayEvent:** `received → verified → processed | quarantined`.
+
+| Transition | Actor / trusted source | Idempotency | Booking/hold relationship | Audit/outbox | Retry semantics |
+|---|---|---|---|---|---|
+| intent `created` (insert) | customer checkout command via the W5 orchestration service | `runIdempotent` on the checkout scope; intent's own unique key | Requires the caller's OWN booking at `pending_payment` referencing the caller's ACTIVE hold (created by the certified `initiateBooking`); amount := quote total, cross-checked | audit `payment.intent.created` (machine facts only) | replay returns stored view |
+| intent `created → in_progress` | system, when the first attempt goes to the gateway | CAS state+version | none (hold keeps ticking; TTL is the backstop) | audit | idempotent CAS |
+| attempt `started` (insert) | system, immediately BEFORE the gateway call, own transaction | new `sequence_no` under the intent | none | audit | a lost gateway response leaves `started`; resolution ONLY via webhook/recon (§10) — never a guess |
+| attempt `started → requires_action → started` | gateway evidence (3-DS) | by gateway event id | none | audit | duplicate events no-op |
+| attempt `→ authorized` / `→ captured` + `capture` posting | **verified gateway evidence ONLY** (webhook §7.8, or synchronous gateway confirmation over the authenticated server-to-server channel) | gateway_event_id unique + `runIdempotent` on processing | capture posting commits in the SAME transaction as intent `succeeded` **inside the §7.4b confirmation** when the hold is live; else the §8.6 path | outbox `payment.captured` inside §7.4b | duplicate webhook → no-op; replayed processing → inbox no-op |
+| attempt `→ declined|errored` | gateway evidence | gateway_event_id | booking → `payment_failed` (reachable at last) while the hold lives → customer may retry (NEW attempt) rejoining the intent; terminal abandonment → hold TTL/§7.2 unwind → booking `expired` | audit + outbox `payment.failed` | new attempt only; attempts never mutate post-terminal |
+| intent `→ succeeded` | ONLY inside §7.4b with capture evidence | idempotent by construction | hold consumed + booking `confirmed` same transaction | `booking.confirmed`, `payment.captured` | replay returns stored outcome |
+| intent `→ failed` | terminal attempt failure without retry, or §8.6 compensation | CAS | §8.6: booking → `expired`, reversal posted | audit + outbox `payment.reversed` (§8.6) | idempotent |
+| intent `→ expired` | system: intent TTL/hold gone with no in-flight evidence | CAS | booking unwound by the certified §7.2 path | audit | idempotent |
+| intent `→ cancelled` | customer abandons explicitly (release hold) | CAS | §7.2 release path (certified) | audit | idempotent |
+| gateway_event `received→verified→processed|quarantined` | webhook ingress → verifier → processor | unique gateway_event_id; processing via inbox/`runIdempotent` | processing may invoke §7.4b or the failure paths | `gateway.event.received` outbox on ingest (§7.8) | quarantine + alert on signature/replay failure; DLQ-style re-drive is manual + audited |
+
+**Convergence rule (docs/24 §4.1 GatewayEvent):** webhooks are authoritative; intent/attempt states converge TO the gateway's truth, never the reverse.
+
+## 6. Gateway abstraction (decision: narrow port + ONE production driver)
+
+A **narrow Himma payment-provider port** with exactly one production driver (the D-W5-1 gateway) plus one deterministic test driver (§13). NOT a multi-gateway framework: no capability negotiation, no per-method strategy registry, no generic "processor" plugins. The port exists ONLY to keep gateway-specific material out of the domain: opaque gateway ids (`gateway_ref`, `gateway_transaction_id`, `gateway_event_id` stored as text), status-vocabulary mapping (driver maps gateway statuses onto the CLOSED §5.8 vocabulary; unknown statuses map to a typed `unrecognized` result that quarantines, never guesses), signature verification (driver-owned, raw-body based), and request/response shapes. Port operations (minimal set): `createCheckout(intent, quote-summary, method) → {gatewayRef, clientAction}` · `verifyAndParseWebhook(rawBody, headers) → VerifiedGatewayEvent | rejected` · `queryPayment(gatewayRef)` (reconciliation/recovery) · `void|reverse(gatewayRef, amount)` (§8.6) — final shape fixed in W5-1 AFTER D-W5-1/D-W5-2, because materially different semantics (hosted-page redirect vs tokenized SDK client secret; auth-then-capture vs auto-capture) must be reflected honestly in `clientAction`/attempt handling, not hidden behind an over-generic adapter. If the chosen gateway auto-captures, the `authorized` state simply never occurs at runtime — the vocabulary is not widened or faked.
+
+## 7. Webhook trust boundary (defined BEFORE implementation)
+
+1. **Ingress:** one dedicated route (`POST /payments/webhook/<provider>`), registered OUTSIDE customer/provider/admin auth surfaces; **a valid Himma LoginSession is NOT proof of payment and grants nothing here** — conversely the webhook route grants no Himma session. |
+2. **Raw body:** signature verification runs over the EXACT raw bytes (Fastify raw-body capture on this route only); parsing happens after verification.
+3. **Signature:** driver-verified with the gateway's scheme (HMAC/asymmetric per D-W5-1); secrets from the managed store; never logged; rotation supported by accepting a configured secondary secret during rollover.
+4. **Timestamp/replay:** where the gateway signs a timestamp, enforce a bounded tolerance window; regardless, `gateway_event_id` uniqueness makes replays no-ops (§6.7) — replay protection never depends on the timestamp alone.
+5. **Ingest transaction (§7.8 verbatim):** insert `gateway_event` (unique id; duplicate → no-op conflict) with `signature_verified` + outbox `gateway.event.received`; **ALL processing is outside this transaction.**
+6. **Unknown events:** verified-but-unrecognized types/statuses are stored and marked `quarantined` (or an explicit ignore-list result), alert-visible; never dropped silently, never processed by guess.
+7. **Duplicates/out-of-order:** processing is idempotent per event id AND per effect (`runIdempotent` scopes); out-of-order arrival converges because every processor re-reads current intent/attempt state under locks and applies only legal §5.8 transitions — a stale event that no longer applies records a no-op outcome.
+8. **Forged success:** an unverifiable signature never reaches processing (quarantine + alert). No API accepts a client-supplied "payment succeeded": the S5-5 structural locks stay green throughout W5 (§16 test 12).
+9. **Mapping:** driver resolves gateway refs → attempt/intent rows; an event referencing no known attempt/intent quarantines (possible forged/foreign traffic) and alerts.
+
+## 8. Payment/hold timing (the TTL races — designed, not improvised)
+
+Hold TTL (600 s default, injectable; docs/24 §14.C makes it configurable PER GATEWAY FLOW — D-W5-5 confirms the paid-flow value once D-W5-2 fixes the interaction model, since hosted-redirect + 3-DS can plausibly consume more of the window than in-app tokenized flows).
+
+| Scenario | Behavior (binding) |
+|---|---|
+| Success evidence before hold expiry | §7.4b/§8.5: one transaction — capture posted, intent `succeeded`, hold `consumed`, booking `confirmed`. |
+| Success webhook AFTER hold expiry | §7.4b refuses (certified: nothing resurrects a dead hold; expiry always wins truthfully) → **§8.6 compensation**: automatic same-amount `reversal` posting (or gateway void if only authorized), intent → `failed`, booking → `expired`, customer told honestly. NO oversell; NO hold resurrection; NO silent success. Owner ruling already exists — Amendment A1.2 makes this an append-only ledger posting executed automatically with audit + reconciliation, never a Refund and never Finance-gated. |
+| Completion AT the TTL boundary | The §7.4b transaction re-checks `expires_at` under the certified lock order; the S5-2 settlement authority and the confirmation race the same unit row — exactly one wins (already race-proven for free bookings; §16 test 4 re-proves with payment evidence). |
+| Gateway success but confirmation loses to expiry+rival claim | Same as above — the seat may already be someone else's; §8.6 reverses the charge. §16 test 5 proves zero oversell and exactly-one-reversal. |
+| Customer abandons | Nothing arrives; hold TTL → certified §7.2 unwind (booking `expired`), intent → `expired`/`cancelled`; an authorized-not-captured attempt is voided by a `reversal` posting. |
+| Duplicate success notifications | `gateway_event_id` unique + idempotent processing: one confirmation, one capture posting, replays no-op (§16 tests 2/6). |
+
+## 9. Exactly-once commercial effect (the authority design)
+
+PostgreSQL is the effect authority; the gateway's idempotency is used deliberately as the second wall: (1) Booking confirmed once — `confirmPaidBooking`'s own `runIdempotent` scope + the certified CAS core (frozen). (2) Hold consumed once — the certified consumption CAS (frozen). (3) Charged once — ONE gateway checkout per intent: the gateway call carries the intent's unique idempotency key wherever D-W5-1's gateway supports request idempotency, and the intent row records the returned `gatewayRef` (a crashed-then-retried creation re-sends the SAME key, so the gateway dedupes; without stored ref + gateway support, recovery goes through `queryPayment` before ever re-creating). (4) One canonical `payment.captured`/`booking.confirmed` emission — events are written inside the single §7.4b transaction (duplicate processing replays the stored outcome, emitting nothing new). (5) One intent per intended checkout — the intent-creation `runIdempotent` scope + the unique intent idempotency key; a concurrent duplicate storm serializes on the unique index (S5-2 semantics). No design element assumes a webhook is delivered exactly once or to exactly one process: every processor is a competing consumer over `gateway_event` rows with idempotent effects.
+
+## 10. Failure/saga matrix (docs/24 §8 applied)
+
+Financial truth = the append-only `payment_transaction` ledger converged to gateway evidence. Booking truth = the Slice-5 machine. They are reconciled, never conflated; **a browser redirect/return is NEVER evidence of payment** — returns only trigger a read of converged state ("payment received, confirming…" pending truth, §8.7; never fake success).
+
+| Case | Handling |
+|---|---|
+| Gateway create fails | Attempt `errored`; intent stays `created`/`in_progress`; typed failure to the customer; hold untouched (retry possible within TTL); no booking/state damage. |
+| User abandons checkout | §8 backstop: hold TTL → §7.2 unwind; intent `expired`; void if authorized. |
+| Payment fails before expiry | Attempt terminal `declined|errored`; booking → `payment_failed` (first reachable use); retry = new attempt while the hold lives; terminal abandonment → TTL unwind. |
+| Success + confirmation succeeds | §7.4b once. |
+| Success but confirmation CANNOT legally succeed (hold dead/unit gone) | §8.6 automatic reversal path (§8/§11 of this plan). Never oversell, never manual data surgery. |
+| Webhook delayed | Intent rests `in_progress`; recon/`queryPayment` + late webhook converge; stuck-state alerting (docs/23 §12.10) at the reconciliation slice. |
+| Webhook duplicated | §7 rules — no-ops. |
+| Webhook before browser return | State already converged; return reads it (best case). |
+| Browser return before webhook | Read shows pending truth; NO confirmation from the return itself; convergence arrives with evidence. Optional trusted assist: a server-to-server `queryPayment` MAY pull evidence early — same trusted channel, same idempotent processing path, never the client's word. |
+| Crash after gateway-success persisted (`gateway_event` row) but before confirmation | The event row is durable; idempotent processing re-runs on restart/next poll and completes §7.4b (or §8.6). `runIdempotent` guarantees the interrupted confirmation is recoverable exactly-once (§16 tests 9/11). |
+
+**Processing driver:** W5 core runs webhook processing synchronously-after-ingest (same request, separate transactions) PLUS a bounded catch-up sweep over unprocessed `gateway_event` rows (the S5-2 sweep precedent) — correctness never depends on a relay/queue that does not exist yet; the docs/24 §9 relay remains W6-era infrastructure that can later replace the sweep without semantic change.
+
+## 11. Refund boundary (seam only — NOT implemented in W5 core)
+
+W5 core ships exactly ONE money-out mechanism: the §8.6 automatic same-amount `reversal`/void posting for saga compensation (money captured, capacity confirmation legally impossible) — already owner-ruled (Amendment A1.2), append-only, automatic, audit-evented, reconciliation-covered, no Refund record, no Finance approval. The discretionary Refund machine (§5.7: `initiated → approved → processing → completed|failed`, dual control, destination `original_method|marketplace_credit`), customer-cancellation refund initiation (§7.5), and provider/customer cancellation semantics remain OUT — blocked on §18 #14 template content and their own slice; nothing in W5 core pre-decides them. The port's `void|reverse` operation is designed so the future refunds slice adds `refund(gatewayRef, amount)` beside it without reshaping W5 tables (the `refund` posting kind already exists in the ledger CHECK vocabulary).
+
+## 12. VAT/tax (smallest ruling)
+
+Verified: the shipped quote schema already carries everything financial history preservation needs — line kinds incl. `tax`, immutable snapshots, full `tax_treatment` vocabulary. **W5 core's schema therefore requires NO new tax columns, no rate/base/jurisdiction/registration/invoice fields.** PaymentIntent amounts equal quote totals (base-only today) and stay historically truthful whatever VAT ruling later arrives (new quotes change; old rows never do). The smallest owner ruling (D-W5-3): confirm W5 sandbox/staging implementation proceeds against base-only `notConfigured` quotes, with the §18 #11 VAT ruling (+ any invoice/receipt entity it implies — likely a future slice with counsel/accounting) required before §19 lifts and G4 certifies real charging. Charging a real customer while `tax_treatment='notConfigured'` is prohibited by construction — the §19 gate already encodes this.
+
+## 13. Security/privacy & fixture/live/unconfigured
+
+**Never persisted or logged:** PANs, CVV, sensitive authentication values, gateway API secrets, webhook signing secrets, full signed payloads in audit/outbox (the `gateway_event` row stores payload digest + bounded parsed machine facts per docs/24 §4.1; audit/outbox stay ids/machine-facts-only — the certified sweep extends to payment events). PCI scope is SAQ-A by construction (docs/23 §13, docs/22 §13): gateway-hosted fields/pages or gateway native SDKs tokenize on the client; Himma's backend sees tokens/refs only, never card data — D-W5-1's gateway MUST support this or is disqualified. Secrets arrive via the managed store through typed config; test/dev use the deterministic driver with fictional secrets.
+
+**Composition (the certified precedents applied):** (1) **deterministic test driver** — in-process fake implementing the port with scriptable outcomes (succeed/decline/3-DS/timeout/duplicate/forged-signature/out-of-order), driving every §16 proof; (2) **live driver** — the ONE production driver, configured only where real credentials exist (sandbox creds in dev/staging = the gateway's sandbox mode); (3) **unconfigured** — production without genuine, validated payment configuration keeps the ENTIRE paid path fail-closed exactly as today (`paymentUnavailable` 503 before any Booking exists). **No `paymentReady=true` operator switch can exist**: readiness is a computed capability report (B2-6C pattern) derived from actual configured integration (driver constructed + credentials present + webhook secret present), and the S5-5 rule stands — `confirmPaidBooking` is reachable only through the W5 saga services, never through a route, whatever any flag says.
+
+## 14. Required owner decisions (none resolved silently)
+
+| ID (source) | Question | Options | Consequences (architecture / implementation / launch) | Recommendation | Blocks |
+|---|---|---|---|---|---|
+| **D-W5-1** (docs/23 §18 #4; docs/24 §14.B3) | **Payment gateway/provider selection** — UAE cards + Apple Pay/Google Pay + AED settlement (+ payout capability desirable, not required — docs/24 models payouts as Himma-ledger + bank transfer) | (a) global PSP with UAE presence (e.g. Stripe UAE, Checkout.com); (b) regional UAE PSP (e.g. Network International, Amazon Payment Services, Telr, Tap); (c) defer to a W5-0 sandbox spike comparing a shortlist. Market facts need verification at decision time — commercial terms, KYB, entity requirements are owner/counsel matters | Architecture: fixes signature scheme, idempotency support, hosted vs SDK options, auto-capture vs auth-capture (which §5.8 states occur at runtime). Implementation: the ONE driver, webhook parsing, 3-DS handling. Launch: merchant onboarding lead time sits on the G4 critical path | Shortlist PSPs meeting the hard requirements (SAQ-A tokenized flows · AED settlement · signed webhooks · server-side request idempotency · sandbox parity · Apple Pay/Google Pay), then decide on commercial/onboarding factors the owner holds; authorize a sandbox spike if two finalists tie | **W5-2+ hard; W5-1 strongly advised** |
+| **D-W5-2** (docs/23 §13; docs/22 §13) | **Payment interaction model** — gateway-hosted checkout page (redirect/webview) vs tokenized in-app fields/native SDK (both SAQ-A) | (a) hosted page first (fastest, least native work, weakest UX polish); (b) native SDK/tokenized fields first (best in-app UX incl. Apple Pay/Google Pay, more W1 work); (c) hosted first with SDK as the committed fast-follow | Architecture: shape of `clientAction` + return-URL/deep-link handling. Implementation: W5-2's checkout creation; W1's Payment & Confirmation milestone scope. Launch: Apple Pay/Google Pay availability at launch vs later | (c) hosted-first, SDK fast-follow — earliest honest sandbox end-to-end with the smallest surface, without foreclosing the approved native UX; revisit with D-W5-1 since gateway capabilities constrain it | W5-2 (with D-W5-1) |
+| **D-W5-3** (docs/23 §18 #11; docs/24 §14.B2) | **VAT confirmation for W5 structure** (smallest ruling — §12) | (a) confirm W5 proceeds on base-only `notConfigured` quotes, VAT ruled before §19/G4; (b) rule VAT now | (a) unblocks all W5 core slices with zero schema risk (quote structure already complete); (b) additionally requires accounting/counsel input now and likely an invoice/receipt design | (a) | Nothing in W5-1…W5-6 if (a); real charging/G4 regardless |
+| **D-W5-4** (docs/24 Amendment A1.2 — **already RESOLVED**) | Compensation when money is captured but capacity is gone | — (recorded, not re-opened): automatic same-amount reversal/void posting; never oversell, never resurrect holds, never a Refund record | Already binding; restated §8/§11 | Apply as ruled | — |
+| **D-W5-5** (D-6; docs/24 §14.C) | **Paid-flow hold TTL value** — is 10 min right once the real gateway flow (3-DS, hosted page) is known? | (a) keep 600 s; (b) raise for the paid flow specifically (config, not schema) | Pure configuration; affects seat-lockup vs abandonment trade-off | Keep 600 s default; re-confirm with sandbox timings at W5-2 closure | W5-2 closure report (config confirmation only) |
+| **D-W5-6** (operational; docs/23 §10.3, §16, G4) | **Operational prerequisites authorization**: gateway merchant/KYB onboarding start, sandbox credentials, AED settlement account, W6 public webhook ingress + managed secret store for staging | Authorize now in parallel vs later | Long-lead items on the G4 critical path; none block sandbox development with the test driver | Authorize the onboarding/KYB start immediately after D-W5-1 | Staging end-to-end (P3/P4), G4 |
+| *(recorded, not requested)* | Recurring billing §18 #12 / docs/24 §14.B5 | — | W5 core is one-off payments ONLY; nothing in W5-1…W5-6 depends on it. Explicitly NOT brought for ruling now | — | future slice only |
+| *(recorded, not requested)* | Refund/cancellation templates §18 #14 / §14.B6 | — | Blocks the future refunds slice's policy behavior; does NOT block the §8.6 reversal (A1.2) or any W5 core slice | — | future refunds slice |
+
+## 15. Customer contract (designed; implementation assigned to W5-5)
+
+`POST /customer/bookings/initiate` keeps its certified fail-closed 503 UNTIL the slice that DELIBERATELY replaces it (W5-5) — the replacement amends the S5-5 structural locks by the owning-slice pattern, introducing for the first time a 2xx contract: begin-paid-checkout (idempotency-keyed; creates intent via the §9 authority; returns typed `clientAction` — hosted-page URL or SDK client token per D-W5-2 — plus intent/booking refs and expiries), a converged-state read (booking + payment status projection: `pending_payment | payment_failed(retryable, typed reason) | confirmed(reference) | expired` — counters/gateway internals never on the wire), an explicit abandon/cancel (rides the certified release path), and the return/deep-link landing that only READS converged state (§10: browser return is never evidence). Zero-total stays `paymentNotRequired` → the free path. The docs/22 §22.10 revalidation vocabulary continues to bound every refusal. W1's Payment & Confirmation milestone consumes this contract later; NO customer-app change is part of W5 core.
+
+## 16. Concurrency/adversarial proof plan (written RED before implementation, real PostgreSQL; S5-2 multi-connection harness reused)
+
+1. Duplicate checkout-creation storm (one key ×N) → ONE intent, ONE gateway create (test driver counts), N−1 replays; different-key storm on one hold → one intent wins, typed refusal. 2. Duplicate success-webhook storm → ONE §7.4b confirmation, ONE capture posting, ONE event set. 3. Forged/invalid signature → quarantined, zero processing, zero state change. 4. Success evidence racing hold expiry at the TTL boundary → exactly one of confirmed XOR (expired + §8.6 reversal); never both, never neither. 5. Success webhook after expiry + rival claimed the seat → rival keeps it, reversal posted once, zero oversell (DB CHECK re-proven live). 6. Two success events for one intent (same and different `gateway_event_id`) → one commercial effect. 7. Browser-return read racing the webhook → read never fabricates success; eventual state converged. 8. Gateway timeout then late success → attempt rests `started`, late evidence completes exactly once. 9. Crash injection after `gateway_event` persistence, before confirmation → recovery completes §7.4b exactly once (unpoisoned keys, S5-2/S5-3 injection pattern). 10. Captured-but-unconfirmable (unit closed/dead hold) → reversal posted once, booking `expired`, ledger sums honest. 11. Interrupted confirmation replay (same idempotency key) → stored outcome, no double counters (delegates to frozen Slice-5 proofs, re-run). 12. Structural: full route inventory still matches no confirm-paid/capture/payment-succeeded URL; no HTTP module references `confirmPaidBooking` except through the W5 saga service; webhook route rejects Himma-session-authenticated "success" bodies; no readiness flag reaches the paid path. Plus: counter/ledger reconciliation assertion after every scenario (counters ≡ rows; Σ postings per intent ∈ {0, amount, 0-after-reversal}).
+
+## 17. Proposed decomposition (each slice ends at an owner STOP; derived from docs/24 §8 — names are proposals, §1)
+
+| Slice | Scope | Gate |
+|---|---|---|
+| **W5-0** | This plan; owner decisions D-W5-1/2/3 ruled, D-W5-6 authorized | Owner approval of this document |
+| **W5-1** | Migration for the four W5-core tables + §6 invariants + append-only guards + structural-lock amendment; the provider port + deterministic test driver; NO routes, NO gateway SDK | D-W5-1/2 ruled (advised); D-W5-3(a) |
+| **W5-2** | Checkout orchestration service: intent creation over `pending_payment` (§9 authority), attempt records, gateway create via port (test driver; real sandbox driver if credentials exist), between-transaction discipline; §16 tests 1, 8 RED→GREEN. NO customer route change — fail-close stands | W5-1 closed |
+| **W5-3** | Webhook trust boundary: ingress route + raw-body + signature verification + §7.8 ingest + quarantine + idempotent processing/catch-up sweep; §16 tests 2, 3, 6, 7 | W5-2 closed |
+| **W5-4** | The confirmation saga step: verified evidence → `confirmPaidBooking` invocation (first and only trusted caller), `payment_failed` reachability, §8.6 reversal path, intent expiry/cancel; §16 tests 4, 5, 9, 10, 11 + full Slice-5 regression re-run | W5-3 closed |
+| **W5-5** | Customer HTTP integration (§15): deliberate replacement of the fail-closed boundary, S5-5 lock amendments, cross-surface security regression, §16 test 12 finalized | W5-4 closed |
+| **W5-6** | Closeout: reconciliation skeleton (daily ledger-vs-gateway via `queryPayment`, `reconciliation_event` if in scope or explicitly deferred), stuck-state alerting hooks, capability report wiring, sandbox end-to-end certification (P3 exit), closeout audit (W2-12D/W3-9/S5-6 pattern) | W5-5 closed |
+
+Every slice: RED→GREEN on real PostgreSQL, contract tests through the real transport where routes exist, `db:verify`, codegen on schema change, full-suite regression (backend + portal/admin contracts), certification per docs/25, commit, STOP. **Real production payment activation is in NO slice** — it remains behind §19/G4 as an owner decision with counsel.
+
+## 18. Explicit scope exclusions (W5 core)
+
+Discretionary refunds + Finance approval surfaces (future refunds slice; §18 #14) · payouts/statements/commission (§18 #7; future slice) · credits ledger (§18 #13) · reconciliation OPERATIONS tooling/AD-09 UI (W3-era follow-on; W5-6 ships only the job skeleton) · recurring billing (§18 #12) · packages/waitlists (owner-open) · invoices/receipts + VAT resolution (§18 #11 + counsel) · Apple Pay/Google Pay entitlements + W1 Payment & Confirmation UI (W1, after D-W5-1/2) · push/maps/calendar/email-SMS integrations (W5 list, separate plans) · Apple/Google sign-in production pools (docs/26 §15 operational items) · any Admin payment mutation (would require explicit D-W3-5 classification) · production live-mode activation (§19/G4) · queue/relay infrastructure (W6; §10 sweep suffices for correctness).
+
+## 19. Definition of done — met by this planning task
+
+Authoritative workstream identified verbatim with the W5/W4 split and joint booking dependencies (§1) · repository reconciled exists-vs-not with the frozen invariant restated (§2) · authority boundary explicit (§3) · entities/machines taken from docs/24 verbatim with full transition semantics (§4–§5) · narrow port decision recorded (§6) · webhook trust boundary defined (§7) · TTL races designed with the A1.2 compensation (§8) · exactly-once authority designed (§9) · failure/saga matrix complete, financial vs booking truth separated (§10) · refund seam bounded (§11) · smallest VAT ruling isolated (§12) · security/PCI + fail-closed composition per certified precedents (§13) · owner decisions tabled with options/consequences/recommendations/blocks (§14) · customer contract designed, not implemented (§15) · 12-scenario RED plan (§16) · bounded decomposition with owner STOPs (§17) · exclusions explicit (§18) · **no implementation code, schema, SDK, route, test, booking-service, or frontend change was made**. Next step after owner approval + D-W5-1/2/3 rulings: **W5-1 — and not before.**
