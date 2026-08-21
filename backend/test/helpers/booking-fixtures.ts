@@ -93,6 +93,51 @@ export async function createCohort(f: BookingFixture, capacity = 5): Promise<str
   return id;
 }
 
+/** Walks the certified §5.3 machine to `published` (quote issuance requires
+ *  a bookable listing; every edge below is trigger-legal). */
+export async function publishProgram(f: BookingFixture): Promise<void> {
+  for (const state of ['submitted', 'in_review', 'approved']) {
+    await sql`UPDATE program SET listing_state = ${state} WHERE id = ${f.programId}`.execute(f.db);
+  }
+  await sql`UPDATE program SET listing_state = 'published', published_at = now()
+            WHERE id = ${f.programId}`.execute(f.db);
+}
+
+export async function createPriceOption(
+  f: BookingFixture,
+  input: { kind: string; amountFils?: number | null; sessionsCount?: number | null },
+): Promise<string> {
+  const id = newId();
+  await sql`INSERT INTO program_price_option (id, program_id, organization_id, kind,
+                                              amount_fils, sessions_count, label_en)
+            VALUES (${id}, ${f.programId}, ${f.org.orgId}, ${input.kind},
+                    ${input.amountFils ?? null}, ${input.sessionsCount ?? null},
+                    ${input.kind})`.execute(f.db);
+  return id;
+}
+
+export async function createOffer(
+  f: BookingFixture,
+  input: { kind: string; trialAmountFils?: number; state?: string },
+): Promise<string> {
+  const id = newId();
+  await sql`INSERT INTO offer (id, organization_id, program_id, kind, label_en,
+                               trial_amount_fils, state)
+            VALUES (${id}, ${f.org.orgId}, ${f.programId}, ${input.kind}, ${input.kind},
+                    ${input.trialAmountFils ?? null}, ${input.state ?? 'active'})`.execute(f.db);
+  return id;
+}
+
+/** D-8 test composition: a deterministic FICTIONAL template (draft → active)
+ *  proving the snapshot mechanics — production seeds nothing. */
+export async function createActivePolicyTemplate(db: Kysely<DB>): Promise<string> {
+  const id = newId();
+  await sql`INSERT INTO cancellation_policy_template (id, template_version, title_en, rules)
+            VALUES (${id}, 1, 'Test fixture policy (fictional)', '{"windows": []}'::jsonb)`.execute(db);
+  await sql`UPDATE cancellation_policy_template SET state = 'active' WHERE id = ${id}`.execute(db);
+  return id;
+}
+
 export interface Customer {
   accountId: string;
   participantId: string;

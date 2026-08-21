@@ -18,108 +18,16 @@
 import { sql } from 'kysely';
 
 import { runIdempotent, requestDigest } from '../../../db/idempotency';
-import type { Db } from '../../../db/kysely';
-import { withTransaction, type Trx } from '../../../db/transaction';
+import { withTransaction } from '../../../db/transaction';
 import {
-  applyHeldDelta,
-  emitHoldEvent,
+  lockHold,
   lockUnitRow,
+  readHold,
+  settleHold,
+  unitRefOf,
   type BookingServiceDeps,
   type CustomerActor,
-  type UnitKind,
-  type UnitRef,
 } from './booking-shared';
-
-interface HoldRow {
-  id: string;
-  organization_id: string;
-  session_id: string | null;
-  camp_week_id: string | null;
-  cohort_id: string | null;
-  account_id: string;
-  participant_id: string;
-  state: string;
-  expires_at: Date;
-  version: number;
-}
-
-function unitRefOf(hold: HoldRow): UnitRef {
-  const kind: UnitKind =
-    hold.session_id !== null
-      ? 'session'
-      : hold.camp_week_id !== null
-        ? 'campWeek'
-        : 'enrolmentCohort';
-  const id = hold.session_id ?? hold.camp_week_id ?? hold.cohort_id;
-  return { kind, id: id! };
-}
-
-async function readHold(db: Db | Trx, holdId: string): Promise<HoldRow | undefined> {
-  return db
-    .selectFrom('capacity_hold')
-    .select([
-      'id',
-      'organization_id',
-      'session_id',
-      'camp_week_id',
-      'cohort_id',
-      'account_id',
-      'participant_id',
-      'state',
-      'expires_at',
-      'version',
-    ])
-    .where('id', '=', holdId)
-    .executeTakeFirst();
-}
-
-/** Re-reads the hold row under the already-held unit lock (lock order). */
-async function lockHold(trx: Trx, holdId: string): Promise<HoldRow> {
-  const row = await sql<HoldRow>`
-    SELECT id, organization_id, session_id, camp_week_id, cohort_id,
-           account_id, participant_id, state, expires_at, version, now() AS db_now
-    FROM capacity_hold WHERE id = ${holdId} FOR UPDATE`.execute(trx);
-  return row.rows[0]!;
-}
-
-/**
- * CAS-transitions ONE `active` hold to `expired`/`released` under the unit
- * lock, decrements `held_count` once, and CAS-unwinds a referencing
- * `pending_payment` booking to `expired` (docs/24 §7.2). Returns the
- * unwound booking id, if any. Caller has already proven the hold is
- * `active` (and lapsed, for expiry) under the lock.
- */
-async function settleHold(
-  trx: Trx,
-  unit: UnitRef,
-  hold: HoldRow,
-  to: 'expired' | 'released',
-  actor: { type: 'user'; accountId: string } | { type: 'system' },
-): Promise<string | undefined> {
-  const cas = await trx
-    .updateTable('capacity_hold')
-    .set({ state: to })
-    .where('id', '=', hold.id)
-    .where('state', '=', 'active')
-    .executeTakeFirst();
-  if (cas.numUpdatedRows !== 1n) {
-    throw new Error(`capacity_hold ${hold.id} CAS lost under unit lock — impossible`);
-  }
-  await applyHeldDelta(trx, unit, -1);
-  const unwound = await sql<{ id: string }>`
-    UPDATE booking SET state = 'expired'
-    WHERE hold_id = ${hold.id} AND state = 'pending_payment'
-    RETURNING id`.execute(trx);
-  const bookingId = unwound.rows[0]?.id;
-  await emitHoldEvent(trx, actor, hold.id, to === 'expired' ? 'hold.expired' : 'hold.released', {
-    unitKind: unit.kind,
-    unitId: unit.id,
-    organizationId: hold.organization_id,
-    state: to,
-    ...(bookingId !== undefined ? { unwoundBookingId: bookingId } : {}),
-  });
-  return bookingId;
-}
 
 // ---------------------------------------------------------------------------
 // Release (customer abandonment — idempotency-keyed)

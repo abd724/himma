@@ -68,6 +68,17 @@ export interface BookingServiceDeps {
   db: Db;
   /** D-6: hold TTL, default 600 s (10 minutes). Configuration, not schema. */
   holdTtlSeconds?: number;
+  /** D-6: quote TTL, default 900 s (15 minutes). Configuration, not schema. */
+  quoteTtlSeconds?: number;
+  /**
+   * D-8 fail-closed policy seam: resolves the cancellation-policy template a
+   * confirmation must snapshot. Defaults to the newest ACTIVE
+   * `cancellation_policy_template` row — production carries NO template
+   * content until the owner approves some (docs/09 §7, §18 #14), so
+   * production confirmation fails closed by construction; tests activate
+   * deterministic fictional templates to prove the mechanics.
+   */
+  policyProvider?: CancellationPolicyProvider;
   /**
    * TEST-ONLY failure-injection seam (docs/32 §15 proof obligations): invoked
    * at named points inside the §7.1 claim transaction so tests can prove that
@@ -75,11 +86,43 @@ export interface BookingServiceDeps {
    * set in production wiring.
    */
   onClaimPhase?: (phase: ClaimPhase) => void;
+  /** TEST-ONLY failure-injection seam for the §7.3/§7.4b confirmation
+   *  transaction. Never set in production wiring. */
+  onConfirmPhase?: (phase: ConfirmPhase) => void;
 }
 
 export type ClaimPhase = 'unitLocked' | 'counterIncremented' | 'holdInserted';
 
+export type ConfirmPhase =
+  | 'holdLocked'
+  | 'holdConsumed'
+  | 'counterMoved'
+  | 'bookingConfirmed'
+  | 'enrolmentInserted'
+  | 'beforeCommit';
+
+export interface CancellationPolicyProvider {
+  resolveActiveTemplate(trx: Trx): Promise<{ templateId: string } | undefined>;
+}
+
+/** The default D-8 provider: the newest ACTIVE platform template, or nothing
+ *  (→ the caller's typed fail-closed refusal). Never invents content. */
+export const dbActivePolicyTemplateProvider: CancellationPolicyProvider = {
+  async resolveActiveTemplate(trx: Trx): Promise<{ templateId: string } | undefined> {
+    const row = await trx
+      .selectFrom('cancellation_policy_template')
+      .select('id')
+      .where('state', '=', 'active')
+      .orderBy('template_version', 'desc')
+      .orderBy('created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return row === undefined ? undefined : { templateId: row.id };
+  },
+};
+
 export const DEFAULT_HOLD_TTL_SECONDS = 600;
+export const DEFAULT_QUOTE_TTL_SECONDS = 900;
 
 /** The customer principal executing a hold command (docs/24 §10.1). */
 export interface CustomerActor {
@@ -90,6 +133,7 @@ export interface LockedUnitRow {
   id: string;
   organization_id: string;
   program_id: string;
+  branch_id: string;
   capacity: number;
   booked_count: number;
   held_count: number;
@@ -110,7 +154,7 @@ export async function lockUnitRow(
 ): Promise<LockedUnitRow | undefined> {
   const spec = unitSpec(unit.kind);
   const result = await sql<LockedUnitRow>`
-    SELECT id, organization_id, program_id, capacity, booked_count, held_count, state,
+    SELECT id, organization_id, program_id, branch_id, capacity, booked_count, held_count, state,
            ${sql.id(spec.cutoffColumn)} AS cutoff_at, now() AS db_now
     FROM ${sql.id(spec.table)}
     WHERE id = ${unit.id}
@@ -132,18 +176,130 @@ export async function applyHeldDelta(
   unit: UnitRef,
   delta: number,
 ): Promise<void> {
-  if (delta === 0) return;
+  await applyCounterDelta(trx, unit, { held: delta, booked: 0 });
+}
+
+/**
+ * The general counter movement on the LOCKED unit row — used with
+ * `{held: -1, booked: +1}` by the §7.3/§7.4b consumption boundary, where
+ * total occupied inventory stays constant by construction (the seat moves
+ * between counters in ONE statement; no committed state ever counts it
+ * twice or zero times).
+ */
+export async function applyCounterDelta(
+  trx: Trx,
+  unit: UnitRef,
+  delta: { held: number; booked: number },
+): Promise<void> {
+  if (delta.held === 0 && delta.booked === 0) return;
   const spec = unitSpec(unit.kind);
+  const occupiedDelta = delta.held + delta.booked;
   await sql`
     UPDATE ${sql.id(spec.table)}
-    SET held_count = held_count + ${delta},
+    SET held_count = held_count + ${delta.held},
+        booked_count = booked_count + ${delta.booked},
         state = CASE
           WHEN state IN ('open', 'full')
-            THEN CASE WHEN booked_count + held_count + ${delta} >= capacity
+            THEN CASE WHEN booked_count + held_count + ${occupiedDelta} >= capacity
                       THEN 'full' ELSE 'open' END
           ELSE state
         END
     WHERE id = ${unit.id}`.execute(trx);
+}
+
+export interface HoldRow {
+  id: string;
+  organization_id: string;
+  session_id: string | null;
+  camp_week_id: string | null;
+  cohort_id: string | null;
+  account_id: string;
+  participant_id: string;
+  quote_id: string;
+  state: string;
+  expires_at: Date;
+  version: number;
+}
+
+export function unitRefOf(hold: HoldRow): UnitRef {
+  const kind: UnitKind =
+    hold.session_id !== null
+      ? 'session'
+      : hold.camp_week_id !== null
+        ? 'campWeek'
+        : 'enrolmentCohort';
+  const id = hold.session_id ?? hold.camp_week_id ?? hold.cohort_id;
+  return { kind, id: id! };
+}
+
+const HOLD_COLUMNS = [
+  'id',
+  'organization_id',
+  'session_id',
+  'camp_week_id',
+  'cohort_id',
+  'account_id',
+  'participant_id',
+  'quote_id',
+  'state',
+  'expires_at',
+  'version',
+] as const;
+
+export async function readHold(db: Db | Trx, holdId: string): Promise<HoldRow | undefined> {
+  return db
+    .selectFrom('capacity_hold')
+    .select(HOLD_COLUMNS)
+    .where('id', '=', holdId)
+    .executeTakeFirst();
+}
+
+/** Re-reads the hold row FOR UPDATE — legal only under the unit lock (order). */
+export async function lockHold(trx: Trx, holdId: string): Promise<HoldRow> {
+  const row = await sql<HoldRow>`
+    SELECT id, organization_id, session_id, camp_week_id, cohort_id,
+           account_id, participant_id, quote_id, state, expires_at, version
+    FROM capacity_hold WHERE id = ${holdId} FOR UPDATE`.execute(trx);
+  return row.rows[0]!;
+}
+
+/**
+ * CAS-transitions ONE `active` hold to `expired`/`released` under the unit
+ * lock, decrements `held_count` once, and CAS-unwinds a referencing
+ * `pending_payment` booking to `expired` (docs/24 §7.2). Returns the
+ * unwound booking id, if any. Caller has already proven the hold is
+ * `active` (and lapsed, for expiry) under the lock.
+ */
+export async function settleHold(
+  trx: Trx,
+  unit: UnitRef,
+  hold: HoldRow,
+  to: 'expired' | 'released',
+  actor: { type: 'user'; accountId: string } | { type: 'system' },
+): Promise<string | undefined> {
+  const cas = await trx
+    .updateTable('capacity_hold')
+    .set({ state: to })
+    .where('id', '=', hold.id)
+    .where('state', '=', 'active')
+    .executeTakeFirst();
+  if (cas.numUpdatedRows !== 1n) {
+    throw new Error(`capacity_hold ${hold.id} CAS lost under unit lock — impossible`);
+  }
+  await applyHeldDelta(trx, unit, -1);
+  const unwound = await sql<{ id: string }>`
+    UPDATE booking SET state = 'expired'
+    WHERE hold_id = ${hold.id} AND state = 'pending_payment'
+    RETURNING id`.execute(trx);
+  const bookingId = unwound.rows[0]?.id;
+  await emitHoldEvent(trx, actor, hold.id, to === 'expired' ? 'hold.expired' : 'hold.released', {
+    unitKind: unit.kind,
+    unitId: unit.id,
+    organizationId: hold.organization_id,
+    state: to,
+    ...(bookingId !== undefined ? { unwoundBookingId: bookingId } : {}),
+  });
+  return bookingId;
 }
 
 export type HoldEventType = 'hold.created' | 'hold.expired' | 'hold.released';
