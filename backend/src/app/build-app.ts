@@ -28,6 +28,7 @@ import type { MfaConfig } from '../modules/identity/services/mfa-config';
 import type { StaffInvitationConfig } from '../modules/provider/staff-invitation-config';
 import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-moderation-routes';
 import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-taxonomy-routes';
+import { registerBookingAdminRoutes } from '../modules/booking/http/booking-admin-routes';
 import { registerBookingCustomerRoutes } from '../modules/booking/http/booking-customer-routes';
 import { registerBookingProviderRoutes } from '../modules/booking/http/booking-provider-routes';
 import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
@@ -399,6 +400,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         registerAdminTaxonomyRoutes(app, { db: identity.db });
         // W3-2 internal organization reads — same gate, db-only deps.
         registerOrganizationAdminReadRoutes(app, { db: identity.db });
+        // S5-6 booking-oversight READS (docs/32 §13) — same gate; the
+        // service role-gates `operations`; no admin booking mutation exists.
+        registerBookingAdminRoutes(app, { db: identity.db });
         if (organizationAdminDeps !== undefined) {
           registerOrganizationAdminRoutes(app, organizationAdminDeps);
         }
@@ -412,6 +416,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       registerAdminModerationRoutes(app, { db: identity.db });
       registerAdminTaxonomyRoutes(app, { db: identity.db });
       registerOrganizationAdminReadRoutes(app, { db: identity.db });
+      registerBookingAdminRoutes(app, { db: identity.db });
       if (organizationAdminDeps !== undefined) {
         registerOrganizationAdminRoutes(app, organizationAdminDeps);
       }

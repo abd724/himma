@@ -159,6 +159,12 @@ describe('admin policy category', () => {
       '/admin/role-assignments', // W3-9 role-administration reads
       '/admin/role-assignments/:assignmentId',
       '/admin/audit-events', // W3-9 AD-18 audit explorer read
+      // S5-6 booking-oversight reads (docs/32 §13): the D-W3-5 read rule —
+      // baseline `admin` assurance; the SERVICE gates the `operations`
+      // role. READS ONLY: no admin booking mutation exists in Slice 5, so
+      // the mutation classification below gains no entry.
+      '/admin/bookings',
+      '/admin/bookings/:bookingId',
     ]);
     const BASELINE_MUTATIONS = new Set([
       // Organization lifecycle: of the EIGHT actions (create + 7 edges),

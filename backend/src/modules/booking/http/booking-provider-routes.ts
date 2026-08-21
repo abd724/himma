@@ -99,8 +99,18 @@ const UnitView = Type.Object({
   programId: Uuid,
   branchId: Uuid,
   capacity: Type.Integer(),
-  bookedCount: Type.Integer(),
-  heldCount: Type.Integer(),
+  /** PHYSICAL committed-booking counter (S5-2 transactional truth). */
+  bookedCount: Type.Integer({
+    description: 'Physical committed-booking counter (transactional S5-2 truth).',
+  }),
+  /** PHYSICAL held counter — an operational diagnostic that INCLUDES
+   *  lapsed-but-unswept holds until an authoritative S5-2 boundary settles
+   *  them (customer-effective availability excludes those; docs/32 §11
+   *  approves providers seeing the physical occupancy). */
+  heldCount: Type.Integer({
+    description:
+      'Physical held counter (operational diagnostic): includes lapsed holds until the authoritative S5-2 boundary settles them.',
+  }),
   state: Type.String(),
   registrationCutoffAt: Type.String(),
   startAt: Type.Union([Type.String(), Type.Null()]),
