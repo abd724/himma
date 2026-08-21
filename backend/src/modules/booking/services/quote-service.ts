@@ -14,10 +14,15 @@
  * `trial_amount_fils`. `discount`/`promo` offers are informational catalogue
  * content (0008) and refuse quote application. No new price kind exists.
  *
- * Deliberately NOT here (recorded): the docs/24 §2.5.3 participant
- * age/gender eligibility evaluation — owner-listed S5-3 scope covers the
- * pricing/validity/offer seam only; eligibility enforcement rides with the
- * customer-facing availability/booking API slice.
+ * S5-5 additions at this boundary: (1) the docs/24 §2.5 participant
+ * eligibility evaluation deferred by S5-3 — child suitability is PURELY
+ * age-based, computed against the unit's start date with per-session
+ * overrides (null = inherit); adults are NEVER gender-filtered
+ * automatically and the participant model carries no gender, so the
+ * certified server rule set is exactly the age gate (docs/24 §2.5.1–2);
+ * (2) the D-10 advisory precheck — a participant who already holds the
+ * lifetime freeTrial redemption for the Program is refused a trial quote
+ * up front (the transactional AUTHORITY lives in confirmFreeBooking).
  */
 import { sql } from 'kysely';
 
@@ -65,8 +70,24 @@ export type RequestQuoteResult =
   | { kind: 'priceOptionNotFound' }
   | { kind: 'unitNotFound' }
   | { kind: 'participantNotFound' }
+  /** docs/24 §2.5: the child participant's age at the unit's start date
+   *  falls outside the effective (program ⊕ session-override) range. */
+  | { kind: 'participantIneligible' }
+  /** D-10: this participant already redeemed their lifetime freeTrial for
+   *  this Program (advisory here; authoritative at confirmation). */
+  | { kind: 'trialAlreadyRedeemed' }
   | { kind: 'offerNotFound' }
   | { kind: 'offerNotApplicable' };
+
+/** Full years between date of birth and the unit's start date (UTC civil). */
+function ageAtDate(dateOfBirth: Date, at: Date): number {
+  let age = at.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+  const monthDiff = at.getUTCMonth() - dateOfBirth.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && at.getUTCDate() < dateOfBirth.getUTCDate())) {
+    age -= 1;
+  }
+  return age;
+}
 
 const PRICE_KIND_BY_OPTION: Record<string, 'oneOff' | 'cadence' | 'free'> = {
   dropIn: 'oneOff',
@@ -87,7 +108,7 @@ export async function requestQuote(
   return withTransaction(deps.db, async (trx) => {
     const program = await trx
       .selectFrom('program')
-      .select(['id', 'organization_id', 'listing_state'])
+      .select(['id', 'organization_id', 'listing_state', 'min_age', 'max_age', 'all_ages'])
       .where('id', '=', input.programId)
       .executeTakeFirst();
     if (program === undefined) return { kind: 'programNotFound' as const };
@@ -95,9 +116,10 @@ export async function requestQuote(
 
     const participant = await trx
       .selectFrom('participant')
-      .select('id')
+      .select(['id', 'kind', 'date_of_birth'])
       .where('id', '=', input.participantId)
       .where('account_id', '=', actor.accountId)
+      .where('status', '=', 'active')
       .executeTakeFirst();
     if (participant === undefined) return { kind: 'participantNotFound' as const };
 
@@ -111,10 +133,48 @@ export async function requestQuote(
       return { kind: 'priceOptionNotFound' as const };
     }
 
-    const unitRow = await sql<{ id: string; program_id: string }>`
-      SELECT id, program_id FROM ${sql.id(spec.table)} WHERE id = ${input.unit.id}`.execute(trx);
-    if (unitRow.rows[0]?.program_id !== input.programId) {
+    const unitRow = await sql<{
+      id: string;
+      program_id: string;
+      start_on: Date;
+      override_min_age: number | null;
+      override_max_age: number | null;
+      override_all_ages: boolean | null;
+    }>`
+      SELECT id, program_id,
+             ${sql.raw(
+               input.unit.kind === 'session'
+                 ? `start_at AS start_on, override_min_age, override_max_age, override_all_ages`
+                 : input.unit.kind === 'campWeek'
+                   ? `start_date AS start_on, NULL::int AS override_min_age,
+                      NULL::int AS override_max_age, NULL::boolean AS override_all_ages`
+                   : `effective_start AS start_on, NULL::int AS override_min_age,
+                      NULL::int AS override_max_age, NULL::boolean AS override_all_ages`,
+             )}
+      FROM ${sql.id(spec.table)} WHERE id = ${input.unit.id}`.execute(trx);
+    const unit = unitRow.rows[0];
+    if (unit?.program_id !== input.programId) {
       return { kind: 'unitNotFound' as const };
+    }
+
+    // docs/24 §2.5 (owner-final): child suitability is PURELY age-based,
+    // computed against the unit's start date; session overrides are
+    // nullable mirrors (null = inherit); adults are never auto-filtered.
+    if (participant.kind === 'child') {
+      const allAges = unit.override_all_ages ?? program.all_ages;
+      if (!allAges) {
+        const minAge = unit.override_min_age ?? program.min_age;
+        const maxAge = unit.override_max_age ?? program.max_age;
+        if (minAge !== null || maxAge !== null) {
+          if (participant.date_of_birth === null) {
+            return { kind: 'participantIneligible' as const }; // fail closed
+          }
+          const age = ageAtDate(participant.date_of_birth, unit.start_on);
+          if ((minAge !== null && age < minAge) || (maxAge !== null && age > maxAge)) {
+            return { kind: 'participantIneligible' as const };
+          }
+        }
+      }
     }
 
     // Money derivation: the option's catalogue amount, overridden by an
@@ -136,6 +196,16 @@ export async function requestQuote(
         (offer.effective_end === null || offer.effective_end > now);
       if (offer.state !== 'active' || !inWindow) return { kind: 'offerNotApplicable' as const };
       if (offer.kind === 'freeTrial') {
+        // D-10 advisory precheck: the lifetime (participant, program)
+        // entitlement — the transactional authority re-decides at the
+        // §7.3 confirmation boundary.
+        const redeemed = await trx
+          .selectFrom('trial_redemption')
+          .select('booking_id')
+          .where('participant_id', '=', input.participantId)
+          .where('program_id', '=', input.programId)
+          .executeTakeFirst();
+        if (redeemed !== undefined) return { kind: 'trialAlreadyRedeemed' as const };
         totalFils = 0;
       } else if (offer.kind === 'paidTrial') {
         totalFils = Number(offer.trial_amount_fils);

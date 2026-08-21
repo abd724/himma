@@ -196,6 +196,82 @@ export const HTTP_OUTCOMES = {
     message:
       'Capacity cannot be reduced below the seats already booked or held. Reducing committed capacity requires the controlled disruption workflow.',
   },
+  // -- S5-5 customer booking vocabulary (docs/22 §11 / docs/32 §12; D-10) --
+  sessionFull: {
+    statusCode: 409,
+    code: 'sessionFull',
+    message: 'This session is fully booked.',
+  },
+  registrationClosed: {
+    statusCode: 409,
+    code: 'registrationClosed',
+    message: 'Registration for this session has closed.',
+  },
+  participantIneligible: {
+    statusCode: 422,
+    code: 'participantIneligible',
+    message: 'This participant is not eligible for the selected session.',
+  },
+  quoteExpired: {
+    statusCode: 409,
+    code: 'quoteExpired',
+    message: 'The price quote has expired. Please request a new quote.',
+  },
+  invalidQuote: {
+    statusCode: 422,
+    code: 'invalidQuote',
+    message: 'The quote does not match this booking request.',
+  },
+  holdAlreadyActive: {
+    statusCode: 409,
+    code: 'holdAlreadyActive',
+    message: 'An active reservation already exists for this participant and session.',
+  },
+  holdNotActive: {
+    statusCode: 409,
+    code: 'holdNotActive',
+    message: 'This reservation is no longer active.',
+  },
+  holdExpired: {
+    statusCode: 409,
+    code: 'holdExpired',
+    message: 'This reservation has expired. Please start again if seats remain.',
+  },
+  alreadyBooked: {
+    statusCode: 409,
+    code: 'alreadyBooked',
+    message: 'This participant already has a live booking for this session.',
+  },
+  alreadyConfirmed: {
+    statusCode: 409,
+    code: 'alreadyConfirmed',
+    message: 'This booking is already confirmed.',
+  },
+  paymentNotRequired: {
+    statusCode: 409,
+    code: 'paymentNotRequired',
+    message: 'No payment is required — complete this booking through the free confirmation step.',
+  },
+  notFreeQuote: {
+    statusCode: 409,
+    code: 'notFreeQuote',
+    message: 'This booking requires payment and cannot be completed as a free booking.',
+  },
+  paymentUnavailable: {
+    statusCode: 503,
+    code: 'paymentUnavailable',
+    message: 'Paid checkout is not yet available. No booking was created and nothing was charged.',
+  },
+  trialAlreadyRedeemed: {
+    statusCode: 409,
+    code: 'trialAlreadyRedeemed',
+    message: 'The free trial for this activity has already been used for this participant.',
+  },
+  policyUnavailable: {
+    statusCode: 503,
+    code: 'policyUnavailable',
+    message: 'Booking confirmation is temporarily unavailable. Nothing was booked.',
+  },
   invalidCursor: {
     statusCode: 422,
     code: 'invalidCursor',

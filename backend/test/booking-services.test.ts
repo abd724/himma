@@ -700,9 +700,18 @@ describe('D-4 Enrolment — cohort participation, atomic with confirmation', () 
     const state = await holdAndBooking(holdId, bookingId);
     expect(state.hold.state).toBe('consumed');
 
-    // One participant per cohort enrolment at launch: a fresh trial intent
-    // for the SAME participant is refused before any new capacity claim.
-    const secondQuote = await quoteFor(c, unit, monthlyOption, freeTrial);
+    // D-10 now refuses any further trial QUOTE for this participant+program…
+    const trialRequote = await requestQuote(deps, { accountId: c.accountId }, {
+      programId: f.programId,
+      priceOptionId: monthlyOption,
+      unit,
+      participantId: c.participantId,
+      offerId: freeTrial,
+    });
+    expect(trialRequote.kind).toBe('trialAlreadyRedeemed');
+    // …and one participant per cohort enrolment at launch still holds for a
+    // fresh NON-trial intent: the claim refuses on the live booking.
+    const secondQuote = await quoteFor(c, unit, monthlyOption);
     const secondClaim = await claimHold(deps, { accountId: c.accountId }, {
       unit,
       participantId: c.participantId,

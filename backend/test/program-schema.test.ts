@@ -525,11 +525,19 @@ describe('structural boundaries (docs/28 §1 exclusions; task §6/§22)', () => 
     // booking, enrolment, price_quote(+_line), package_entitlement,
     // cancellation_policy_template — arrived legitimately with the
     // owner-approved S5-1 foundation (docs/32) and are locked by
-    // booking-capacity-schema.test.ts). Payments/refunds/attendance stay
-    // forbidden until THEIR owning slices.
+    // booking-capacity-schema.test.ts; trial_redemption arrived with the
+    // owner ruling D-10 in S5-5 — 0014 — and is locked by
+    // booking-customer-services.test.ts). Payments/refunds/attendance stay
+    // forbidden until THEIR owning slices. NOTE: package REDEMPTION remains
+    // owner-open — trial_redemption is the D-10 freeTrial entitlement, not
+    // a package/coupon engine.
     const forbiddenExact =
       /^(payment_intent|payment_attempt|payment_transaction|gateway_event|refund|payout|payout_statement|credit_ledger_entry|attendance_record|instructor|waitlist)$/;
-    const forbiddenAnywhere = /(redemption|rating|waitlist)/i;
+    const forbiddenAnywhere = /(rating|waitlist)/i;
+    const forbiddenRedemption = names.filter(
+      (n) => /redemption/i.test(n) && n !== 'trial_redemption',
+    );
+    expect(forbiddenRedemption).toEqual([]);
     expect(names.filter((n) => forbiddenExact.test(n) || forbiddenAnywhere.test(n))).toEqual([]);
     for (const required of [
       'area',

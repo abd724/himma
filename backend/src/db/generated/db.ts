@@ -783,6 +783,15 @@ export interface StepUpGrant {
   version: Generated<number>;
 }
 
+export interface TrialRedemption {
+  account_id: string;
+  booking_id: string;
+  offer_id: string;
+  participant_id: string;
+  program_id: string;
+  redeemed_at: Generated<Timestamp>;
+}
+
 export interface VerificationCase {
   created_at: Generated<Timestamp>;
   decided_at: Timestamp | null;
@@ -890,6 +899,7 @@ export interface DB {
   staff_membership: StaffMembership;
   staff_membership_branch: StaffMembershipBranch;
   step_up_grant: StepUpGrant;
+  trial_redemption: TrialRedemption;
   verification_case: VerificationCase;
   verification_case_requirement: VerificationCaseRequirement;
   verification_decision: VerificationDecision;

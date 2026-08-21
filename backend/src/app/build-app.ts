@@ -28,6 +28,7 @@ import type { MfaConfig } from '../modules/identity/services/mfa-config';
 import type { StaffInvitationConfig } from '../modules/provider/staff-invitation-config';
 import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-moderation-routes';
 import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-taxonomy-routes';
+import { registerBookingCustomerRoutes } from '../modules/booking/http/booking-customer-routes';
 import { registerBookingProviderRoutes } from '../modules/booking/http/booking-provider-routes';
 import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
 import { registerPublicCatalogueRoutes } from '../modules/catalogue/http/public-catalogue-routes';
@@ -438,6 +439,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerSearchRoutes(app, {
       searchPort: new PostgresSearchReadPort({ db: identity.db }),
     });
+
+    // Customer booking surface (S5-5, docs/32 §12): authenticatedCustomer
+    // routes over the certified S5-2/S5-3 domain — availability, quotes,
+    // holds, atomic free confirmation (D-10 authority inside), the
+    // fail-closed paid boundary, and own-booking reads. Registers with the
+    // identity surface (the customer session policy is its whole gate);
+    // the trusted paid-confirmation seam remains route-less by design.
+    registerBookingCustomerRoutes(app, { db: identity.db });
 
     // Provider-private management surface (S3-3). D-S3-5 makes the MFA
     // baseline mandatory on every provider route, and production TOTP

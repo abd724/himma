@@ -43,6 +43,7 @@ import { randomBytes } from 'node:crypto';
 import { sql } from 'kysely';
 
 import { appendAuditEvent } from '../../../db/audit';
+import { DbError } from '../../../db/errors';
 import { newId } from '../../../db/ids';
 import { runIdempotent, requestDigest } from '../../../db/idempotency';
 import type { Trx } from '../../../db/transaction';
@@ -476,6 +477,10 @@ export type ConfirmFreeBookingResult =
   | { kind: 'holdNotFound' }
   | { kind: 'notFreeQuote' }
   | { kind: 'alreadyBooked' }
+  /** D-10: this participant already redeemed their LIFETIME freeTrial for
+   *  this Program — refused before any mutation (or by the redemption
+   *  primary key when two confirmations race; either way nothing moves). */
+  | { kind: 'trialAlreadyRedeemed' }
   | { kind: 'idempotencyConflict' };
 
 export interface ConfirmFreeBookingRun {
@@ -506,14 +511,32 @@ export async function confirmFreeBooking(
     idempotencyKey: input.idempotencyKey,
     requestDigest: requestDigest({ holdId: input.holdId }),
   };
-  const run = await runIdempotent<ConfirmFreeBookingResult>(deps.db, ctx, async (trx) => {
+  let run;
+  try {
+    run = await runIdempotent<ConfirmFreeBookingResult>(deps.db, ctx, async (trx) => {
     const preread = await readHold(trx, input.holdId);
     if (preread === undefined || preread.account_id !== actor.accountId) {
       return { kind: 'holdNotFound' };
     }
     // §7.3 precondition: this path exists ONLY for a zero-total quote — a
     // paid intent can never confirm here, whatever the client claims.
-    if ((await quoteTotal(trx, preread.quote_id)) !== 0) return { kind: 'notFreeQuote' };
+    const quoteRow = await trx
+      .selectFrom('price_quote')
+      .select(['total_fils', 'offer_id'])
+      .where('id', '=', preread.quote_id)
+      .executeTakeFirstOrThrow();
+    if (Number(quoteRow.total_fils) !== 0) return { kind: 'notFreeQuote' };
+    // D-10 applies exactly to freeTrial-Offer quotes (a plain `free` price
+    // option is not a trial; paidTrial is explicitly outside the ruling).
+    let freeTrialOfferId: string | null = null;
+    if (quoteRow.offer_id !== null) {
+      const offer = await trx
+        .selectFrom('offer')
+        .select('kind')
+        .where('id', '=', quoteRow.offer_id)
+        .executeTakeFirstOrThrow();
+      if (offer.kind === 'freeTrial') freeTrialOfferId = quoteRow.offer_id;
+    }
 
     const unit = unitRefOf(preread);
     const spec = unitSpec(unit.kind);
@@ -547,6 +570,20 @@ export async function confirmFreeBooking(
       return { kind: 'policyUnavailable' };
     }
 
+    // D-10 gate BEFORE any mutation: one confirmed freeTrial per
+    // (participant, program), lifetime. The read is advisory-fast; the
+    // AUTHORITY is the redemption INSERT below, whose primary key
+    // serializes concurrent confirmations across different Sessions.
+    if (freeTrialOfferId !== null) {
+      const redeemed = await trx
+        .selectFrom('trial_redemption')
+        .select('booking_id')
+        .where('participant_id', '=', hold.participant_id)
+        .where('program_id', '=', lockedUnit.program_id)
+        .executeTakeFirst();
+      if (redeemed !== undefined) return { kind: 'trialAlreadyRedeemed' };
+    }
+
     const quote = await trx
       .selectFrom('price_quote')
       .select('option_kind')
@@ -568,8 +605,53 @@ export async function confirmFreeBooking(
       entityId: bookingId,
     });
     const booking = await readBooking(trx, bookingId);
-    return confirmCore(deps, trx, booking!, { type: 'user', accountId: actor.accountId });
-  });
+    const core = await confirmCore(deps, trx, booking!, {
+      type: 'user',
+      accountId: actor.accountId,
+    });
+    if (core.kind !== 'bookingConfirmed') return core;
+
+    // D-10 consumption: ATOMIC with the successful confirmation — the
+    // append-only redemption row commits (or rolls back) with the Booking,
+    // so quotes/holds/failed/expired/released attempts never consume the
+    // entitlement and a replayed key never re-executes.
+    if (freeTrialOfferId !== null) {
+      await trx
+        .insertInto('trial_redemption')
+        .values({
+          participant_id: hold.participant_id,
+          program_id: lockedUnit.program_id,
+          account_id: hold.account_id,
+          booking_id: bookingId,
+          offer_id: freeTrialOfferId,
+        })
+        .execute();
+      await appendAuditEvent(trx, {
+        actorType: 'user',
+        actorId: actor.accountId,
+        principalContext: 'customer',
+        action: 'trial.redeemed',
+        entityType: 'trial_redemption',
+        entityId: bookingId,
+      });
+    }
+    return core;
+    });
+  } catch (error) {
+    // Two simultaneous free-trial confirmations on different Sessions of
+    // one Program both pass the precheck; the loser dies on the D-10
+    // primary key and its ENTIRE transaction (hold consumption, counters,
+    // booking, idempotency row) rolls back — exactly one redemption ever.
+    if (
+      error instanceof DbError &&
+      error.kind === 'uniqueViolation' &&
+      (error.constraint === 'pk_trial_redemption' ||
+        error.constraint === 'uq_trial_redemption_booking')
+    ) {
+      return { replayed: false, outcome: { kind: 'trialAlreadyRedeemed' } };
+    }
+    throw error;
+  }
   if (run.kind === 'idempotencyConflict') {
     return { replayed: false, outcome: { kind: 'idempotencyConflict' } };
   }
