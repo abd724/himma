@@ -66,6 +66,21 @@ export const ACTIVE_PROVIDER_CAPABILITIES = [
    *  widening to other roles is a future owner decision, not a default).
    *  Never grants any admin/operations authority. */
   'verification.evidence.manage',
+  // -- S5-4 scheduling/capacity activation (docs/32 §11; docs/27 §6 map) --
+  /** RecurringSchedule create/edit/end + session generation — owner,
+   *  org_manager, branch_manager (program-in-scope enforced service-side),
+   *  listings_editor (docs/27 §6: “create/edit/submit listings, schedules”). */
+  'schedules.manage',
+  /** Capacity-unit administration (Session/CampWeek/EnrolmentCohort create,
+   *  time/capacity/cutoff edits under the S5-1 floor, open/close status) —
+   *  owner, org_manager, branch_manager (scoped). Providers submit COMMANDS
+   *  only: no input anywhere carries held_count/booked_count. */
+  'capacity.manage',
+  /** Per-unit occupancy + PII-lean booking roster reads — owner,
+   *  org_manager, branch_manager (scoped), front_desk (scoped; docs/27 §6
+   *  “booking lookup minimal PII”). Coach roster.view stays RESERVED until
+   *  assigned-session scoping exists (attendance slice). */
+  'bookings.view',
 ] as const;
 
 export type ProviderCapability = (typeof ACTIVE_PROVIDER_CAPABILITIES)[number];
@@ -75,12 +90,9 @@ export type ProviderCapability = (typeof ACTIVE_PROVIDER_CAPABILITIES)[number];
  *  `listings.manage` + `media.manage` and added `listings.publish` +
  *  `catalogue.read` per docs/28 §1.5). */
 export const RESERVED_PROVIDER_CAPABILITIES = [
-  'schedules.manage',
   'sessions.manage',
-  'capacity.manage',
   'offers.manage',
   'bulk_import.run',
-  'bookings.view',
   'reports.view',
   'attendance.manage',
   'roster.view',
@@ -114,6 +126,9 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'listings.publish',
     'media.manage',
     'verification.evidence.manage',
+    'schedules.manage',
+    'capacity.manage',
+    'bookings.view',
   ],
   org_manager: [
     'org.read',
@@ -126,6 +141,9 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'listings.manage',
     'listings.publish',
     'media.manage',
+    'schedules.manage',
+    'capacity.manage',
+    'bookings.view',
   ],
   branch_manager: [
     'org.read',
@@ -134,6 +152,9 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'catalogue.read',
     'listings.manage',
     'media.manage',
+    'schedules.manage',
+    'capacity.manage',
+    'bookings.view',
   ],
   listings_editor: [
     'org.read',
@@ -141,9 +162,10 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'catalogue.read',
     'listings.manage',
     'media.manage',
+    'schedules.manage',
   ],
   coach: ['org.read'],
-  front_desk: ['org.read', 'org.legal.view'],
+  front_desk: ['org.read', 'org.legal.view', 'bookings.view'],
   finance: ['org.read', 'org.legal.view'],
 };
 
@@ -159,25 +181,15 @@ export const PROVIDER_ROLE_RESERVED_CAPABILITIES: Record<
 > = {
   owner: ['payout_bank_details.manage'],
   org_manager: [
-    'schedules.manage',
     'sessions.manage',
-    'capacity.manage',
     'offers.manage',
-    'bookings.view',
     'reports.view',
     'bulk_import.run',
   ],
-  branch_manager: [
-    'schedules.manage',
-    'sessions.manage',
-    'capacity.manage',
-    'offers.manage',
-    'bookings.view',
-    'reports.view',
-  ],
-  listings_editor: ['schedules.manage', 'bulk_import.run'],
+  branch_manager: ['sessions.manage', 'offers.manage', 'reports.view'],
+  listings_editor: ['bulk_import.run'],
   coach: ['roster.view', 'attendance.manage'],
-  front_desk: ['sessions.manage', 'attendance.manage', 'bookings.view'],
+  front_desk: ['sessions.manage', 'attendance.manage'],
   finance: ['statements.view', 'payouts.view', 'refund_reports.view'],
 };
 

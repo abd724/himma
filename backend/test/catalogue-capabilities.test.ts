@@ -66,14 +66,11 @@ describe('S4-2 catalogue capability activation', () => {
     }
   });
 
-  it('keeps future capabilities reserved: schedules, sessions, capacity, offers, bookings, attendance, payouts…', () => {
+  it('keeps future capabilities reserved: sessions, offers, reports, attendance, payouts… (S5-4 activated schedules.manage, capacity.manage, bookings.view — locked in booking-provider-routes.test.ts)', () => {
     for (const stillReserved of [
-      'schedules.manage',
       'sessions.manage',
-      'capacity.manage',
       'offers.manage',
       'bulk_import.run',
-      'bookings.view',
       'reports.view',
       'attendance.manage',
       'roster.view',

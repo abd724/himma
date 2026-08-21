@@ -28,6 +28,7 @@ import type { MfaConfig } from '../modules/identity/services/mfa-config';
 import type { StaffInvitationConfig } from '../modules/provider/staff-invitation-config';
 import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-moderation-routes';
 import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-taxonomy-routes';
+import { registerBookingProviderRoutes } from '../modules/booking/http/booking-provider-routes';
 import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
 import { registerPublicCatalogueRoutes } from '../modules/catalogue/http/public-catalogue-routes';
 import { registerSearchRoutes } from '../modules/catalogue/http/search-routes';
@@ -468,6 +469,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           // provider surface's production capability gate: same MFA
           // baseline, same fail-closed activation, no bypass.
           registerCatalogueRoutes(app, { db: identity.db });
+          // Provider scheduling/capacity surface (S5-4, docs/32 §11) shares
+          // the same production capability gate: same MFA baseline, same
+          // fail-closed activation, no bypass.
+          registerBookingProviderRoutes(app, { db: identity.db });
           if (evidenceStorageDeps !== undefined) {
             registerProviderEvidenceRoutes(app, evidenceStorageDeps);
           }
@@ -475,6 +480,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       } else if (identity.enableProviderRoutes !== false) {
         registerProviderRoutes(app, providerDeps);
         registerCatalogueRoutes(app, { db: identity.db });
+        registerBookingProviderRoutes(app, { db: identity.db });
         if (evidenceStorageDeps !== undefined) {
           registerProviderEvidenceRoutes(app, evidenceStorageDeps);
         }

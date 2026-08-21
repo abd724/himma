@@ -174,6 +174,28 @@ export const HTTP_OUTCOMES = {
     code: 'invalidOffer',
     message: 'The offer shape is invalid for its kind or effective period.',
   },
+  // -- S5-4 provider scheduling/capacity vocabulary (docs/32 §11) ---------
+  invalidSchedule: {
+    statusCode: 422,
+    code: 'invalidSchedule',
+    message: 'The schedule shape is invalid (pattern, times, range, or cutoff rule).',
+  },
+  invalidUnit: {
+    statusCode: 422,
+    code: 'invalidUnit',
+    message: 'The inventory unit shape is invalid (times, dates, capacity, or cutoff).',
+  },
+  idempotencyConflict: {
+    statusCode: 409,
+    code: 'idempotencyConflict',
+    message: 'This idempotency key was already used for a different request.',
+  },
+  capacityBelowCommitments: {
+    statusCode: 409,
+    code: 'capacityBelowCommitments',
+    message:
+      'Capacity cannot be reduced below the seats already booked or held. Reducing committed capacity requires the controlled disruption workflow.',
+  },
   invalidCursor: {
     statusCode: 422,
     code: 'invalidCursor',
