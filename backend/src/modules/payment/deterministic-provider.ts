@@ -32,6 +32,19 @@ export type DeterministicScenario =
   | 'succeed'
   | 'decline'
   | 'timeout'
+  /**
+   * W5-2 failure-window B: the FIRST create loses its response (session
+   * exists provider-side); a retry with the SAME request-idempotency key
+   * replays the created session — exactly Stripe's idempotent-replay
+   * behavior after a lost response.
+   */
+  | 'timeoutOnce'
+  /**
+   * W5-2 failure-window C: the create definitively fails; the same key
+   * replays the failure (Stripe replays recorded 4xx outcomes), so recovery
+   * requires a NEW attempt with a NEW provider key.
+   */
+  | 'refuse'
   | 'lateSuccess'
   | 'compensationFailure';
 
@@ -51,8 +64,10 @@ const WEBHOOK_TOLERANCE_SECONDS = 300;
 export interface DeterministicProviderOptions {
   /** Injected clock — the provider never reads the system time. */
   now: Date;
-  /** Scenario per Himma intent id; unlisted intents default to 'succeed'. */
+  /** Scenario per Himma intent id; unlisted intents use `defaultScenario`. */
   scenarios?: Record<string, DeterministicScenario>;
+  /** Fallback scenario for intents not listed in `scenarios` ('succeed'). */
+  defaultScenario?: DeterministicScenario;
   /** Fictional endpoint secret for webhook signing (test material only). */
   webhookSecret?: string;
 }
@@ -62,23 +77,33 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
 
   private readonly now: Date;
   private readonly scenarios: Record<string, DeterministicScenario>;
+  private readonly defaultScenario: DeterministicScenario;
   private readonly webhookSecret: string;
   private readonly checkoutsByRef = new Map<string, CheckoutRecord>();
   private readonly createResultsByKey = new Map<string, CreateHostedCheckoutResult>();
+  /** Total create requests received (network-attempt assertions). */
+  public createRequestCount = 0;
+
+  /** Distinct sessions that exist provider-side (double-charge assertions). */
+  get sessionCount(): number {
+    return this.checkoutsByRef.size;
+  }
 
   constructor(options: DeterministicProviderOptions) {
     this.now = options.now;
     this.scenarios = options.scenarios ?? {};
+    this.defaultScenario = options.defaultScenario ?? 'succeed';
     this.webhookSecret = options.webhookSecret ?? 'dt_whsec_fictional';
   }
 
   private scenarioFor(intentId: string): DeterministicScenario {
-    return this.scenarios[intentId] ?? 'succeed';
+    return this.scenarios[intentId] ?? this.defaultScenario;
   }
 
   async createHostedCheckout(
     input: CreateHostedCheckoutInput,
   ): Promise<CreateHostedCheckoutResult> {
+    this.createRequestCount += 1;
     // Provider-request idempotency (docs/33 §9): the SAME key replays the
     // SAME outcome — a crashed-and-retried creation never doubles a session.
     const replay = this.createResultsByKey.get(input.idempotencyKey);
@@ -86,6 +111,15 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
 
     const scenario = this.scenarioFor(input.intentId);
     const gatewayRef = `dt_cs_${input.intentId}`;
+    if (scenario === 'refuse') {
+      // Definitive failure, recorded against the key (Stripe replays it).
+      const result: CreateHostedCheckoutResult = {
+        kind: 'refused',
+        reason: 'providerUnavailable',
+      };
+      this.createResultsByKey.set(input.idempotencyKey, result);
+      return result;
+    }
     if (scenario === 'timeout') {
       // The session EXISTS provider-side; the response was lost. Resolution
       // must come from inspectPayment/webhook (docs/24 §8.3), and the same
@@ -119,6 +153,11 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
       gatewayExpiresAt,
     };
     this.createResultsByKey.set(input.idempotencyKey, result);
+    if (scenario === 'timeoutOnce') {
+      // The session EXISTS and the outcome is recorded against the key,
+      // but THIS response is lost — the retry replays the created session.
+      return { kind: 'unknownOutcome' };
+    }
     return result;
   }
 

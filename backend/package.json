@@ -17,6 +17,7 @@
     "db:verify": "tsx scripts/db-verify.ts",
     "db:codegen": "tsx scripts/db-codegen.ts",
     "db:seed-admins": "tsx scripts/db-seed-admins.ts",
+    "stripe:smoke": "tsx scripts/stripe-sandbox-smoke.ts",
     "bootstrap:admins": "tsx scripts/db-bootstrap-admins.ts"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "kysely": "^0.28.0",
     "node-pg-migrate": "^8.0.0",
     "pg": "^8.16.0",
+    "stripe": "^22.5.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

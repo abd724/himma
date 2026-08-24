@@ -25,9 +25,23 @@ export interface DatabaseConfig {
   password?: string;
 }
 
+/**
+ * Stripe configuration (W5-2; D-W5-1/D-W5-6). Credentials arrive ONLY
+ * through this boundary (dev: `.env`; production: the managed secret
+ * store) — never PostgreSQL rows, never code. In W5-2 the platform holds
+ * SANDBOX capability only: the driver refuses non-test keys structurally
+ * (see stripe-driver.ts) and production composition remains unconfigured
+ * by construction until the D-W5-3 VAT posture + docs/23 §19 lift arrive
+ * as their own reviewed change.
+ */
+export interface StripeConfig {
+  secretKey: string;
+}
+
 export interface BackendConfig {
   nodeEnv: NodeEnv;
   database: DatabaseConfig;
+  stripe?: StripeConfig;
 }
 
 export class ConfigError extends Error {}
@@ -89,7 +103,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
         'Production requires an explicit DATABASE_URL from the secret store; refusing to assemble a connection from defaults.',
       );
     }
-    return { nodeEnv, database: parseDatabaseUrl(env.DATABASE_URL) };
+    const production: BackendConfig = {
+      nodeEnv,
+      database: parseDatabaseUrl(env.DATABASE_URL),
+    };
+    if (env.STRIPE_SECRET_KEY !== undefined && env.STRIPE_SECRET_KEY !== '') {
+      production.stripe = { secretKey: env.STRIPE_SECRET_KEY };
+    }
+    return production;
   }
 
   const database: DatabaseConfig = {
@@ -107,5 +128,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     assertSafeTestDatabase(database);
   }
 
-  return { nodeEnv, database };
+  const config: BackendConfig = { nodeEnv, database };
+  if (env.STRIPE_SECRET_KEY !== undefined && env.STRIPE_SECRET_KEY !== '') {
+    config.stripe = { secretKey: env.STRIPE_SECRET_KEY };
+  }
+  return config;
 }
