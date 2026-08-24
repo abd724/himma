@@ -89,6 +89,20 @@ export interface BookingServiceDeps {
   /** TEST-ONLY failure-injection seam for the §7.3/§7.4b confirmation
    *  transaction. Never set in production wiring. */
   onConfirmPhase?: (phase: ConfirmPhase) => void;
+  /**
+   * W5-4 trusted paid-settlement seam (docs/24 §7.4b; docs/33 §17 W5-4 —
+   * the bounded Slice-5 dependency the freeze clause anticipated): invoked
+   * INSIDE the `confirmPaidBooking` idempotent transaction, strictly AFTER
+   * the certified confirmation core has fully succeeded, so the payment
+   * domain's capture posting + PaymentIntent success commit ATOMICALLY
+   * with hold consumption + Booking confirmation — the exact §7.4b single
+   * transaction. A throw here rolls back the ENTIRE confirmation (booking
+   * included) with an unpoisoned idempotency key. Absent → behavior is
+   * byte-identical to the certified S5-3 semantics. Only the W5 payment
+   * saga wires it; no HTTP surface can reach it, and it exists on NO other
+   * operation (free confirmation never settles payments).
+   */
+  paidSettlement?: (trx: Trx, confirmed: { bookingId: string; holdId: string }) => Promise<void>;
 }
 
 export type ClaimPhase = 'unitLocked' | 'counterIncremented' | 'holdInserted';

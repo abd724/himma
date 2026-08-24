@@ -30,6 +30,7 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Db } from '../../../db/kysely';
 import type { PaymentProviderPort } from '../provider-port';
+import { processTrustedPaymentResults } from '../services/payment-saga';
 import {
   ingestGatewayDelivery,
   processPendingGatewayEvents,
@@ -82,15 +83,21 @@ export function registerPaymentWebhookRoutes(
           });
         }
 
-        // Durable receipt committed — acknowledge now; processing follows
-        // best-effort (the sweep recovers anything this pass leaves).
-        await reply.status(200).send({ received: true });
+        // Durable receipt committed — the acknowledgement no longer depends
+        // on anything below. The processing pass runs best-effort BEFORE
+        // the reply (bounded, in-process; a failure is swallowed and the
+        // catch-up sweep re-drives the durable rows — the 200 stands
+        // because durability, not processing, is the acceptance): first
+        // the W5-3 event lifecycle, then the W5-4 trusted saga over any
+        // `verified` success work items (only a trusted W5-3 result can
+        // ever enter it — this call site holds no other authority).
         try {
           await processPendingGatewayEvents(deps);
+          await processTrustedPaymentResults(deps);
         } catch (error) {
           request.log.error({ err: error }, 'gateway event processing deferred to sweep');
         }
-        return reply;
+        return reply.status(200).send({ received: true });
       },
     );
   });

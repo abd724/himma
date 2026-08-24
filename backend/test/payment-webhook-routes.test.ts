@@ -21,12 +21,23 @@ import type { FastifyInstance } from 'fastify';
 
 import { buildApp } from '../src/app/build-app';
 import { newId } from '../src/db/ids';
+import { createProgram } from '../src/modules/catalogue/services/program-management';
 import { InMemoryRateLimiterStore } from '../src/modules/identity/http/rate-limiter';
 import { CaptureMailSender } from '../src/modules/identity/mail/mail-sender';
 import { FakeAccessTokenVerifier } from '../src/modules/identity/providers/fake/fake-access-token-verifier';
 import { FakeAuthProviderAdapter } from '../src/modules/identity/providers/fake/fake-adapter';
 import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
+import { startPaidCheckout } from '../src/modules/payment/services/checkout-orchestration';
+import { capabilitiesForRole } from '../src/modules/provider/provider-capabilities';
+import type { OrgScope } from '../src/modules/provider/services/provider-principal';
 import { parseStaffInvitationConfig } from '../src/modules/provider/staff-invitation-config';
+import { createActivePolicyTemplate } from './helpers/booking-fixtures';
+import {
+  createAccount,
+  createSelfParticipant,
+  createUser,
+} from './helpers/identity-fixtures';
+import { createProviderOrg } from './helpers/provider-fixtures';
 import type { TestDb } from './helpers/test-db';
 import { createMigratedTestDb } from './helpers/test-db';
 
@@ -225,5 +236,151 @@ describe('the trust boundary at the wire', () => {
     // pipeline (422 schema refusal here) — NOT by a parser change: a broken
     // global parser would 415/400 at the content-type layer instead.
     expect([401, 422]).toContain(response.statusCode);
+  });
+});
+
+describe('the trusted end-to-end journey at the wire (W5-4)', () => {
+  it('checkout → hosted completion → signed webhook POST → 200 → booking CONFIRMED with one capture, intent succeeded, event processed — with no Himma session anywhere', async () => {
+    // Real domain spine (org → program → customer → quote → hold), the
+    // certified W5-2 orchestration on the APP'S OWN provider instance, a
+    // hosted completion, then one signed webhook delivery over the real
+    // transport — the entire trusted path, no session, no browser claim.
+    const org = await createProviderOrg(testDb.db, { state: 'live', branches: 1 });
+    const category = await sql<{ id: string }>`
+      SELECT id FROM category WHERE slug = 'fitness'`.execute(testDb.db);
+    const typeId = newId();
+    await sql`INSERT INTO activity_type (id, category_id, slug, label_en)
+              VALUES (${typeId}, ${category.rows[0]!.id}, ${`wire-type-${typeId.replace(/-/g, '').slice(-12)}`}, 'Wire Type')`.execute(
+      testDb.db,
+    );
+    const scope: OrgScope = {
+      organizationId: org.orgId,
+      membershipId: newId(),
+      role: 'owner',
+      capabilities: capabilitiesForRole('owner'),
+      branchScope: 'all',
+      organizationState: 'live',
+    };
+    const program = await createProgram({ db: testDb.db }, scope, { userId: newId() }, {
+      titleEn: 'Wire Journey Program',
+      activityTypeId: typeId,
+      setting: 'indoor',
+      genderEligibility: 'mixed',
+    });
+    if (program.kind !== 'programCreated') throw new Error(program.kind);
+    const userId = await createUser(testDb.db);
+    const accountId = await createAccount(testDb.db, userId);
+    const participantId = await createSelfParticipant(testDb.db, accountId);
+    await createActivePolicyTemplate(testDb.db);
+
+    const sessionId = newId();
+    await testDb.db
+      .insertInto('session')
+      .values({
+        id: sessionId,
+        program_id: program.program.id,
+        organization_id: org.orgId,
+        branch_id: org.branchIds[0],
+        start_at: new Date('2026-09-01T08:00:00.000Z'),
+        end_at: new Date('2026-09-01T09:00:00.000Z'),
+        capacity: 5,
+        held_count: 1,
+        registration_cutoff_at: new Date('2026-09-01T08:00:00.000Z'),
+      } as never)
+      .execute();
+    const quoteId = newId();
+    await testDb.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('price_quote')
+        .values({
+          id: quoteId,
+          organization_id: org.orgId,
+          program_id: program.program.id,
+          account_id: accountId,
+          participant_id: participantId,
+          option_kind: 'dropIn',
+          session_id: sessionId,
+          total_fils: 5000,
+          price_kind: 'oneOff',
+          expires_at: new Date('2026-09-01T08:00:00.000Z'),
+        } as never)
+        .execute();
+      await trx
+        .insertInto('price_quote_line')
+        .values({
+          id: newId(),
+          quote_id: quoteId,
+          line_no: 1,
+          kind: 'base',
+          label_en: '1 session',
+          amount_fils: 5000,
+        } as never)
+        .execute();
+    });
+    const holdId = newId();
+    await testDb.db
+      .insertInto('capacity_hold')
+      .values({
+        id: holdId,
+        organization_id: org.orgId,
+        session_id: sessionId,
+        account_id: accountId,
+        participant_id: participantId,
+        quote_id: quoteId,
+        expires_at: new Date('2026-08-30T12:00:00.000Z'),
+      } as never)
+      .execute();
+
+    const started = await startPaidCheckout(
+      { db: testDb.db, provider: { kind: 'configured', provider } },
+      { accountId },
+      {
+        holdId,
+        quoteId,
+        idempotencyKey: 'wire-journey-1',
+        returnUrl: 'https://himma.test/return',
+        cancelUrl: 'https://himma.test/cancel',
+      },
+    );
+    if (started.kind !== 'checkoutStarted') throw new Error(started.kind);
+    provider.completeCheckout(started.gatewayRef);
+
+    const delivery = provider.buildWebhookDelivery({
+      gatewayEventId: nextEventId(),
+      eventType: 'checkout.completed',
+      gatewayRef: started.gatewayRef,
+    });
+    const response = await post(delivery.rawBody, delivery.headers);
+    expect(response.statusCode).toBe(200);
+
+    const state = await sql<{
+      booking_state: string;
+      hold_state: string;
+      held_count: number;
+      booked_count: number;
+      intent_state: string;
+      captures: string;
+      event_state: string;
+    }>`SELECT b.state AS booking_state, h.state AS hold_state, s.held_count, s.booked_count,
+              i.state AS intent_state,
+              (SELECT count(*) FROM payment_transaction t
+                JOIN payment_attempt a ON a.id = t.attempt_id
+                WHERE a.intent_id = i.id AND t.kind = 'capture') AS captures,
+              (SELECT ge.processing_state FROM gateway_event ge
+                WHERE ge.gateway_event_id = ${JSON.parse(delivery.rawBody.toString('utf8')).id}) AS event_state
+       FROM booking b
+       JOIN capacity_hold h ON h.id = b.hold_id
+       JOIN session s ON s.id = b.session_id
+       JOIN payment_intent i ON i.booking_id = b.id
+       WHERE b.id = ${started.bookingId}`.execute(testDb.db);
+    expect(state.rows[0]).toEqual({
+      booking_state: 'confirmed',
+      hold_state: 'consumed',
+      held_count: 0,
+      booked_count: 1,
+      intent_state: 'succeeded',
+      captures: '1',
+      event_state: 'processed',
+    });
   });
 });

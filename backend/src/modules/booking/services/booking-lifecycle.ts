@@ -722,7 +722,17 @@ export async function confirmPaidBooking(
     }
     // A zero-total quote has no payment to confirm — that is §7.3's path.
     if ((await quoteTotal(trx, booking.quote_id)) === 0) return { kind: 'notPaidQuote' };
-    return confirmCore(deps, trx, booking, { type: 'system' });
+    const core = await confirmCore(deps, trx, booking, { type: 'system' });
+    // W5-4 §7.4b atomicity seam (booking-shared.ts): the payment-domain
+    // settlement joins THIS transaction only after the certified core has
+    // fully succeeded; its failure rolls back everything, unpoisoned.
+    if (core.kind === 'bookingConfirmed' && deps.paidSettlement !== undefined) {
+      await deps.paidSettlement(trx, {
+        bookingId: input.bookingId,
+        holdId: input.holdId,
+      });
+    }
+    return core;
   });
   if (run.kind === 'idempotencyConflict') {
     return { replayed: false, outcome: { kind: 'idempotencyConflict' } };

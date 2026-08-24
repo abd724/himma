@@ -155,9 +155,13 @@ describe('explicit expiry and reversal (D-W5-5 timing seam; A1.2 compensation se
     const reversed = await provider.reverse(captured.gatewayRef, 5000);
     if (reversed.kind !== 'reversed') throw new Error(reversed.kind);
     expect(reversed.gatewayTransactionId).toContain('dt_rev_');
+    // Amended by W5-4 (the owning slice): with the driver's STABLE
+    // idempotency key, a repeated reversal replays the SAME completed
+    // reversal (Stripe's idempotent behavior) — never a duplicate, never
+    // an error. Exactly-once lives at the ledger's unique transaction id.
     expect(await provider.reverse(captured.gatewayRef, 5000)).toEqual({
-      kind: 'refused',
-      reason: 'alreadyReversed',
+      kind: 'reversed',
+      gatewayTransactionId: reversed.gatewayTransactionId,
     });
 
     const open = await provider.createHostedCheckout(checkoutInput('intent-r3'));

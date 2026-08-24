@@ -46,7 +46,15 @@ export type DeterministicScenario =
    */
   | 'refuse'
   | 'lateSuccess'
-  | 'compensationFailure';
+  /** Reversal persistently returns UNKNOWN — the durable retryable
+   *  compensation obligation (W5-4 acceptance items 10/11). */
+  | 'compensationFailure'
+  /**
+   * W5-4 crash-window: the provider ACCEPTS the reversal but the response
+   * is lost (unknownOutcome once); the retry — same stable key — replays
+   * the SAME completed reversal. Exactly Stripe's idempotent behavior.
+   */
+  | 'compensationTimeoutOnce';
 
 interface CheckoutRecord {
   intentId: string;
@@ -161,6 +169,13 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
     return result;
   }
 
+  /** Test control: adversarially corrupt the reported amount so the saga's
+   *  money-truth gate (quarantine on mismatch) is provable. */
+  setReportedAmount(gatewayRef: string, amountFils: number): void {
+    const record = this.checkoutsByRef.get(gatewayRef);
+    if (record !== undefined) record.amountFils = amountFils;
+  }
+
   /** Test control: the customer "completes" the hosted page. */
   completeCheckout(gatewayRef: string): void {
     const record = this.checkoutsByRef.get(gatewayRef);
@@ -216,11 +231,22 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
         || record.status === 'expired') {
       return { kind: 'refused', reason: 'notCaptured' };
     }
-    if (record.status === 'reversed') return { kind: 'refused', reason: 'alreadyReversed' };
+    if (record.status === 'reversed') {
+      // STABLE-KEY replay semantics (docs/33 §9; the driver sends
+      // `himma:reverse:<ref>`): a repeated reversal request returns the
+      // SAME completed reversal — never a duplicate, never an error.
+      return { kind: 'reversed', gatewayTransactionId: record.reverseTransactionId! };
+    }
     if (record.scenario === 'compensationFailure') return { kind: 'unknownOutcome' };
     if (amountFils !== record.amountFils) return { kind: 'refused', reason: 'providerRefused' };
     record.status = 'reversed';
     record.reverseTransactionId = `dt_rev_${gatewayRef}`;
+    if (record.scenario === 'compensationTimeoutOnce') {
+      // Accepted provider-side; THIS response is lost. The retry replays
+      // the completed reversal above.
+      record.scenario = 'succeed';
+      return { kind: 'unknownOutcome' };
+    }
     return { kind: 'reversed', gatewayTransactionId: record.reverseTransactionId };
   }
 
