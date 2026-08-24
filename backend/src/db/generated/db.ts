@@ -317,6 +317,22 @@ export interface EnrolmentCohortSchedule {
   version: Generated<number>;
 }
 
+export interface GatewayEvent {
+  attempt_id: string | null;
+  created_at: Generated<Timestamp>;
+  event_type: string;
+  gateway_event_id: string;
+  id: string;
+  payload_digest: string;
+  processing_state: Generated<string>;
+  provider: string;
+  received_at: Generated<Timestamp>;
+  signature_verified: Generated<boolean>;
+  transaction_id: string | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface IdempotencyKey {
   created_at: Generated<Timestamp>;
   endpoint_scope: string;
@@ -503,6 +519,47 @@ export interface Participant {
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface PaymentAttempt {
+  created_at: Generated<Timestamp>;
+  failure_code: string | null;
+  gateway_ref: string | null;
+  id: string;
+  intent_id: string;
+  method: string | null;
+  sequence_no: number;
+  state: Generated<string>;
+  threeds_ref: string | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface PaymentIntent {
+  account_id: string;
+  amount_fils: Int8;
+  booking_id: string;
+  created_at: Generated<Timestamp>;
+  currency: Generated<string>;
+  expires_at: Timestamp;
+  hold_id: string;
+  id: string;
+  idempotency_key: string;
+  quote_id: string;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface PaymentTransaction {
+  amount_fils: Int8;
+  attempt_id: string;
+  created_at: Generated<Timestamp>;
+  currency: Generated<string>;
+  gateway_transaction_id: string;
+  id: string;
+  kind: string;
+  posted_at: Generated<Timestamp>;
 }
 
 export interface PriceQuote {
@@ -871,6 +928,7 @@ export interface DB {
   enrolment: Enrolment;
   enrolment_cohort: EnrolmentCohort;
   enrolment_cohort_schedule: EnrolmentCohortSchedule;
+  gateway_event: GatewayEvent;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
   listing_moderation_feedback: ListingModerationFeedback;
@@ -885,6 +943,9 @@ export interface DB {
   outbox_event: OutboxEvent;
   package_entitlement: PackageEntitlement;
   participant: Participant;
+  payment_attempt: PaymentAttempt;
+  payment_intent: PaymentIntent;
+  payment_transaction: PaymentTransaction;
   price_quote: PriceQuote;
   price_quote_line: PriceQuoteLine;
   program: Program;

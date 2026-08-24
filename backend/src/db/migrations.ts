@@ -283,6 +283,20 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'table', name: 'program_search_document' },
     { kind: 'function', name: 'enforce_search_document_rules' },
   ],
+  '0015_payment_foundation': [
+    { kind: 'table', name: 'payment_intent' },
+    { kind: 'table', name: 'payment_attempt' },
+    { kind: 'table', name: 'payment_transaction' },
+    { kind: 'table', name: 'gateway_event' },
+    { kind: 'constraint', name: 'uq_booking_id_account_quote_hold' },
+    { kind: 'constraint', name: 'uq_payment_intent_idempotency_key' },
+    { kind: 'constraint', name: 'uq_gateway_event_provider_event' },
+    { kind: 'constraint', name: 'uq_payment_transaction_gateway_id' },
+    { kind: 'function', name: 'enforce_payment_intent_amount' },
+    { kind: 'function', name: 'enforce_payment_intent_transition' },
+    { kind: 'function', name: 'enforce_payment_attempt_transition' },
+    { kind: 'function', name: 'enforce_gateway_event_transition' },
+  ],
 };
 
 export interface VerificationReport {

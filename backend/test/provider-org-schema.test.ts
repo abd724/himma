@@ -401,8 +401,11 @@ describe('future listing compatibility (structural proof — no listing schema i
     // owner-approved booking/capacity foundation legitimately ships
     // session/camp_week/enrolment_cohort/recurring_schedule/capacity_hold/
     // booking/enrolment/price_quote — locked by
-    // booking-capacity-schema.test.ts). This guard now covers only the
-    // entities that remain future slices: payments and refunds.
+    // booking-capacity-schema.test.ts) and again by W5-1 (docs/33 §17: the
+    // owner-approved 0015 payment foundation legitimately ships
+    // payment_intent/payment_attempt/payment_transaction/gateway_event —
+    // locked by payment-schema.test.ts). This guard now covers only the
+    // entities that remain future slices: refunds, payouts, credits.
     const tables = await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`.execute(
       testDb.db,
@@ -410,9 +413,7 @@ describe('future listing compatibility (structural proof — no listing schema i
     const names = tables.rows.map((r) => r.table_name);
     expect(
       names.filter((n) =>
-        /^(payment_intent|payment_attempt|payment_transaction|gateway_event|refund|payout|payout_statement)$/.test(
-          n,
-        ),
+        /^(refund|payout|payout_statement|credit_ledger_entry|reconciliation_event)$/.test(n),
       ),
     ).toEqual([]);
     for (const required of ['organization', 'organization_public_profile', 'branch']) {
