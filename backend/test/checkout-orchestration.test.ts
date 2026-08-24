@@ -17,7 +17,7 @@
  * success: no route exists, `confirmPaidBooking` is never referenced, and
  * inspection alone never confirms anything (W5-3/W5-4 own trusted truth).
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { sql } from 'kysely';
@@ -559,9 +559,17 @@ describe('no trusted-success path exists (docs/33 §17 W5-2 §10/§17)', () => {
     expect(orchestrationSource.includes('confirmPaidBooking(')).toBe(false);
     expect(orchestrationSource).not.toMatch(/from ['"].*booking-lifecycle['"].*confirmPaid/);
 
-    // No payment HTTP module exists at all (W5-5 owns customer exposure).
-    expect(
-      existsSync(path.resolve(__dirname, '..', 'src', 'modules', 'payment', 'http')),
-    ).toBe(false);
+    // The payment HTTP surface is EXACTLY the W5-3 webhook ingress —
+    // customer exposure stays W5-5; no file references the trusted seam
+    // (amended by W5-3, the owning slice; formerly: no http dir at all).
+    const httpDir = path.resolve(__dirname, '..', 'src', 'modules', 'payment', 'http');
+    expect(existsSync(httpDir)).toBe(true);
+    const files = readdirSync(httpDir).sort();
+    expect(files).toEqual(['payment-webhook-routes.ts']);
+    for (const file of files) {
+      const source = readFileSync(path.join(httpDir, file), 'utf8');
+      expect(source).not.toContain('confirmPaidBooking');
+      expect(source).not.toMatch(/confirm-paid|payment-succeeded|\/customer\//);
+    }
   });
 });

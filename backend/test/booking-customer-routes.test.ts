@@ -159,6 +159,9 @@ describe('structural locks', () => {
       path.join(__dirname, '..', 'src', 'modules', 'catalogue', 'http'),
       path.join(__dirname, '..', 'src', 'modules', 'provider', 'http'),
       path.join(__dirname, '..', 'src', 'modules', 'identity', 'http'),
+      // W5-3 added the payment webhook ingress — scanned too: the trusted
+      // seam stays out of EVERY http module, the new one included.
+      path.join(__dirname, '..', 'src', 'modules', 'payment', 'http'),
     ];
     for (const dir of httpDirs) {
       for (const file of readdirSync(dir)) {

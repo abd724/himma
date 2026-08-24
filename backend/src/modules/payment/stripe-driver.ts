@@ -55,11 +55,12 @@ export interface StripeDriverOptions {
   /** MUST be a Stripe TEST-mode secret key in W5-2 (sk_test_/rk_test_). */
   secretKey: string;
   /**
-   * Endpoint-specific webhook signing secret (W5-3 composes it; the
-   * verification primitive exists now so the port stays whole). Absent →
-   * every webhook is rejected, never trusted by default.
+   * Endpoint-specific webhook signing secret (W5-3). Absent → every
+   * webhook is rejected, never trusted by default.
    */
   webhookSecret?: string;
+  /** Rotation: the retiring secret stays accepted during rollover only. */
+  retiringWebhookSecret?: string;
   /** Clock injection for deterministic clamp tests; defaults to real time. */
   now?: () => Date;
   /** TEST-ONLY: injected Stripe client stub. Never set in real wiring. */
@@ -75,6 +76,7 @@ export class StripeDriver implements PaymentProviderPort {
 
   private readonly stripe: Stripe;
   private readonly webhookSecret: string | undefined;
+  private readonly retiringWebhookSecret: string | undefined;
   private readonly now: () => Date;
 
   constructor(options: StripeDriverOptions) {
@@ -87,6 +89,7 @@ export class StripeDriver implements PaymentProviderPort {
     }
     this.stripe = options.client ?? new Stripe(options.secretKey);
     this.webhookSecret = options.webhookSecret;
+    this.retiringWebhookSecret = options.retiringWebhookSecret;
     this.now = options.now ?? ((): Date => new Date());
   }
 
@@ -222,25 +225,47 @@ export class StripeDriver implements PaymentProviderPort {
   }
 
   verifyWebhook(rawBody: Buffer, headers: Record<string, string>): WebhookVerification {
-    // Signature primitive only (the W5-3 route composes it; Stripe requires
-    // the EXACT raw body, so this must run before any JSON parsing).
+    // The W5-3 trust boundary: Stripe requires the EXACT raw body, so this
+    // runs before any JSON parsing. Authority comes ONLY from the endpoint
+    // signing secret (runtime configuration — never a database row).
     const signature = headers['stripe-signature'];
     if (signature === undefined) return { kind: 'rejected', reason: 'malformed' };
     if (this.webhookSecret === undefined) {
       // No endpoint secret configured — nothing can be trusted.
       return { kind: 'rejected', reason: 'invalidSignature' };
     }
-    let event: Stripe.Event;
-    try {
-      event = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      return {
-        kind: 'rejected',
-        reason: /timestamp/i.test(message) ? 'staleTimestamp' : 'invalidSignature',
-      };
+    let event: Stripe.Event | undefined;
+    let rejection: WebhookVerification | undefined;
+    for (const secret of [this.webhookSecret, this.retiringWebhookSecret]) {
+      if (secret === undefined) continue;
+      try {
+        event = this.stripe.webhooks.constructEvent(rawBody, signature, secret);
+        rejection = undefined;
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        rejection = {
+          kind: 'rejected',
+          reason: /timestamp/i.test(message) ? 'staleTimestamp' : 'invalidSignature',
+        };
+        // A stale timestamp is final — the retiring secret cannot fix time.
+        if (rejection.reason === 'staleTimestamp') break;
+      }
     }
-    const object = event.data.object as { id?: unknown };
+    if (event === undefined) {
+      return rejection ?? { kind: 'rejected', reason: 'invalidSignature' };
+    }
+    const object = event.data.object as {
+      id?: unknown;
+      client_reference_id?: unknown;
+      metadata?: { himma_intent_id?: unknown };
+    };
+    const himmaIntentRef =
+      typeof object.client_reference_id === 'string'
+        ? object.client_reference_id
+        : typeof object.metadata?.himma_intent_id === 'string'
+          ? object.metadata.himma_intent_id
+          : undefined;
     return {
       kind: 'verified',
       event: {
@@ -248,6 +273,7 @@ export class StripeDriver implements PaymentProviderPort {
         gatewayEventId: event.id,
         eventType: mapEventType(event.type),
         ...(typeof object.id === 'string' ? { gatewayRef: object.id } : {}),
+        ...(himmaIntentRef !== undefined ? { himmaIntentRef } : {}),
         payloadDigest: rawBodyDigest(rawBody),
         occurredAt: new Date(event.created * 1000),
       },

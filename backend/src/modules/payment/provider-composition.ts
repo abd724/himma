@@ -72,7 +72,15 @@ export function resolvePaymentProvider(
     }
     return {
       kind: 'configured',
-      provider: new StripeDriver({ secretKey: selection.stripe.secretKey }),
+      provider: new StripeDriver({
+        secretKey: selection.stripe.secretKey,
+        ...(selection.stripe.webhookSecret !== undefined
+          ? { webhookSecret: selection.stripe.webhookSecret }
+          : {}),
+        ...(selection.stripe.webhookSecretRetiring !== undefined
+          ? { retiringWebhookSecret: selection.stripe.webhookSecretRetiring }
+          : {}),
+      }),
     };
   }
   return { kind: 'unconfigured', reason: 'no payment provider configured' };

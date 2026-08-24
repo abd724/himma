@@ -31,6 +31,8 @@ import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-tax
 import { registerBookingAdminRoutes } from '../modules/booking/http/booking-admin-routes';
 import { registerBookingCustomerRoutes } from '../modules/booking/http/booking-customer-routes';
 import { registerBookingProviderRoutes } from '../modules/booking/http/booking-provider-routes';
+import { registerPaymentWebhookRoutes } from '../modules/payment/http/payment-webhook-routes';
+import type { PaymentProviderPort } from '../modules/payment/provider-port';
 import { registerCatalogueRoutes } from '../modules/catalogue/http/catalogue-routes';
 import { registerPublicCatalogueRoutes } from '../modules/catalogue/http/public-catalogue-routes';
 import { registerSearchRoutes } from '../modules/catalogue/http/search-routes';
@@ -188,6 +190,15 @@ function adminProductionReady(readiness: AdminProductionReadiness | undefined): 
 export interface BuildAppOptions {
   logger?: boolean;
   identity?: IdentityHttpOptions;
+  /**
+   * W5-3 payment webhook ingress: registers ONLY when a genuinely composed
+   * payment provider exists (docs/33 §13 fail-closed composition — in
+   * production `resolvePaymentProvider` cannot produce one in W5, so the
+   * route is structurally absent there; no flag can conjure it). The
+   * route is Stripe-authenticated (signature over the raw body), never
+   * Himma-authenticated.
+   */
+  payment?: { provider: PaymentProviderPort };
 }
 
 /** Typed error envelope per docs/24 §11.2. */
@@ -452,6 +463,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // identity surface (the customer session policy is its whole gate);
     // the trusted paid-confirmation seam remains route-less by design.
     registerBookingCustomerRoutes(app, { db: identity.db });
+
+    // W5-3 gateway webhook ingress: machine-to-machine, signature-trusted
+    // only, raw-body scope, durable §7.8 receipt before any processing.
+    // Absent entirely (404) unless a composed provider was supplied.
+    if (options.payment !== undefined) {
+      registerPaymentWebhookRoutes(app, {
+        db: identity.db,
+        provider: options.payment.provider,
+      });
+    }
 
     // Provider-private management surface (S3-3). D-S3-5 makes the MFA
     // baseline mandatory on every provider route, and production TOTP

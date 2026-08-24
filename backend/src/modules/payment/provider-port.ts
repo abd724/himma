@@ -133,6 +133,14 @@ export interface VerifiedGatewayEvent {
   gatewayRef?: string;
   /** Opaque financial-transaction id, when the event carries one. */
   gatewayTransactionId?: string;
+  /**
+   * The Himma payment_intent id the event's object was created with
+   * (server-authored at checkout creation: `client_reference_id` /
+   * provider metadata) — the W5-3 fallback mapping when the event does
+   * not carry the checkout-session reference itself. Untrusted alone:
+   * it only ever narrows a lookup, never asserts payment truth.
+   */
+  himmaIntentRef?: string;
   /** Digest of the exact raw payload bytes (stored; the blob is not). */
   payloadDigest: string;
   occurredAt: Date;

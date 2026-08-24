@@ -235,6 +235,7 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
     eventType: NormalizedGatewayEventType;
     gatewayRef?: string;
     gatewayTransactionId?: string;
+    himmaIntentRef?: string;
     occurredAt?: Date;
     /** Overrides for adversarial tests. */
     timestampSeconds?: number;
@@ -245,6 +246,7 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
       type: input.eventType,
       gatewayRef: input.gatewayRef ?? null,
       gatewayTransactionId: input.gatewayTransactionId ?? null,
+      himmaIntentRef: input.himmaIntentRef ?? null,
       occurredAt: (input.occurredAt ?? this.now).toISOString(),
     };
     const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -288,6 +290,7 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
       type?: unknown;
       gatewayRef?: unknown;
       gatewayTransactionId?: unknown;
+      himmaIntentRef?: unknown;
       occurredAt?: unknown;
     };
     try {
@@ -316,6 +319,9 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
       ...(typeof parsed.gatewayRef === 'string' ? { gatewayRef: parsed.gatewayRef } : {}),
       ...(typeof parsed.gatewayTransactionId === 'string'
         ? { gatewayTransactionId: parsed.gatewayTransactionId }
+        : {}),
+      ...(typeof parsed.himmaIntentRef === 'string'
+        ? { himmaIntentRef: parsed.himmaIntentRef }
         : {}),
       payloadDigest: createHmac('sha256', 'dt-digest').update(rawBody).digest('hex'),
       occurredAt:

@@ -36,6 +36,33 @@ export interface DatabaseConfig {
  */
 export interface StripeConfig {
   secretKey: string;
+  /**
+   * Endpoint-specific webhook signing secret (W5-3). Test/sandbox and
+   * eventual live endpoint secrets are DISTINCT configurations; absent →
+   * the webhook trust boundary rejects everything (fail-closed).
+   */
+  webhookSecret?: string;
+  /**
+   * Rotation support: during a secret rollover the RETIRING secret stays
+   * accepted alongside the current one, then is removed. No broader
+   * secret-management framework exists (docs/33 §7.3).
+   */
+  webhookSecretRetiring?: string;
+}
+
+function stripeConfigFrom(env: NodeJS.ProcessEnv): StripeConfig | undefined {
+  if (env.STRIPE_SECRET_KEY === undefined || env.STRIPE_SECRET_KEY === '') return undefined;
+  const stripe: StripeConfig = { secretKey: env.STRIPE_SECRET_KEY };
+  if (env.STRIPE_WEBHOOK_SECRET !== undefined && env.STRIPE_WEBHOOK_SECRET !== '') {
+    stripe.webhookSecret = env.STRIPE_WEBHOOK_SECRET;
+  }
+  if (
+    env.STRIPE_WEBHOOK_SECRET_RETIRING !== undefined &&
+    env.STRIPE_WEBHOOK_SECRET_RETIRING !== ''
+  ) {
+    stripe.webhookSecretRetiring = env.STRIPE_WEBHOOK_SECRET_RETIRING;
+  }
+  return stripe;
 }
 
 export interface BackendConfig {
@@ -107,8 +134,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
       nodeEnv,
       database: parseDatabaseUrl(env.DATABASE_URL),
     };
-    if (env.STRIPE_SECRET_KEY !== undefined && env.STRIPE_SECRET_KEY !== '') {
-      production.stripe = { secretKey: env.STRIPE_SECRET_KEY };
+    const productionStripe = stripeConfigFrom(env);
+    if (productionStripe !== undefined) {
+      production.stripe = productionStripe;
     }
     return production;
   }
@@ -129,8 +157,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
   }
 
   const config: BackendConfig = { nodeEnv, database };
-  if (env.STRIPE_SECRET_KEY !== undefined && env.STRIPE_SECRET_KEY !== '') {
-    config.stripe = { secretKey: env.STRIPE_SECRET_KEY };
+  const stripe = stripeConfigFrom(env);
+  if (stripe !== undefined) {
+    config.stripe = stripe;
   }
   return config;
 }
