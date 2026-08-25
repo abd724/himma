@@ -10,6 +10,25 @@ import type {
 } from '@/types/domain';
 
 /**
+ * Fixture rows always carry the display fields that became OPTIONAL on the
+ * real domain types (ratings, schedule lines, availability flags have no
+ * backend authority) — mock logic may rely on their presence.
+ */
+export interface FixtureProgram extends Program {
+  areaId: string;
+  scheduleLabel: string;
+  availableToday: boolean;
+  runsOnWeekend: boolean;
+  price: NonNullable<Program['price']>;
+  rating: number;
+}
+
+export interface FixtureProvider extends Provider {
+  areaId: string;
+  rating: number;
+}
+
+/**
  * Deterministic demo catalogue — docs/17 §5. Single shared catalogue for
  * Home and Discover. All names are fictional; prices are realistic AED demo
  * values. "Today" is a fixed mock day (see utils/eligibility MOCK_TODAY),
@@ -85,7 +104,7 @@ export const activityTypes: ActivityType[] = [
   { id: 'painting', label: 'Painting', categoryId: 'arts-creativity' },
 ];
 
-export const providers: Provider[] = [
+export const providers: FixtureProvider[] = [
   { id: 'gravity', name: 'Gravity Movement Studio', categories: ['Calisthenics', 'Functional fitness'], areaId: 'khalifa-city', rating: 4.8, verified: true },
   { id: 'falcon', name: 'Falcon Combat Academy', categories: ['Boxing', 'Karate', 'Jiu-jitsu'], areaId: 'khalifa-city', rating: 4.7, verified: true },
   { id: 'blue-wave', name: 'Blue Wave Swimming', categories: ['Swimming', 'Water safety'], areaId: 'al-raha', rating: 4.9, verified: true },
@@ -99,7 +118,7 @@ export const providers: Provider[] = [
   { id: 'coastal-tennis', name: 'Coastal Tennis Academy', categories: ['Tennis'], areaId: 'yas-island', rating: 4.6, verified: true },
 ];
 
-export const programs: Program[] = [
+export const programs: FixtureProgram[] = [
   // ——— Original catalogue (order preserved for Home stability) ———
   {
     id: 'beginner-calisthenics',

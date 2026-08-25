@@ -6,7 +6,7 @@ import { describe, expect, test } from '@jest/globals';
 const service = new MockSearchService();
 
 const suggest = (query: string, participantId = 'everyone') =>
-  service.getSuggestions({ query, participantId, areaId: 'khalifa-city' });
+  service.suggestionsSync({ query, participantId, areaId: 'khalifa-city' });
 
 const search = (query: string, participantId = 'everyone', areaId: any = 'khalifa-city') =>
   service.search({ query, participantId, areaId });
@@ -125,17 +125,17 @@ describe('Participant-aware behavior (docs/16 §4 — ranks, never silently hide
 describe('Recent searches (docs/17 §8 — session-local, clearable)', () => {
   test('deterministic initial examples, add, dedupe, clear', () => {
     const fresh = new MockSearchService();
-    expect(fresh.getPreSearchContent().recentSearches).toEqual(['Kickboxing', 'Robotics for kids']);
+    expect(fresh.preSearchContentSync().recentSearches).toEqual(['Kickboxing', 'Robotics for kids']);
     fresh.addRecentSearch('Padel');
     fresh.addRecentSearch('padel');
-    expect(fresh.getPreSearchContent().recentSearches[0]).toBe('padel');
+    expect(fresh.preSearchContentSync().recentSearches[0]).toBe('padel');
     expect(
-      fresh.getPreSearchContent().recentSearches.filter((r) => r.toLowerCase() === 'padel').length,
+      fresh.preSearchContentSync().recentSearches.filter((r) => r.toLowerCase() === 'padel').length,
     ).toBe(1);
     fresh.addRecentSearch('   ');
-    expect(fresh.getPreSearchContent().recentSearches[0]).toBe('padel');
+    expect(fresh.preSearchContentSync().recentSearches[0]).toBe('padel');
     fresh.clearRecentSearches();
-    expect(fresh.getPreSearchContent().recentSearches).toEqual([]);
+    expect(fresh.preSearchContentSync().recentSearches).toEqual([]);
   });
 });
 

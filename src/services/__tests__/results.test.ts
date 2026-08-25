@@ -63,13 +63,13 @@ describe('Combined filters and counts', () => {
   });
 
   test('every satisfiable dimension narrows: free, setting, format, price band, skill', () => {
-    expect(results('', { free: true }).programs.every((p) => p.price.kind === 'free')).toBe(true);
+    expect(results('', { free: true }).programs.every((p) => p.price!.kind === 'free')).toBe(true);
     expect(results('', { setting: 'outdoor' }).programs.every((p) => p.setting === 'outdoor')).toBe(true);
     expect(
       results('', { formats: ['camp'] }).programs.every((p) => p.isCamp),
     ).toBe(true);
     expect(
-      results('', { priceBand: 'under-100' }).programs.every((p) => priceValue(p.price) < 100),
+      results('', { priceBand: 'under-100' }).programs.every((p) => priceValue(p.price!) < 100),
     ).toBe(true);
     const beginner = results('', { skillLevel: 'beginner' }).programs;
     expect(beginner.length).toBeGreaterThan(0);
@@ -106,12 +106,12 @@ describe('Participant behavior on results', () => {
 
 describe('Sorting (deterministic)', () => {
   test('lowest price sorts ascending', () => {
-    const prices = results('', {}, { sort: 'price' }).programs.map((p) => priceValue(p.price));
+    const prices = results('', {}, { sort: 'price' }).programs.map((p) => priceValue(p.price!));
     expect([...prices].sort((a, b) => a - b)).toEqual(prices);
   });
 
   test('highest rated sorts descending', () => {
-    const ratings = results('', {}, { sort: 'rating' }).programs.map((p) => p.rating);
+    const ratings = results('', {}, { sort: 'rating' }).programs.map((p) => p.rating!);
     expect([...ratings].sort((a, b) => b - a)).toEqual(ratings);
   });
 
@@ -136,7 +136,7 @@ describe('Pagination', () => {
     expect(pageOne.hasMorePrograms).toBe(true);
     expect(pageOne.totalPrograms).toBeGreaterThan(12);
 
-    const lastPage = Math.ceil(pageOne.totalPrograms / 12);
+    const lastPage = Math.ceil(pageOne.totalPrograms! / 12);
     const full = results('', {}, { page: lastPage });
     expect(full.programs.length).toBe(full.totalPrograms);
     expect(full.hasMorePrograms).toBe(false);

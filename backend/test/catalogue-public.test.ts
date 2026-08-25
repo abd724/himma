@@ -257,6 +257,9 @@ const LISTING_DETAIL_KEYS = [
 const LISTING_SUMMARY_KEYS = [
   'activityType',
   'allAges',
+  // RI-2 (owning-slice amendment): public branch area labels — the same
+  // area_label values the detail read serves; location display only.
+  'areaLabels',
   'category',
   'fromPrice',
   'genderEligibility',

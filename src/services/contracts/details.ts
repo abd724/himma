@@ -1,5 +1,3 @@
-import type { ProgramDetailExtras } from '@/data/mock/program-details';
-import type { ProviderDetailExtras } from '@/data/mock/provider-details';
 import type {
   ActivityType,
   AreaId,
@@ -20,6 +18,35 @@ import type { ParticipantSuitability } from '@/utils/eligibility';
  * passed in by the caller (docs/19 pattern) — the service never assumes a
  * fixed household.
  */
+/**
+ * Detail extras — enrichment content beyond the core listing. Every field
+ * without a real backend authority is OPTIONAL and simply absent in real
+ * composition (review counts, instructor bios, packing lists are mock demo
+ * content until their domains exist); surfaces hide absent sections.
+ */
+export interface ProgramDetailExtras {
+  description: string;
+  /** Reviews are a deferred domain — absent in real composition. */
+  reviewCount?: number;
+  included?: string[];
+  bring?: string[];
+  instructorName?: string;
+  instructorTitle?: string;
+  safetyNote?: string;
+  /** Facilities at the hosting venue relevant to this program. */
+  facilities?: string[];
+}
+
+export interface ProviderDetailExtras {
+  description: string;
+  /** Reviews are a deferred domain — absent in real composition. */
+  reviewCount?: number;
+  /** Reuses existing demo image keys; absent = monogram banner (the design). */
+  coverImageKey?: string;
+  facilities?: string[];
+  team?: { name: string; title: string }[];
+}
+
 export interface ProgramDetailInput {
   programId: string;
   /** The selected browsing participant (shared app context). */
@@ -45,7 +72,9 @@ export interface ProgramDetailPage {
   sessions: SessionOccurrence[];
   /** Present only when the provider has explicit branches. */
   branch?: ProviderBranch;
-  policy: CancellationPolicy;
+  /** Absent until the real policy snapshot arrives with the RI-3 quote —
+   *  no public policy authority exists; the section hides. */
+  policy?: CancellationPolicy;
   /** Selected participant's suitability; undefined for `everyone` and guests. */
   suitability?: ParticipantSuitability;
   /** Every real household participant, primary first (recovery chips). */
@@ -85,7 +114,8 @@ export interface ProviderStorefrontPage {
   /** ≥ 1: explicit branches, or the implicit primary at the provider's area. */
   branches: ProviderBranch[];
   selectedBranch: ProviderBranch;
-  policy: CancellationPolicy;
+  /** Absent until the real policy snapshot arrives with the RI-3 quote. */
+  policy?: CancellationPolicy;
   /**
    * Branch-filtered programs the selected participant can join, grouped by
    * category in taxonomy order. Child context: eligible only; adult context:

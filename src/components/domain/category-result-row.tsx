@@ -8,7 +8,8 @@ import { StyleSheet, Text, View } from 'react-native';
 
 interface Props {
   category: Category;
-  programCount: number;
+  /** Shown only when an EXACT count is known — never estimated. */
+  programCount?: number;
   /** Opens the category page (docs/15 §4.2). */
   onPress?: () => void;
 }
@@ -20,7 +21,11 @@ interface Props {
 export function CategoryResultRow({ category, programCount, onPress }: Props) {
   return (
     <PressableFeedback
-      accessibilityLabel={`${category.label} category, ${programCount} activities`}
+      accessibilityLabel={
+        programCount !== undefined
+          ? `${category.label} category, ${programCount} activities`
+          : `${category.label} category`
+      }
       onPress={onPress}
       style={styles.card}
     >
@@ -29,7 +34,9 @@ export function CategoryResultRow({ category, programCount, onPress }: Props) {
         <Text style={styles.label} numberOfLines={1}>
           {category.label}
         </Text>
-        <Text style={styles.count}>{programCount} activities</Text>
+        {programCount !== undefined ? (
+          <Text style={styles.count}>{programCount} activities</Text>
+        ) : null}
       </View>
       <Ionicons name="chevron-forward" size={16} color={colors.text.secondary} />
     </PressableFeedback>

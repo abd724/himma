@@ -1,3 +1,4 @@
+import type { FixtureProgram } from '@/data/mock/catalogue';
 import { bookingExtras } from '@/data/mock/booking-extras';
 import { programs, providers } from '@/data/mock/catalogue';
 import { cancellationPolicies } from '@/data/mock/policies';
@@ -14,7 +15,7 @@ import type {
   SessionOption,
 } from '@/services/contracts/booking';
 import { buildUpcomingSessions } from '@/services/mock/mock-details-service';
-import type { PriceModel, Program, SessionOccurrence } from '@/types/domain';
+import type { PriceModel, SessionOccurrence } from '@/types/domain';
 import { householdSuitability, MOCK_TODAY } from '@/utils/eligibility';
 import { formatPrice } from '@/utils/price';
 
@@ -49,6 +50,7 @@ function toSessionOption(occurrence: SessionOccurrence, branchLabel?: string): S
  */
 function optionPriceLabel(price: PriceModel): string {
   const amount = formatPrice(price).amount;
+  if (price.kind === 'from') return amount;
   switch (price.kind) {
     case 'dropIn':
       return `${amount} per session`;
@@ -71,7 +73,7 @@ function optionPriceLabel(price: PriceModel): string {
  * default single week derives from the "10–14 August · 9 AM–1 PM" schedule
  * label; multi-week camps override via booking extras.
  */
-function campWeekOptions(program: Program): SessionOption[] {
+function campWeekOptions(program: FixtureProgram): SessionOption[] {
   const timeLabel = program.scheduleLabel.split('·')[1]?.trim() ?? '';
   const explicit = bookingExtras[program.id]?.campWeeks;
   if (explicit !== undefined) {
@@ -119,7 +121,7 @@ function summarySelectionLines(
  * no VAT, no fees, no discount arithmetic (docs/09 §21.10).
  */
 function summaryPriceLine(
-  program: Program,
+  program: FixtureProgram,
   option: BookingOption,
   session: SessionOption | undefined,
 ): { label: string; value: string } {
@@ -152,7 +154,7 @@ function summaryPriceLine(
  * `Total`, so no legally final checkout total is implied before VAT and fee
  * decisions exist. Cadences stay cadence-labelled (docs/09 §21.10).
  */
-function summaryBookingPriceLabel(program: Program, option: BookingOption): string {
+function summaryBookingPriceLabel(program: FixtureProgram, option: BookingOption): string {
   const amount = formatPrice(program.price).amount;
   switch (option.kind) {
     case 'single-session':
@@ -235,7 +237,7 @@ export class MockBookingService implements BookingService {
     };
   }
 
-  private buildOptions(program: Program): BookingOption[] {
+  private buildOptions(program: FixtureProgram): BookingOption[] {
     const extras = programDetailExtras[program.id];
     const branchLabel = providerBranches[program.providerId]?.find(
       (entry) => entry.id === extras.branchId,
@@ -420,8 +422,9 @@ export class MockBookingService implements BookingService {
       option,
       session,
       selectionLines: summarySelectionLines(option, session),
-      priceLines: [summaryPriceLine(page.program, option, session)],
-      bookingPriceLabel: summaryBookingPriceLabel(page.program, option),
+      // The mock page is always built from fixture rows.
+      priceLines: [summaryPriceLine(page.program as FixtureProgram, option, session)],
+      bookingPriceLabel: summaryBookingPriceLabel(page.program as FixtureProgram, option),
       offerLine,
       policy,
     };

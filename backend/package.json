@@ -19,7 +19,8 @@
     "db:seed-admins": "tsx scripts/db-seed-admins.ts",
     "stripe:smoke": "tsx scripts/stripe-sandbox-smoke.ts",
     "bootstrap:admins": "tsx scripts/db-bootstrap-admins.ts",
-    "dev:server": "tsx scripts/dev-server.ts"
+    "dev:server": "tsx scripts/dev-server.ts",
+    "dev:seed": "tsx scripts/dev-seed.ts"
   },
   "dependencies": {
     "@fastify/type-provider-typebox": "^5.2.0",

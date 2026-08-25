@@ -12,7 +12,6 @@ import { ProviderCard } from '@/components/domain/provider-card';
 import { QuickFilterRow } from '@/components/domain/quick-filter-row';
 import { SearchEntryButton } from '@/components/domain/search-entry-button';
 import { SectionHeader } from '@/components/ui/section-header';
-import { collections, providers } from '@/data/mock/catalogue';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { DiscoverSkeleton } from '@/features/discover/discover-skeleton';
 import { needsBroadSession } from '@/features/map/map-navigation';
@@ -24,21 +23,18 @@ import {
   type FilterSelection,
   type QuickFilterId,
 } from '@/services/contracts/filters';
-import { discoverFeedService, searchService } from '@/services/composition';
+import { discoverFeedService } from '@/services/composition';
 import { useAccount } from '@/state/account-context';
 import { useAreaContext } from '@/state/area-context';
-import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession } from '@/state/results-session-context';
+import { useTaxonomy } from '@/state/use-taxonomy';
 import { colors, dockTokens, pagePadding, spacing } from '@/theme';
 import type { BrowseEntry } from '@/types/domain';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const providerNameById = new Map(providers.map((provider) => [provider.id, provider.name]));
-const collectionById = new Map(collections.map((collection) => [collection.id, collection]));
 
 /**
  * HMA-005 — the visual marketplace catalogue (docs/14 §2). Quick chips
@@ -55,7 +51,7 @@ export function DiscoverScreen() {
   const account = useAccount();
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
-  const { isFavourite, toggleFavourite } = useFavourites();
+  const { taxonomy } = useTaxonomy();
   const { openProgram, openProvider } = useDetailNavigation();
   const session = useResultsSession();
 
@@ -108,7 +104,7 @@ export function DiscoverScreen() {
   };
 
   const openCollection = (collectionId: string) => {
-    const collection = collectionById.get(collectionId);
+    const collection = (taxonomy?.collections ?? []).find((entry) => entry.id === collectionId);
     if (collection !== undefined) openPresetResults(collectionFilterSelection(collection));
   };
 
@@ -144,11 +140,6 @@ export function DiscoverScreen() {
     setFilterSheetOpen(false);
     openPresetResults(draftFilters);
   };
-
-  const draftCount = useMemo(
-    () => searchService.countResults({ query: '', participantId, areaId, filters: draftFilters }),
-    [participantId, areaId, draftFilters],
-  );
 
   const participantLabel =
     participants.find((participant) => participant.id === participantId)?.label ?? 'Everyone';
@@ -242,12 +233,10 @@ export function DiscoverScreen() {
                         <ProgramCard
                           key={program.id}
                           program={program}
-                          providerName={providerNameById.get(program.providerId) ?? ''}
-                          areaLabel={areaLabelById.get(program.areaId) ?? ''}
+                          providerName={program.providerName ?? ''}
+                          areaLabel={program.areaLabel ?? ''}
                           scheduleOverride={section.scheduleOverrides?.[program.id]}
                           showAgeRange
-                          isFavourite={isFavourite('program', program.id)}
-                          onToggleFavourite={(id) => toggleFavourite('program', id)}
                           onPress={() => openProgram(program.id)}
                         />
                       ))}
@@ -258,7 +247,8 @@ export function DiscoverScreen() {
 
               {feed.providers.length > 0 ? (
                 <View>
-                  <SectionHeader title="Popular providers" />
+                  {/* No popularity authority exists — plain "Providers". */}
+                  <SectionHeader title="Providers" />
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -268,7 +258,7 @@ export function DiscoverScreen() {
                       <ProviderCard
                         key={provider.id}
                         provider={provider}
-                        areaLabel={areaLabelById.get(provider.areaId) ?? ''}
+                        areaLabel={provider.areaLabel ?? ''}
                         onPress={() => openProvider(provider.id)}
                       />
                     ))}
@@ -292,7 +282,6 @@ export function DiscoverScreen() {
       <FilterSheet
         visible={filterSheetOpen}
         filters={draftFilters}
-        resultCount={draftCount}
         onChange={setDraftFilters}
         onClearAll={() => setDraftFilters(quickFilterSelection(undefined))}
         onClose={() => setFilterSheetOpen(false)}

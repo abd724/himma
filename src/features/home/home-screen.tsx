@@ -5,14 +5,13 @@ import { LocationSheet } from '@/components/domain/location-sheet';
 import { ProgramCard } from '@/components/domain/program-card';
 import { SearchEntryButton } from '@/components/domain/search-entry-button';
 import { SectionHeader } from '@/components/ui/section-header';
-import { collections, providers } from '@/data/mock/catalogue';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { HomeActionCard } from '@/features/home/home-action-card';
 import { HomeSkeleton } from '@/features/home/home-skeleton';
 import { PlanCard } from '@/features/home/plan-card';
 import { UpcomingActivityCard } from '@/features/home/upcoming-activity-card';
 import { WeekStrip } from '@/features/home/week-strip';
-import { collectionFilterSelection, type FilterSelection } from '@/services/contracts/filters';
+import type { FilterSelection } from '@/services/contracts/filters';
 import {
   toHomeFeedBuildInput,
   type HomeFeed,
@@ -22,18 +21,12 @@ import { homeFeedService } from '@/services/composition';
 import { useAccount } from '@/state/account-context';
 import { useAuth } from '@/state/auth-context';
 import { useAreaContext } from '@/state/area-context';
-import { useFavourites } from '@/state/favourites-context';
 import { useResultsSession } from '@/state/results-session-context';
 import { colors, dockTokens, pagePadding, spacing } from '@/theme';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const providerNameById = new Map(providers.map((provider) => [provider.id, provider.name]));
-
-/** The guest welcome card's action resolves to the seasonal indoor collection. */
-const summerCollection = collections.find((collection) => collection.id === 'beat-the-heat');
 
 /** Section titles for schedule kinds — docs/18 §4. */
 const SECTION_TITLES = { upcoming: 'Upcoming activity', week: 'Your week', plans: 'Continue your routine' } as const;
@@ -54,7 +47,6 @@ export function HomeScreen() {
   const account = useAccount();
   const auth = useAuth();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
-  const { isFavourite, toggleFavourite } = useFavourites();
   const { openProgram } = useDetailNavigation();
 
   const [feed, setFeed] = useState<HomeFeed | null>(null);
@@ -84,18 +76,19 @@ export function HomeScreen() {
 
   const renderSection = (section: HomeSection) => {
     switch (section.kind) {
-      case 'welcome':
+      case 'welcome': {
+        // The hero action is DATA-driven: the feed supplies the preset.
+        const actionFilters = section.content.actionFilters;
         return (
           <HeroCard
             key="welcome"
             hero={section.content}
             onPressAction={
-              summerCollection === undefined
-                ? undefined
-                : () => openPresetResults(collectionFilterSelection(summerCollection))
+              actionFilters === undefined ? undefined : () => openPresetResults(actionFilters)
             }
           />
         );
+      }
       case 'upcoming':
         return (
           <View key="upcoming">
@@ -132,11 +125,9 @@ export function HomeScreen() {
                 <ProgramCard
                   key={program.id}
                   program={program}
-                  providerName={providerNameById.get(program.providerId) ?? ''}
-                  areaLabel={areaLabelById.get(program.areaId) ?? ''}
+                  providerName={program.providerName ?? ''}
+                  areaLabel={program.areaLabel ?? ''}
                   showAgeRange
-                  isFavourite={isFavourite('program', program.id)}
-                  onToggleFavourite={(id) => toggleFavourite('program', id)}
                   onPress={() => openProgram(program.id)}
                 />
               ))}

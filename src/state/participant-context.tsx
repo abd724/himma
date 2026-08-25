@@ -1,4 +1,3 @@
-import { participants as catalogueParticipants } from '@/data/mock/catalogue';
 import { useAccount } from '@/state/account-context';
 import type { Participant, ParticipantId } from '@/types/domain';
 import { createContext, useContext, useMemo, useState, type PropsWithChildren } from 'react';
@@ -11,7 +10,8 @@ interface ParticipantContextValue {
 
 const ParticipantContext = createContext<ParticipantContextValue | undefined>(undefined);
 
-const everyone = catalogueParticipants.find((participant) => participant.kind === 'everyone');
+/** The structural browsing-context entry — not a person, never persisted. */
+const everyone: Participant = { id: 'everyone', label: 'Everyone', kind: 'everyone' };
 
 /**
  * One app-level browsing context shared by Discover, Search, and Results —
@@ -25,10 +25,7 @@ export function ParticipantProvider({ children }: PropsWithChildren) {
   const [participantId, setParticipantId] = useState<ParticipantId>('everyone');
   const value = useMemo(
     () => ({
-      participants:
-        account.account === null || everyone === undefined
-          ? []
-          : [everyone, ...account.participants],
+      participants: account.account === null ? [] : [everyone, ...account.participants],
       participantId,
       setParticipantId,
     }),

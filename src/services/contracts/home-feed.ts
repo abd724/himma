@@ -4,6 +4,7 @@ import type {
   ResolvedAccount,
   ScheduleEntry,
 } from '@/services/contracts/schedule';
+import type { FilterSelection } from '@/services/contracts/filters';
 import type { Area, AreaId, CreditSummary, Participant, Program } from '@/types/domain';
 
 export interface HeroContent {
@@ -12,6 +13,9 @@ export interface HeroContent {
   subtitle: string;
   actionLabel: string;
   imageKey: string;
+  /** Preset the hero action opens as a fresh Results session — data-driven,
+   *  never hard-coded in the screen. */
+  actionFilters?: FilterSelection;
 }
 
 export interface WeekDay {
@@ -73,5 +77,5 @@ export interface HomeFeed {
  */
 export interface HomeFeedService {
   getHomeFeed(input: HomeFeedBuildInput): Promise<HomeFeed>;
-  getAreas(): Area[];
+  getAreas(): Promise<Area[]>;
 }

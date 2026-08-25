@@ -35,6 +35,9 @@ export const FEW_LEFT_THRESHOLD = 3;
 export interface AvailabilityView {
   unitId: string;
   kind: UnitKind;
+  /** The unit's branch — public location identity (D-RI-4): every branch is
+   *  already served on the public listing/storefront projections. */
+  branchId: string;
   startAt: string | null;
   endAt: string | null;
   startDate: string | null;
@@ -68,6 +71,7 @@ export async function listAvailability(
     const rows = await sql<{
       id: string;
       state: string;
+      branch_id: string;
       capacity: number;
       booked_count: number;
       effective_held: string;
@@ -80,7 +84,7 @@ export async function listAvailability(
       effective_start: Date | null;
       effective_end: Date | null;
     }>`
-      SELECT u.id, u.state, u.capacity, u.booked_count,
+      SELECT u.id, u.state, u.branch_id, u.capacity, u.booked_count,
              -- EFFECTIVE domain truth (owner probe): a lapsed-but-unswept
              -- hold physically keeps state='active' and its held_count seat
              -- until an authoritative S5-2 boundary settles it, but it is no
@@ -135,6 +139,7 @@ export async function listAvailability(
       return {
         unitId: row.id,
         kind: input.unitKind,
+        branchId: row.branch_id,
         startAt: row.start_at === null ? null : row.start_at.toISOString(),
         endAt: row.end_at === null ? null : row.end_at.toISOString(),
         startDate: isoDate(row.start_date),

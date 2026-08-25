@@ -3,6 +3,7 @@ import type {
   AreaId,
   Category,
   CategoryId,
+  Participant,
   ParticipantId,
   Program,
   Provider,
@@ -11,7 +12,9 @@ import type {
 /** A category with its deterministic total supply (drives HMA-011 ordering). */
 export interface CategoryListing {
   category: Category;
-  programCount: number;
+  /** Absent when no exact supply count is known (real composition serves
+   *  no catalogue-wide counts — nothing is estimated). */
+  programCount?: number;
 }
 
 /**
@@ -22,7 +25,7 @@ export interface LensListing {
   collectionId: string;
   label: string;
   imageKey: string;
-  programCount: number;
+  programCount?: number;
 }
 
 export interface AllCategoriesListing {
@@ -34,12 +37,14 @@ export interface AllCategoriesListing {
 export interface CataloguePageInput {
   areaId: AreaId;
   participantId: ParticipantId;
+  /** Selected browsing participant — child context narrows by age (server-side). */
+  participant?: Participant;
 }
 
 /** An activity type with its participant-visible supply. */
 export interface ActivityTypeCount {
   activityType: ActivityType;
-  programCount: number;
+  programCount?: number;
 }
 
 export interface CategoryPage {
@@ -50,8 +55,9 @@ export interface CategoryPage {
   providers: Provider[];
   /** Offer-bearing subset; the section collapses when empty. */
   offerPrograms: Program[];
-  /** Participant-visible supply — drives the honest weak-supply state. */
-  visibleProgramCount: number;
+  /** Participant-visible supply — drives the honest weak-supply state.
+   *  Absent when the count is not exactly known. */
+  visibleProgramCount?: number;
 }
 
 export interface ActivityTypePage {

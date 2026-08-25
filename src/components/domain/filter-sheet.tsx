@@ -1,7 +1,7 @@
 import { Chip } from '@/components/ui/chip';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
-import { activityTypes, areas, categories } from '@/data/mock/catalogue';
 import type { FilterSelection, PriceBand, ProgramFormatFilter } from '@/services/contracts/filters';
+import { useTaxonomy } from '@/state/use-taxonomy';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { colors, fontFamily, radii, shadows, spacing, typography } from '@/theme';
 import type { CategoryId, SkillLevel } from '@/types/domain';
@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 interface Props {
   visible: boolean;
   filters: FilterSelection;
-  resultCount: number;
   onChange: (filters: FilterSelection) => void;
   onClearAll: () => void;
   onClose: () => void;
@@ -53,9 +52,15 @@ const skillOptions: Exclude<SkillLevel, 'all-levels'>[] = ['beginner', 'intermed
  * (docs/17 §10). Conditional rows appear only when meaningful — no disabled
  * control lists.
  */
-export function FilterSheet({ visible, filters, resultCount, onChange, onClearAll, onClose, onApply }: Props) {
+export function FilterSheet({ visible, filters, onChange, onClearAll, onClose, onApply }: Props) {
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
+  // Real taxonomy — the area/category/activity option lists are server
+  // truth, never fixtures.
+  const { taxonomy } = useTaxonomy();
+  const categories = taxonomy?.categories ?? [];
+  const activityTypes = taxonomy?.activityTypes ?? [];
+  const areas = taxonomy?.areas ?? [];
 
   const patch = (partial: Partial<FilterSelection>) => onChange({ ...filters, ...partial });
   const single = <T,>(current: T | undefined, next: T): T | undefined =>
@@ -151,39 +156,8 @@ export function FilterSheet({ visible, filters, resultCount, onChange, onClearAl
               </Row>
             </Group>
 
-            <Group title="When">
-              <Row>
-                <Chip
-                  label="Today"
-                  selected={filters.when === 'today'}
-                  accessibilityRole="radio"
-                  onPress={() => patch({ when: single(filters.when, 'today') })}
-                />
-                <Chip
-                  label="This weekend"
-                  selected={filters.when === 'weekend'}
-                  accessibilityRole="radio"
-                  onPress={() => patch({ when: single(filters.when, 'weekend') })}
-                />
-                <Chip
-                  label="After school"
-                  selected={filters.afterSchool}
-                  accessibilityRole="checkbox"
-                  onPress={() => patch({ afterSchool: !filters.afterSchool })}
-                />
-              </Row>
-            </Group>
-
             <Group title="Where">
               <Row>
-                <Chip
-                  label="Near me"
-                  icon="navigate-outline"
-                  selected={filters.nearMe}
-                  accessibilityRole="checkbox"
-                  onPress={() => patch({ nearMe: !filters.nearMe })}
-                  accessibilityHint="Shows the closest activities first"
-                />
                 {areas.map((area) => (
                   <Chip
                     key={area.id}
@@ -286,13 +260,6 @@ export function FilterSheet({ visible, filters, resultCount, onChange, onClearAl
                   onPress={() => patch({ free: !filters.free })}
                 />
                 <Chip
-                  label="Offers"
-                  icon="pricetag-outline"
-                  selected={filters.offers}
-                  accessibilityRole="checkbox"
-                  onPress={() => patch({ offers: !filters.offers })}
-                />
-                <Chip
                   label="Free trial"
                   selected={filters.trial}
                   accessibilityRole="checkbox"
@@ -301,38 +268,31 @@ export function FilterSheet({ visible, filters, resultCount, onChange, onClearAl
               </Row>
             </Group>
 
-            <Group title="More">
-              <Row>
-                {showSkill
-                  ? skillOptions.map((skill) => (
-                      <Chip
-                        key={skill}
-                        label={skill[0].toUpperCase() + skill.slice(1)}
-                        selected={filters.skillLevel === skill}
-                        accessibilityRole="radio"
-                        onPress={() => patch({ skillLevel: single(filters.skillLevel, skill) })}
-                      />
-                    ))
-                  : null}
-                <Chip
-                  label="Top rated 4.8+"
-                  icon="star-outline"
-                  selected={filters.topRated}
-                  accessibilityRole="checkbox"
-                  onPress={() => patch({ topRated: !filters.topRated })}
-                />
-              </Row>
-            </Group>
+            {showSkill ? (
+              <Group title="Skill level">
+                <Row>
+                  {skillOptions.map((skill) => (
+                    <Chip
+                      key={skill}
+                      label={skill[0].toUpperCase() + skill.slice(1)}
+                      selected={filters.skillLevel === skill}
+                      accessibilityRole="radio"
+                      onPress={() => patch({ skillLevel: single(filters.skillLevel, skill) })}
+                    />
+                  ))}
+                </Row>
+              </Group>
+            ) : null}
           </ScrollView>
 
+          {/* No live count: result totals are server truth and shown on the
+              results list itself — nothing is estimated here. */}
           <PressableFeedback
             onPress={onApply ?? onClose}
-            accessibilityLabel={`Show ${resultCount} ${resultCount === 1 ? 'activity' : 'activities'}`}
+            accessibilityLabel="Show results"
             style={styles.apply}
           >
-            <Text style={styles.applyLabel}>
-              Show {resultCount} {resultCount === 1 ? 'activity' : 'activities'}
-            </Text>
+            <Text style={styles.applyLabel}>Show results</Text>
           </PressableFeedback>
         </View>
       </View>
@@ -352,6 +312,7 @@ function clearedShape(filters: FilterSelection): Partial<FilterSelection> {
     nearMe: false,
     categoryId: undefined,
     activityTypeId: undefined,
+    collectionId: undefined,
     formats: filters.formats.length === 0 ? filters.formats : [],
     setting: undefined,
     priceBand: undefined,

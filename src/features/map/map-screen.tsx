@@ -8,14 +8,14 @@ import { SkeletonBlock } from '@/components/ui/skeleton-block';
 import { AreaNode } from '@/features/map/area-node';
 import { listDestination, parseMapOrigin } from '@/features/map/map-navigation';
 import type { MapView as MapViewData } from '@/services/contracts/map';
-import { mapService, searchService } from '@/services/composition';
+import { mapService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession } from '@/state/results-session-context';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -87,19 +87,6 @@ export function MapScreen() {
     simulateFailure,
     simulateMissingCounts,
   ]);
-
-  const resultCountForSheet = useMemo(() => {
-    try {
-      return searchService.countResults({
-        query: session.query,
-        participantId,
-        areaId,
-        filters: session.filters,
-      });
-    } catch {
-      return 0;
-    }
-  }, [session.query, session.filters, participantId, areaId]);
 
   /** Back always lands on the exact origin; a cold link falls back to Discover. */
   const goBack = () => {
@@ -283,7 +270,6 @@ export function MapScreen() {
       <FilterSheet
         visible={filterSheetOpen}
         filters={session.filters}
-        resultCount={resultCountForSheet}
         onChange={session.setFilters}
         onClearAll={session.clearFilters}
         onClose={() => setFilterSheetOpen(false)}

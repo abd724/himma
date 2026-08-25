@@ -2,17 +2,21 @@ import { Chip } from '@/components/ui/chip';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { providerHref } from '@/features/details/detail-navigation';
 import { resultsNavigationAction, type SearchOrigin } from '@/features/search/search-navigation';
-import { collections } from '@/data/mock/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
-import type { SearchSuggestion, SuggestionKind } from '@/services/contracts/search';
+import type {
+  BrowseEntry,
+  Collection as DomainCollection,
+} from '@/types/domain';
+import type { PreSearchContent, SearchSuggestion, SuggestionKind } from '@/services/contracts/search';
 import { searchService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession, type ResultsTab } from '@/state/results-session-context';
+import { useTaxonomy } from '@/state/use-taxonomy';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -62,18 +66,39 @@ export function SearchScreen() {
   const origin: SearchOrigin = params.origin === 'results' ? 'results' : undefined;
   const [query, setQuery] = useState(typeof params.q === 'string' ? params.q : '');
   const [recentsVersion, setRecentsVersion] = useState(0);
+  const { taxonomy } = useTaxonomy();
 
-  const preSearch = useMemo(
-    () => searchService.getPreSearchContent(),
+  const [preSearch, setPreSearch] = useState<PreSearchContent>({
+    recentSearches: [],
+    popularSearches: [],
+    categoryShortcuts: [],
+  });
+  useEffect(() => {
+    let cancelled = false;
+    searchService.getPreSearchContent().then((content) => {
+      if (!cancelled) setPreSearch(content);
+    });
+    return () => {
+      cancelled = true;
+    };
     // Re-read when recents change (session-local service state).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [recentsVersion],
-  );
+  }, [recentsVersion]);
 
-  const suggestions = useMemo(
-    () => searchService.getSuggestions({ query, participantId, areaId }),
-    [query, participantId, areaId],
-  );
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    searchService.getSuggestions({ query, participantId, areaId }).then(
+      (rows) => {
+        if (!cancelled) setSuggestions(rows);
+      },
+      () => {
+        if (!cancelled) setSuggestions([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [query, participantId, areaId]);
 
   const close = () => {
     if (router.canGoBack()) router.back();
@@ -123,7 +148,7 @@ export function SearchScreen() {
   };
 
   /** Pre-typing category shortcuts route like the browse tiles (docs/15 §4.2). */
-  const openBrowseShortcut = (entry: (typeof preSearch.categoryShortcuts)[number]) => {
+  const openBrowseShortcut = (entry: BrowseEntry) => {
     if (entry.target.kind === 'category') {
       pushOnDiscoverStack(`/discover/category/${entry.target.categoryId}`);
       return;
@@ -133,7 +158,9 @@ export function SearchScreen() {
       return;
     }
     const collectionId = entry.target.collectionId;
-    const collection = collections.find((candidate) => candidate.id === collectionId);
+    const collection: DomainCollection | undefined = (taxonomy?.collections ?? []).find(
+      (candidate) => candidate.id === collectionId,
+    );
     if (collection === undefined) return;
     resultsSession.newSearch('', 'programs');
     resultsSession.setFilters(collectionFilterSelection(collection));
@@ -242,18 +269,20 @@ export function SearchScreen() {
                 </View>
               ) : null}
 
-              <View>
-                <Text style={styles.groupTitle}>Popular searches</Text>
-                {preSearch.popularSearches.map((popular) => (
-                  <SuggestionRowButton
-                    key={popular}
-                    icon="trending-up"
-                    label={popular}
-                    accessibilityLabel={`${popular}, popular search`}
-                    onPress={() => submit(popular)}
-                  />
-                ))}
-              </View>
+              {preSearch.popularSearches.length > 0 ? (
+                <View>
+                  <Text style={styles.groupTitle}>Popular searches</Text>
+                  {preSearch.popularSearches.map((popular) => (
+                    <SuggestionRowButton
+                      key={popular}
+                      icon="trending-up"
+                      label={popular}
+                      accessibilityLabel={`${popular}, popular search`}
+                      onPress={() => submit(popular)}
+                    />
+                  ))}
+                </View>
+              ) : null}
 
               <View>
                 <Text style={styles.groupTitle}>Browse by category</Text>

@@ -186,7 +186,7 @@ export function BookingSummaryScreen() {
                   ) : null}
                 </View>
                 <Text style={styles.programMeta} numberOfLines={1}>
-                  {areaLabelById.get(summary.program.areaId) ?? ''}
+                  {areaLabelById.get(summary.program.areaId ?? '') ?? summary.program.areaLabel ?? ''}
                   {summary.branch === undefined ? '' : ` · ${summary.branch.label}`}
                 </Text>
               </View>

@@ -30,6 +30,7 @@ import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-m
 import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-taxonomy-routes';
 import { registerBookingAdminRoutes } from '../modules/booking/http/booking-admin-routes';
 import { registerBookingCustomerRoutes } from '../modules/booking/http/booking-customer-routes';
+import { registerBookingPublicRoutes } from '../modules/booking/http/booking-public-routes';
 import { registerBookingProviderRoutes } from '../modules/booking/http/booking-provider-routes';
 import { registerPaymentWebhookRoutes } from '../modules/payment/http/payment-webhook-routes';
 import type { PaymentProviderPort } from '../modules/payment/provider-port';
@@ -474,6 +475,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerSearchRoutes(app, {
       searchPort: new PostgresSearchReadPort({ db: identity.db }),
     });
+
+    // Customer-public availability read (RI-2, docs/34 §12.1 D-RI-4): the
+    // certified S5-5 availability projection served without login — same
+    // posture as the other public projections, one shared effective-truth
+    // calculation, never counters.
+    registerBookingPublicRoutes(app, { db: identity.db });
 
     // Customer booking surface (S5-5, docs/32 §12; W5-5, docs/33 §15):
     // authenticatedCustomer routes over the certified S5-2/S5-3 domain —

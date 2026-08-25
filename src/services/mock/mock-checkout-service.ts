@@ -30,6 +30,7 @@ import { priceLabel, spokenLabel } from '@/utils/price';
  */
 function oneOffAmount(summary: BookingSummary, option: BookingOption): number | undefined {
   const price = summary.program.price;
+  if (price === undefined) return undefined;
   switch (option.kind) {
     case 'single-session':
       return price.kind === 'dropIn' ? price.amount : undefined;
@@ -223,7 +224,7 @@ export class MockCheckoutService implements CheckoutService {
     const validation: CheckoutValidation =
       input.qaRevalidate === undefined
         ? { ok: true }
-        : { ok: false, issues: [revalidationIssue(input.qaRevalidate, summary.program.price)] };
+        : { ok: false, issues: [revalidationIssue(input.qaRevalidate, summary.program.price!)] };
 
     return {
       summary,

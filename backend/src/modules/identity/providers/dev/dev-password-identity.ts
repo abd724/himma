@@ -91,10 +91,25 @@ export class DevPasswordIdentityProvider
   private readonly ttlSeconds: number;
   private readonly now: () => Date;
   private serial = 0;
+  /**
+   * Boot-unique identifier prefix. The dev database PERSISTS identities and
+   * login_sessions across dev-server restarts, while this in-memory store
+   * does not — a bare per-process counter would re-issue yesterday's
+   * `dev-sub-N`/`dev-origin-N` pairs and collide with retired/expired rows
+   * in the certified core (surfacing as sessionExpired right after a fresh
+   * sign-up). Never security-relevant: this provider is dev-only and
+   * structurally impossible in production.
+   */
+  private readonly bootId: string;
 
   constructor(options: DevPasswordIdentityOptions = {}) {
     this.ttlSeconds = options.accessTokenTtlSeconds ?? DEFAULT_ACCESS_TTL_SECONDS;
     this.now = options.now ?? (() => new Date());
+    this.bootId = `${Date.now().toString(36)}${randomBytes(3).toString('hex')}`;
+  }
+
+  private nextId(kind: string): string {
+    return `dev-${kind}-${this.bootId}-${(this.serial += 1)}`;
   }
 
   // -- token acquisition (the Cognito-client stand-in surface) -------------
@@ -107,7 +122,7 @@ export class DevPasswordIdentityProvider
     const salt = randomBytes(16);
     const displayName = input.displayName?.trim();
     const user: DevUser = {
-      subject: `dev-sub-${(this.serial += 1)}`,
+      subject: this.nextId('sub'),
       email,
       ...(displayName !== undefined && displayName.length > 0 ? { displayName } : {}),
       salt,
@@ -171,10 +186,10 @@ export class DevPasswordIdentityProvider
     // A fresh provider session per sign-in/sign-up: new originJti (a revoked
     // Himma session permanently retires its originJti — logout is final for
     // that provider session, exactly the certified semantics).
-    const originJti = `dev-origin-${(this.serial += 1)}`;
+    const originJti = this.nextId('origin');
     const authTime = this.now();
     const access = this.issueAccessToken(user, originJti, authTime);
-    const idToken = `dev-id-${(this.serial += 1)}`;
+    const idToken = this.nextId('id');
     this.idTokens.set(idToken, {
       provider: 'email',
       issuer: DEV_IDENTITY_ISSUER,
@@ -185,7 +200,7 @@ export class DevPasswordIdentityProvider
       assurance: 'single_factor',
       ...(user.displayName !== undefined ? { displayName: user.displayName } : {}),
     });
-    const refreshToken = `dev-refresh-${(this.serial += 1)}`;
+    const refreshToken = this.nextId('refresh');
     this.refreshStore.set(refreshToken, { subject: user.subject, originJti });
     return { accessToken: access.token, idToken, refreshToken, expiresAt: access.expiresAt };
   }
@@ -195,7 +210,7 @@ export class DevPasswordIdentityProvider
     originJti: string,
     authTime?: Date,
   ): { token: string; expiresAt: Date } {
-    const token = `dev-access-${(this.serial += 1)}`;
+    const token = this.nextId('access');
     const expiresAt = new Date(this.now().getTime() + this.ttlSeconds * 1000);
     this.accessTokens.set(token, {
       issuer: DEV_IDENTITY_ISSUER,

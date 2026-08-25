@@ -209,6 +209,10 @@ export interface PublicListingSummary {
   fromPrice: PublicFromPrice;
   /** Deduplicated kinds of currently applicable offers — badge data only. */
   offerBadges: string[];
+  /** RI-2 (additive): the listing's public branch area labels, deduplicated
+   *  in stable branch order — the same `branch.area_label` values the
+   *  detail read already serves; display/location identity only. */
+  areaLabels: string[];
 }
 
 export type ReadPublicListingResult =
@@ -634,15 +638,42 @@ export interface PublicSearchResult extends PublicListingSummary {
 
 /** Builds the public summary projection (+ provider identity) for visible
  *  listing rows, preserving the given row order. */
+/** Batched public location identity for summaries: ACTIVE associations to
+ *  ACTIVE branches, stable branch (UUIDv7 id) order — the same visibility
+ *  rule as the detail read's branch list. */
+async function areaLabelsFor(
+  trx: Trx,
+  programIds: string[],
+): Promise<Map<string, string[]>> {
+  if (programIds.length === 0) return new Map();
+  const rows = await trx
+    .selectFrom('program_branch')
+    .innerJoin('branch', 'branch.id', 'program_branch.branch_id')
+    .select(['program_branch.program_id as program_id', 'branch.area_label as area_label'])
+    .where('program_branch.program_id', 'in', programIds)
+    .where('program_branch.active', '=', true)
+    .where('branch.active', '=', true)
+    .orderBy('branch.id')
+    .execute();
+  const byProgram = new Map<string, string[]>();
+  for (const row of rows) {
+    const labels = byProgram.get(row.program_id) ?? [];
+    if (!labels.includes(row.area_label)) labels.push(row.area_label);
+    byProgram.set(row.program_id, labels);
+  }
+  return byProgram;
+}
+
 async function summarizeListingRowsInTrx(
   trx: Trx,
   rows: ListingRow[],
 ): Promise<{ summary: PublicListingSummary; provider: PublicProviderRef }[]> {
   const programIds = rows.map((row) => row.id);
-  const [options, media, offers] = [
+  const [options, media, offers, areasByProgram] = [
     await activeOptionsFor(trx, programIds),
     await activeMediaFor(trx, programIds),
     await currentOffersFor(trx, programIds),
+    await areaLabelsFor(trx, programIds),
   ];
   const optionsByProgram = new Map<string, PublicPriceOptionView[]>();
   for (const row of options) {
@@ -681,6 +712,7 @@ async function summarizeListingRowsInTrx(
         media: mediaByProgram.get(row.id) ?? [],
         fromPrice: deriveFromPrice(optionViews),
         offerBadges: (badgesByProgram.get(row.id) ?? []).sort(),
+        areaLabels: areasByProgram.get(row.id) ?? [],
       },
     };
   });

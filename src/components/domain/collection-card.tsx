@@ -8,8 +8,9 @@ import { StyleSheet, Text, View } from 'react-native';
 
 interface Props {
   collection: Collection;
-  /** Deterministic result count for the current context (from the service). */
-  programCount: number;
+  /** Shown only when an EXACT count is known; the card falls back to its
+   *  subtitle line. */
+  programCount?: number;
   onPress: () => void;
 }
 
@@ -20,11 +21,18 @@ interface Props {
  * collection's data preset, never in this component.
  */
 export function CollectionCard({ collection, programCount, onPress }: Props) {
-  const countLine = `${programCount} ${programCount === 1 ? 'activity' : 'activities'}`;
+  const countLine =
+    programCount !== undefined
+      ? `${programCount} ${programCount === 1 ? 'activity' : 'activities'}`
+      : (collection.subtitle ?? '');
   return (
     <PressableFeedback
       onPress={onPress}
-      accessibilityLabel={`${collection.title} collection, ${countLine}`}
+      accessibilityLabel={
+        countLine !== ''
+          ? `${collection.title} collection, ${countLine}`
+          : `${collection.title} collection`
+      }
       accessibilityHint="Opens matching activities"
       style={styles.card}
     >
@@ -45,9 +53,11 @@ export function CollectionCard({ collection, programCount, onPress }: Props) {
         <Text style={styles.title} numberOfLines={2}>
           {collection.title}
         </Text>
-        <Text style={styles.count} numberOfLines={1}>
-          {countLine}
-        </Text>
+        {countLine !== '' ? (
+          <Text style={styles.count} numberOfLines={1}>
+            {countLine}
+          </Text>
+        ) : null}
       </View>
     </PressableFeedback>
   );

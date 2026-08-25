@@ -128,6 +128,9 @@ const PublicListingSummarySchema = Type.Object({
   media: Type.Array(PublicMediaSchema),
   fromPrice: FromPriceSchema,
   offerBadges: Type.Array(Type.String()),
+  // RI-2 (additive): public branch area labels — location display identity
+  // the detail read already serves per-branch.
+  areaLabels: Type.Array(Type.String()),
 });
 
 const StorefrontListingsQuery = Type.Object({

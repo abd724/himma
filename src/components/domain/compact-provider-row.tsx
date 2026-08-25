@@ -12,7 +12,8 @@ function monogram(name: string): string {
 interface Props {
   provider: Provider;
   areaLabel: string;
-  programCount: number;
+  /** Shown only when an EXACT count is known — never estimated. */
+  programCount?: number;
   /** Opens the Provider Storefront (HMA-014). */
   onPress?: () => void;
 }
@@ -21,7 +22,16 @@ interface Props {
 export function CompactProviderRow({ provider, areaLabel, programCount, onPress }: Props) {
   return (
     <PressableFeedback
-      accessibilityLabel={`${provider.name}, ${provider.verified ? 'verified provider, ' : ''}${provider.categories.join(', ')}, ${areaLabel}, ${programCount} activities, rated ${provider.rating.toFixed(1)}`}
+      accessibilityLabel={[
+        provider.name,
+        provider.verified ? 'verified provider' : '',
+        provider.categories.join(', '),
+        areaLabel,
+        programCount !== undefined ? `${programCount} activities` : '',
+        provider.rating !== undefined ? `rated ${provider.rating.toFixed(1)}` : '',
+      ]
+        .filter((part) => part !== '')
+        .join(', ')}
       onPress={onPress}
       style={styles.card}
     >
@@ -40,12 +50,14 @@ export function CompactProviderRow({ provider, areaLabel, programCount, onPress 
             <Ionicons name="shield-checkmark" size={12} color={colors.status.success} />
           ) : null}
           <Text style={styles.meta} numberOfLines={1}>
-            {areaLabel} · {programCount} activities
+            {programCount !== undefined ? `${areaLabel} · ${programCount} activities` : areaLabel}
           </Text>
-          <View style={styles.rating}>
-            <Ionicons name="star" size={12} color={colors.brand.reward} />
-            <Text style={styles.ratingText}>{provider.rating.toFixed(1)}</Text>
-          </View>
+          {provider.rating !== undefined ? (
+            <View style={styles.rating}>
+              <Ionicons name="star" size={12} color={colors.brand.reward} />
+              <Text style={styles.ratingText}>{provider.rating.toFixed(1)}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </PressableFeedback>

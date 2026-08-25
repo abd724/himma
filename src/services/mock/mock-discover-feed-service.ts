@@ -1,3 +1,4 @@
+import type { FixtureProgram } from '@/data/mock/catalogue';
 import { areas, collections, homeBrowseEntries, participants, programs, providers } from '@/data/mock/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
 import type {
@@ -9,7 +10,7 @@ import type {
 } from '@/services/contracts/discover-feed';
 import type { QuickFilter, QuickFilterId } from '@/services/contracts/filters';
 import { passesFilters } from '@/services/mock/results-engine';
-import type { Area, AreaId, Collection, Participant, ParticipantId, Program } from '@/types/domain';
+import type { Area, AreaId, Collection, Participant, ParticipantId } from '@/types/domain';
 import { isLadiesOnly, participantAge, suitsAdult, suitsChild } from '@/utils/eligibility';
 
 /** Discover's six quick chips — docs/14 §2.4 (moved from the Home service; Home has no quick filters, docs/18 §4). */
@@ -29,13 +30,13 @@ function participantById(id: ParticipantId): Participant {
 }
 
 /** Child contexts hard-exclude by provider-defined age range (docs/16 §4). */
-function inParticipantContext(program: Program, participant: Participant): boolean {
+function inParticipantContext(program: FixtureProgram, participant: Participant): boolean {
   if (participant.kind !== 'child') return true;
   return suitsChild(program.eligibility, participantAge(participant) ?? 0);
 }
 
 /** Same narrowing semantics as Home's quick filters; "near-me" reorders only. */
-function passesQuickFilter(program: Program, filter?: QuickFilterId): boolean {
+function passesQuickFilter(program: FixtureProgram, filter?: QuickFilterId): boolean {
   switch (filter) {
     case undefined:
     case 'near-me':
@@ -60,7 +61,7 @@ function areaRank(areaId: AreaId, reference: Area): number {
 }
 
 /** Minutes since midnight for "7:30 PM"; non-clock labels sort last. */
-function todayTimeMinutes(program: Program): number {
+function todayTimeMinutes(program: FixtureProgram): number {
   const match = program.todayTime?.match(/^(\d{1,2}):(\d{2}) (AM|PM)$/);
   if (!match) return Number.POSITIVE_INFINITY;
   const hours = (Number(match[1]) % 12) + (match[3] === 'PM' ? 12 : 0);
@@ -98,12 +99,12 @@ export class MockDiscoverFeedService implements DiscoverFeedService {
     const nearMeActive = input.quickFilterId === 'near-me';
 
     const indexById = new Map(programs.map((program, index) => [program.id, index]));
-    const stable = (program: Program) => indexById.get(program.id) ?? 0;
+    const stable = (program: FixtureProgram) => indexById.get(program.id) ?? 0;
     // "Me" emphasizes adult-suitable content without hiding child programs
     // (docs/16 §4); other contexts rank everything equally.
-    const adultEmphasis = (program: Program) =>
+    const adultEmphasis = (program: FixtureProgram) =>
       participant.kind === 'self' && !suitsAdult(program.eligibility) ? 1 : 0;
-    const proximity = (program: Program) => areaRank(program.areaId, referenceArea);
+    const proximity = (program: FixtureProgram) => areaRank(program.areaId, referenceArea);
 
     const visible = programs.filter(
       (program) =>
@@ -111,7 +112,7 @@ export class MockDiscoverFeedService implements DiscoverFeedService {
         passesQuickFilter(program, input.quickFilterId),
     );
 
-    const rank = (list: Program[], compare: (a: Program, b: Program) => number): Program[] =>
+    const rank = (list: FixtureProgram[], compare: (a: FixtureProgram, b: FixtureProgram) => number): FixtureProgram[] =>
       [...list].sort(
         (a, b) =>
           adultEmphasis(a) - adultEmphasis(b) ||

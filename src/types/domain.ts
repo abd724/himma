@@ -20,14 +20,9 @@ export interface Participant {
   interests?: string[];
 }
 
-export type AreaId =
-  | 'khalifa-city'
-  | 'al-raha'
-  | 'mbz-city'
-  | 'yas-island'
-  | 'al-reem'
-  | 'saadiyat'
-  | 'abu-dhabi-island';
+/** Canonical backend area id (UUID) in real composition; the mock fixture
+ *  slugs remain valid ids for isolated tests. */
+export type AreaId = string;
 
 export interface Area {
   id: AreaId;
@@ -36,22 +31,14 @@ export interface Area {
   nearby: AreaId[];
 }
 
-/** Full customer-visible taxonomy — docs/15 §3. */
-export type CategoryId =
-  | 'fitness'
-  | 'martial-arts'
-  | 'swimming'
-  | 'padel-racquet'
-  | 'pilates-yoga'
-  | 'team-outdoor'
-  | 'wellness'
-  | 'learning'
-  | 'quran'
-  | 'tech-stem'
-  | 'arts-creativity';
+/** Canonical backend category id (UUID) in real composition; the mock
+ *  fixture slugs remain valid ids for isolated tests. */
+export type CategoryId = string;
 
 export interface Category {
   id: CategoryId;
+  /** Stable slug for deterministic presentation (imagery); equals `id` in mock data. */
+  slug?: string;
   label: string;
   imageKey: string;
 }
@@ -66,8 +53,15 @@ export interface Provider {
   id: string;
   name: string;
   categories: string[];
-  areaId: AreaId;
-  rating: number;
+  /** Present in mock data; real rows carry `areaLabel` instead. */
+  areaId?: AreaId;
+  /** Public branch area label(s), joined for display — real composition. */
+  areaLabel?: string;
+  /**
+   * Ratings have NO backend authority yet (reviews are a deferred domain).
+   * Absent in real composition — surfaces render ratings only when present.
+   */
+  rating?: number;
   verified: boolean;
 }
 
@@ -78,7 +72,10 @@ export type PriceModel =
   | { kind: 'camp'; amountPerWeek: number }
   | { kind: 'package'; amount: number; sessions: number }
   | { kind: 'free' }
-  | { kind: 'freeTrial' };
+  | { kind: 'freeTrial' }
+  /** Server-derived minimum over the active options ("From AED 90") —
+   *  the certified public summary price; real composition only. */
+  | { kind: 'from'; amount: number };
 
 export type GenderEligibility = 'men' | 'ladies' | 'mixed';
 
@@ -109,22 +106,36 @@ export interface Program {
   id: string;
   title: string;
   providerId: string;
+  /** Provider display name — carried on real rows (the wire serves it);
+   *  mock surfaces resolve it from fixtures instead. */
+  providerName?: string;
   categoryId: CategoryId;
   activityTypeId: string;
-  areaId: AreaId;
+  /** Present in mock data; real rows carry `areaLabel` instead. */
+  areaId?: AreaId;
+  /** Public branch area label(s), joined for display — real composition. */
+  areaLabel?: string;
   imageKey: string;
-  /** Customer-facing schedule line, e.g. "Tue & Thu · 5:00 PM". */
-  scheduleLabel: string;
+  /**
+   * Customer-facing schedule line, e.g. "Tue & Thu · 5:00 PM". No listing-
+   * level schedule authority exists on the real wire (occurrences are the
+   * per-unit availability projection) — absent in real composition.
+   */
+  scheduleLabel?: string;
   /** Time shown when the program runs on the mock "today", e.g. "7:30 PM". */
   todayTime?: string;
-  availableToday: boolean;
-  runsOnWeekend: boolean;
+  /** Mock-only schedule-derived flags — no real search dimension exists. */
+  availableToday?: boolean;
+  runsOnWeekend?: boolean;
   runsAfterSchool?: boolean;
   isCamp: boolean;
   setting: 'indoor' | 'outdoor';
-  price: PriceModel;
+  /** Absent when a listing has no active public price — surfaces show no
+   *  price rather than a fake one. */
+  price?: PriceModel;
   eligibility: Eligibility;
-  rating: number;
+  /** No backend authority (reviews deferred) — absent in real composition. */
+  rating?: number;
   offer?: Offer;
 }
 
@@ -135,8 +146,10 @@ export interface Collection {
   /** Optional editorial support line; the card falls back to its count. */
   subtitle?: string;
   imageKey: string;
-  /** Simple deterministic preset resolved by services — never by cards. */
-  preset: {
+  /** Simple deterministic preset resolved by services — never by cards.
+   *  Real collections resolve server-side via the search `collectionId`
+   *  dimension instead; absent in real composition. */
+  preset?: {
     ladiesOnly?: boolean;
     childRelevant?: boolean;
     camps?: boolean;
@@ -186,8 +199,11 @@ export interface CreditSummary {
 export interface ProviderBranch {
   id: string;
   label: string;
-  areaId: AreaId;
-  /** Fictional street line for realism — never a real address. */
+  /** Present in mock data; real branches carry `areaLabel`. */
+  areaId?: AreaId;
+  /** Public area label — real composition. */
+  areaLabel?: string;
+  /** Street line; real rows show the provider's public address when present. */
   addressLine: string;
   openingHours?: string;
 }
@@ -196,15 +212,20 @@ export interface ProviderBranch {
 export interface SessionOccurrence {
   id: string;
   /**
-   * Days after MOCK_TODAY. Recurring schedules stay inside a two-week window
-   * (0–13); a camp's single start entry falls on its real start date, which
-   * may be later in the month.
+   * Days from today. Mock schedules stay inside a two-week window (0–13);
+   * real occurrences are the certified public availability projection and
+   * may fall later.
    */
   dayOffset: number;
   dayLabel: string;
   timeLabel: string;
   /** Present only when places are genuinely limited; drives "4 places left". */
   spotsLeft?: number;
+  /** Customer-safe availability band (D-RI-4) — real composition. Full and
+   *  closed occurrences stay VISIBLE with their truthful state. */
+  availability?: 'available' | 'fewLeft' | 'full' | 'closed';
+  /** Branch label when the provider runs multiple locations. */
+  branchLabel?: string;
 }
 
 /**

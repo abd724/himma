@@ -3,6 +3,7 @@ import type {
   AreaId,
   BrowseEntry,
   Category,
+  Participant,
   ParticipantId,
   Program,
   Provider,
@@ -32,6 +33,13 @@ export interface PreSearchContent {
 export interface SearchInput {
   query: string;
   participantId: ParticipantId;
+  /**
+   * The selected browsing participant object. A child context becomes a
+   * truthful server-side age filter (public programme metadata — owner
+   * guest-filtering rule); adults are never filtered. Absent/`everyone`
+   * applies no personal narrowing.
+   */
+  participant?: Participant;
   areaId: AreaId;
 }
 
@@ -62,23 +70,22 @@ export interface ResultsQuery extends SearchInput {
 
 export interface ResultsPage {
   programs: Program[];
-  totalPrograms: number;
+  /** Absent when the backend has more pages — totals are shown only when
+   *  exact, never estimated (real composition). */
+  totalPrograms?: number;
   hasMorePrograms: boolean;
   providers: Provider[];
-  totalProviders: number;
+  totalProviders?: number;
   hasMoreProviders: boolean;
   categories: Category[];
   correctedQuery?: string;
 }
 
 export interface SearchService {
-  getPreSearchContent(): PreSearchContent;
+  getPreSearchContent(): Promise<PreSearchContent>;
   addRecentSearch(query: string): void;
   clearRecentSearches(): void;
-  getSuggestions(input: SearchInput): SearchSuggestion[];
-  search(input: SearchInput): SearchResultSet;
-  /** Filtered, sorted, paginated results — async like a future API. */
+  getSuggestions(input: SearchInput): Promise<SearchSuggestion[]>;
+  /** Filtered, sorted, paginated results. */
   getResults(query: ResultsQuery): Promise<ResultsPage>;
-  /** Live deterministic count for the filter sheet footer. */
-  countResults(query: Omit<ResultsQuery, 'page' | 'sort'>): number;
 }

@@ -20,7 +20,15 @@ interface Props {
 export function ProviderCard({ provider, areaLabel, onPress }: Props) {
   return (
     <PressableFeedback
-      accessibilityLabel={`${provider.name}, ${provider.verified ? 'verified provider, ' : ''}${provider.categories.join(', ')}, ${areaLabel}, rated ${provider.rating.toFixed(1)}`}
+      accessibilityLabel={[
+        provider.name,
+        provider.verified ? 'verified provider' : '',
+        provider.categories.join(', '),
+        areaLabel,
+        provider.rating !== undefined ? `rated ${provider.rating.toFixed(1)}` : '',
+      ]
+        .filter((part) => part !== '')
+        .join(', ')}
       onPress={onPress}
       style={styles.card}
     >
@@ -44,10 +52,12 @@ export function ProviderCard({ provider, areaLabel, onPress }: Props) {
           <Text style={styles.meta} numberOfLines={1}>
             {areaLabel}
           </Text>
-          <View style={styles.rating}>
-            <Ionicons name="star" size={12} color={colors.brand.reward} />
-            <Text style={styles.ratingText}>{provider.rating.toFixed(1)}</Text>
-          </View>
+          {provider.rating !== undefined ? (
+            <View style={styles.rating}>
+              <Ionicons name="star" size={12} color={colors.brand.reward} />
+              <Text style={styles.ratingText}>{provider.rating.toFixed(1)}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </PressableFeedback>

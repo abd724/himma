@@ -9,7 +9,6 @@ import { Chip } from '@/components/ui/chip';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SectionHeader } from '@/components/ui/section-header';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
-import { providers as allProviders } from '@/data/mock/catalogue';
 import { CataloguePageHeader } from '@/features/catalogue/catalogue-page-header';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import type { CategoryPage } from '@/services/contracts/catalogue';
@@ -19,9 +18,8 @@ import {
   type FilterSelection,
   type SortId,
 } from '@/services/contracts/filters';
-import { catalogueService, providerProgramCount, searchService } from '@/services/composition';
+import { catalogueService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
-import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession } from '@/state/results-session-context';
 import { colors, dockTokens, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
@@ -30,8 +28,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const providerNameById = new Map(allProviders.map((provider) => [provider.id, provider.name]));
 
 /**
  * HMA-012 — one category of the shared taxonomy: featured activity types,
@@ -47,9 +43,9 @@ export function CategoryScreen() {
 
   const session = useResultsSession();
   const { participants, participantId, setParticipantId } = useParticipantContext();
-  const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
-  const { isFavourite, toggleFavourite } = useFavourites();
+  const { areas, areaId, setAreaId } = useAreaContext();
   const { openProgram, openProvider } = useDetailNavigation();
+  const participant = participants.find((entry) => entry.id === participantId);
 
   const [page, setPage] = useState<CategoryPage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -63,15 +59,28 @@ export function CategoryScreen() {
   // Previous content stays visible while a context change reloads (Home rule).
   useEffect(() => {
     let cancelled = false;
-    catalogueService.getCategoryPage({ categoryId, areaId, participantId }).then((result) => {
-      if (!cancelled) {
-        setPage(result ?? null);
-        setMissing(result === undefined);
-      }
-    });
+    catalogueService
+      .getCategoryPage({
+        categoryId,
+        areaId,
+        participantId,
+        ...(participant !== undefined ? { participant } : {}),
+      })
+      .then(
+        (result) => {
+          if (!cancelled) {
+            setPage(result ?? null);
+            setMissing(result === undefined);
+          }
+        },
+        () => {
+          if (!cancelled) setMissing(true);
+        },
+      );
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryId, areaId, participantId]);
 
   const goBack = () => {
@@ -104,17 +113,8 @@ export function CategoryScreen() {
     setFilterSheetOpen(true);
   };
 
-  const draftCount = useMemo(
-    () =>
-      filterSheetOpen
-        ? searchService.countResults({ query: '', participantId, areaId, filters: draftFilters })
-        : 0,
-    [filterSheetOpen, participantId, areaId, draftFilters],
-  );
-
   const participantLabel =
     participants.find((participant) => participant.id === participantId)?.label ?? 'Everyone';
-  const areaLabel = areaLabelById.get(areaId) ?? '';
 
   const contentBottomPadding =
     dockTokens.height + dockTokens.safeAreaOffset + insets.bottom + dockTokens.contentClearance;
@@ -159,9 +159,13 @@ export function CategoryScreen() {
                       key={activityType.id}
                       label={activityType.label}
                       selected={false}
-                      accessibilityHint={`Opens ${activityType.label}, ${programCount} ${
-                        programCount === 1 ? 'activity' : 'activities'
-                      }`}
+                      accessibilityHint={
+                        programCount !== undefined
+                          ? `Opens ${activityType.label}, ${programCount} ${
+                              programCount === 1 ? 'activity' : 'activities'
+                            }`
+                          : `Opens ${activityType.label}`
+                      }
                       onPress={() => router.push(`/discover/activity/${activityType.id}`)}
                     />
                   ))}
@@ -203,7 +207,7 @@ export function CategoryScreen() {
                 onSelect={setParticipantId}
               />
 
-              {page.visibleProgramCount === 0 ? (
+              {page.popularPrograms.length === 0 ? (
                 <EmptyFeedCard
                   message={
                     participantId !== 'everyone' && participantId !== 'me'
@@ -225,12 +229,12 @@ export function CategoryScreen() {
                 />
               ) : (
                 <>
-                  {page.visibleProgramCount <= 2 ? (
+                  {page.visibleProgramCount !== undefined && page.visibleProgramCount <= 2 ? (
                     <View style={styles.supplyNote}>
                       <Text style={styles.supplyText} accessibilityLiveRegion="polite">
                         Only {page.visibleProgramCount}{' '}
-                        {page.visibleProgramCount === 1 ? 'activity' : 'activities'} near {areaLabel}{' '}
-                        right now. Try nearby areas.
+                        {page.visibleProgramCount === 1 ? 'activity' : 'activities'} right now. Try
+                        another category.
                       </Text>
                       <PressableFeedback
                         accessibilityLabel="Change area"
@@ -244,8 +248,12 @@ export function CategoryScreen() {
 
                   <View>
                     <SectionHeader
-                      title="Popular programs"
-                      actionLabel={`View all ${page.visibleProgramCount}`}
+                      title="Programs"
+                      actionLabel={
+                        page.visibleProgramCount !== undefined
+                          ? `View all ${page.visibleProgramCount}`
+                          : 'View all'
+                      }
                       onActionPress={() => openPresetResults(categoryPreset)}
                     />
                     <View style={styles.list}>
@@ -253,10 +261,8 @@ export function CategoryScreen() {
                         <CompactProgramRow
                           key={program.id}
                           program={program}
-                          providerName={providerNameById.get(program.providerId) ?? ''}
-                          areaLabel={areaLabelById.get(program.areaId) ?? ''}
-                          isFavourite={isFavourite('program', program.id)}
-                          onToggleFavourite={(id) => toggleFavourite('program', id)}
+                          providerName={program.providerName ?? ''}
+                          areaLabel={program.areaLabel ?? ''}
                           onPress={() => openProgram(program.id)}
                         />
                       ))}
@@ -271,8 +277,7 @@ export function CategoryScreen() {
                           <CompactProviderRow
                             key={provider.id}
                             provider={provider}
-                            areaLabel={areaLabelById.get(provider.areaId) ?? ''}
-                            programCount={providerProgramCount(provider.id)}
+                            areaLabel={provider.areaLabel ?? ''}
                             onPress={() => openProvider(provider.id)}
                           />
                         ))}
@@ -288,10 +293,8 @@ export function CategoryScreen() {
                           <CompactProgramRow
                             key={program.id}
                             program={program}
-                            providerName={providerNameById.get(program.providerId) ?? ''}
-                            areaLabel={areaLabelById.get(program.areaId) ?? ''}
-                            isFavourite={isFavourite('program', program.id)}
-                            onToggleFavourite={(id) => toggleFavourite('program', id)}
+                            providerName={program.providerName ?? ''}
+                            areaLabel={program.areaLabel ?? ''}
                             onPress={() => openProgram(program.id)}
                           />
                         ))}
@@ -315,7 +318,6 @@ export function CategoryScreen() {
       <FilterSheet
         visible={filterSheetOpen}
         filters={draftFilters}
-        resultCount={draftCount}
         onChange={setDraftFilters}
         onClearAll={() => setDraftFilters(emptyFilters)}
         onClose={() => setFilterSheetOpen(false)}

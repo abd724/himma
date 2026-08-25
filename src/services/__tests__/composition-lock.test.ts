@@ -31,6 +31,57 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('composition boundary locks', () => {
+  it('RI-2: the discovery family is REAL in composition — no discovery mock is imported or re-exported', () => {
+    const composition = readFileSync(path.join(SRC, 'services', 'composition.ts'), 'utf8');
+    // The six discovery contracts bind to the real HTTP implementations.
+    expect(composition).toMatch(/catalogueService = createRealCatalogueService\(/);
+    expect(composition).toMatch(/searchService = createRealSearchService\(/);
+    expect(composition).toMatch(/detailsService = createRealDetailsService\(/);
+    expect(composition).toMatch(/discoverFeedService = createRealDiscoverFeedService\(/);
+    expect(composition).toMatch(/homeFeedService = createRealHomeFeedService\(/);
+    expect(composition).toMatch(/mapService = createRealMapService\(/);
+    // No discovery mock module is referenced by composition any more; the
+    // ONLY remaining mock bindings are the RI-3 families (schedule/booking/
+    // checkout) and the dev-QA fixture resolver.
+    for (const forbidden of [
+      'mock-catalogue-service',
+      'mock-search-service',
+      'mock-details-service',
+      'mock-home-feed-service',
+      'mock-discover-feed-service',
+      'mock-map-service',
+      'results-engine',
+    ]) {
+      expect(composition).not.toContain(forbidden);
+    }
+  });
+
+  it('RI-2: real discovery identities cannot enter mock commerce — the RI-3 pending boundary flag exists and the booking flow consults it', () => {
+    const composition = readFileSync(path.join(SRC, 'services', 'composition.ts'), 'utf8');
+    expect(composition).toMatch(/BOOKING_INTEGRATION_PENDING = true/);
+    const selection = readFileSync(
+      path.join(SRC, 'features', 'booking', 'booking-selection-screen.tsx'),
+      'utf8',
+    );
+    expect(selection).toContain('BOOKING_INTEGRATION_PENDING');
+  });
+
+  it('RI-2: fixture catalogue data never reaches discovery screens (presentation imagery excepted)', () => {
+    // data/mock/catalogue exports the frozen fixture arrays; after RI-2 no
+    // screen/state module may read them (the bundled demo IMAGES remain the
+    // deterministic presentation layer and are allowed).
+    const offenders: string[] = [];
+    for (const dir of ['app', 'features', 'state', 'components']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = readFileSync(file, 'utf8');
+        if (source.includes("'@/data/mock/catalogue'")) {
+          offenders.push(path.relative(SRC, file));
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('no screen/state/app module imports a mock implementation directly', () => {
     const offenders: string[] = [];
     for (const dir of ['app', 'features', 'state', 'components', 'hooks', 'utils']) {

@@ -68,6 +68,7 @@ const NullableString = Type.Union([Type.String(), Type.Null()]);
 const AvailabilityViewSchema = Type.Object({
   unitId: Uuid,
   kind: UnitKindLiteral,
+  branchId: Uuid,
   startAt: NullableString,
   endAt: NullableString,
   startDate: NullableString,

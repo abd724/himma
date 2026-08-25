@@ -1,19 +1,17 @@
 import { CategoryGrid } from '@/components/domain/category-grid';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
-import { collections } from '@/data/mock/catalogue';
 import { CataloguePageHeader } from '@/features/catalogue/catalogue-page-header';
 import type { AllCategoriesListing } from '@/services/contracts/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
 import { catalogueService } from '@/services/composition';
 import { useResultsSession } from '@/state/results-session-context';
+import { useTaxonomy } from '@/state/use-taxonomy';
 import { colors, dockTokens, pagePadding, radii, spacing } from '@/theme';
 import type { BrowseEntry } from '@/types/domain';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const collectionById = new Map(collections.map((collection) => [collection.id, collection]));
 
 /**
  * HMA-011 — the complete visual catalogue: 11 categories in supply-aware
@@ -24,6 +22,7 @@ export function AllCategoriesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useResultsSession();
+  const { taxonomy } = useTaxonomy();
 
   const [listing, setListing] = useState<AllCategoriesListing | null>(null);
 
@@ -61,7 +60,8 @@ export function AllCategoriesScreen() {
       return;
     }
     if (entry.target.kind === 'collection') {
-      const collection = collectionById.get(entry.target.collectionId);
+      const targetId = entry.target.collectionId;
+      const collection = (taxonomy?.collections ?? []).find((c) => c.id === targetId);
       if (collection === undefined) return;
       session.newSearch('', 'programs');
       session.setFilters(collectionFilterSelection(collection));

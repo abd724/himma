@@ -1,3 +1,4 @@
+import type { FixtureProgram, FixtureProvider } from '@/data/mock/catalogue';
 import {
   activityTypes,
   areas,
@@ -23,7 +24,7 @@ import type {
   SearchSuggestion,
 } from '@/services/contracts/search';
 import { passesFilters, sortPrograms } from '@/services/mock/results-engine';
-import type { Area, AreaId, Participant, Program } from '@/types/domain';
+import type { Area, AreaId, Participant } from '@/types/domain';
 import { participantAge, suitsAdult, suitsChild } from '@/utils/eligibility';
 
 const MAX_SUGGESTIONS = 8;
@@ -68,7 +69,7 @@ function textMatches(text: string, terms: string[]): boolean {
 
 /** Lower tier = stronger textual match — docs/14 §3.3 rules 1–2. */
 function programMatchTier(
-  program: Program,
+  program: FixtureProgram,
   terms: string[],
   labels: { activity: string; category: string; provider: string; area: string },
 ): number | undefined {
@@ -97,12 +98,19 @@ function participantById(id: string): Participant {
 const PROGRAMS_PAGE_SIZE = 12;
 const PROVIDERS_PAGE_SIZE = 10;
 
+/** The engine's internal result set — always fixture rows. */
+interface FixtureResultSet extends SearchResultSet {
+  programs: FixtureProgram[];
+  providers: FixtureProvider[];
+}
+
 export class MockSearchService implements SearchService {
   private recents: string[] = [...initialRecentSearches];
 
   constructor(private readonly delayMs: number = 250) {}
 
-  getPreSearchContent(): PreSearchContent {
+  /** Pure and synchronous so behavior is directly testable. */
+  preSearchContentSync(): PreSearchContent {
     return {
       recentSearches: [...this.recents],
       popularSearches,
@@ -120,7 +128,16 @@ export class MockSearchService implements SearchService {
     this.recents = [];
   }
 
-  getSuggestions(input: SearchInput): SearchSuggestion[] {
+  async getPreSearchContent(): Promise<PreSearchContent> {
+    return this.preSearchContentSync();
+  }
+
+  async getSuggestions(input: SearchInput): Promise<SearchSuggestion[]> {
+    return this.suggestionsSync(input);
+  }
+
+  /** Pure and synchronous so behavior is directly testable. */
+  suggestionsSync(input: SearchInput): SearchSuggestion[] {
     const query = normalize(input.query);
     if (query.length === 0) return [];
     const corrected = correctTypos(query);
@@ -140,7 +157,7 @@ export class MockSearchService implements SearchService {
         targetId: activity.id,
       }));
 
-    // Program titles surface under Activities; a child context hard-excludes
+    // FixtureProgram titles surface under Activities; a child context hard-excludes
     // out-of-age-range programs, "Me" reorders without removing (docs/16 §4).
     let matchedPrograms = programs.filter((program) => textMatches(program.title, terms));
     if (participant.kind === 'child') {
@@ -203,7 +220,7 @@ export class MockSearchService implements SearchService {
     );
   }
 
-  search(input: SearchInput): SearchResultSet {
+  search(input: SearchInput): FixtureResultSet {
     const query = normalize(input.query);
     if (query.length === 0) return { programs: [], providers: [], categories: [] };
     const corrected = correctTypos(query);
@@ -222,7 +239,7 @@ export class MockSearchService implements SearchService {
         });
         return tier === undefined ? undefined : { program, tier, index };
       })
-      .filter((entry): entry is { program: Program; tier: number; index: number } => entry !== undefined);
+      .filter((entry): entry is { program: FixtureProgram; tier: number; index: number } => entry !== undefined);
 
     // Child context: hard-exclude out-of-age-range. Never gender-filtered.
     const eligible =
@@ -230,7 +247,7 @@ export class MockSearchService implements SearchService {
         ? scored.filter((entry) => suitsChild(entry.program.eligibility, age ?? 0))
         : scored;
 
-    const adultFirst = (entry: { program: Program }) =>
+    const adultFirst = (entry: { program: FixtureProgram }) =>
       participant.kind === 'self' && !suitsAdult(entry.program.eligibility) ? 1 : 0;
 
     const rankedPrograms = [...eligible]
@@ -273,7 +290,7 @@ export class MockSearchService implements SearchService {
   }
 
   /** Relevance-ordered base: search matches, or the whole catalogue for a preset (empty query). */
-  private baseResultSet(input: SearchInput): SearchResultSet {
+  private baseResultSet(input: SearchInput): FixtureResultSet {
     if (normalize(input.query).length > 0) return this.search(input);
     const participant = participantById(input.participantId);
     const age = participantAge(participant);
@@ -288,7 +305,7 @@ export class MockSearchService implements SearchService {
     return { programs: base, providers: [...providers], categories: [...categories] };
   }
 
-  private filteredPrograms(query: Omit<ResultsQuery, 'page' | 'sort'>): Program[] {
+  private filteredPrograms(query: Omit<ResultsQuery, 'page' | 'sort'>): FixtureProgram[] {
     if (query.simulateFailure === true) throw new Error('Simulated network failure (QA only)');
     return this.baseResultSet(query).programs.filter((program) =>
       passesFilters(program, query.filters),

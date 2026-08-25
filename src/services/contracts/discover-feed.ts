@@ -29,11 +29,14 @@ export interface DiscoverFeedInput {
 /** A collection with its deterministic result count for the active context. */
 export interface CollectionSummary {
   collection: Collection;
-  /** Programs its preset resolves to for the current participant. */
-  programCount: number;
+  /** Programs its preset resolves to; absent when not exactly known. */
+  programCount?: number;
 }
 
-export type DiscoverSectionId = 'trending' | 'available-today' | 'offers-trials';
+/** 'new' = published recency (the only real ranking authority); 'trending'
+ *  and 'available-today' are mock-only (no popularity/schedule authority
+ *  exists) and never emitted by the real feed. */
+export type DiscoverSectionId = 'trending' | 'available-today' | 'offers-trials' | 'new';
 
 export interface DiscoverProgramSection {
   id: DiscoverSectionId;

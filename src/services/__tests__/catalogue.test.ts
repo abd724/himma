@@ -20,7 +20,7 @@ describe('All Categories — supply-aware ordering (docs/04 HMA-011, docs/17 §1
   });
 
   test('orders categories by program count descending with taxonomy-order ties', () => {
-    const counts = listing.categories.map((entry) => entry.programCount);
+    const counts = listing.categories.map((entry) => entry.programCount!);
     expect([...counts].sort((a, b) => b - a)).toEqual(counts);
     const taxonomyIndex = new Map(categories.map((category, index) => [category.id, index]));
     for (let i = 1; i < listing.categories.length; i += 1) {
@@ -63,7 +63,7 @@ describe('Category page — content and honest supply (docs/04 HMA-012, docs/16 
       expect(entry.activityType.categoryId).toBe('martial-arts');
       expect(entry.programCount).toBeGreaterThan(0);
     }
-    const counts = page.activityTypes.map((entry) => entry.programCount);
+    const counts = page.activityTypes.map((entry) => entry.programCount!);
     expect([...counts].sort((a, b) => b - a)).toEqual(counts);
   });
 
@@ -95,7 +95,7 @@ describe('Category page — content and honest supply (docs/04 HMA-012, docs/16 
       expect(operatorIds.has(provider.id)).toBe(true);
     }
     for (let i = 1; i < page.providers.length; i += 1) {
-      expect(page.providers[i].rating).toBeLessThanOrEqual(page.providers[i - 1].rating);
+      expect(page.providers[i].rating!).toBeLessThanOrEqual(page.providers[i - 1].rating!);
     }
   });
 
@@ -151,8 +151,8 @@ describe('Category page — content and honest supply (docs/04 HMA-012, docs/16 
   test('ranking is simple and deterministic: rating desc then proximity then stable order', () => {
     const page = categoryPage('fitness')!;
     for (let i = 1; i < page.popularPrograms.length; i += 1) {
-      expect(page.popularPrograms[i].rating).toBeLessThanOrEqual(
-        page.popularPrograms[i - 1].rating,
+      expect(page.popularPrograms[i].rating!).toBeLessThanOrEqual(
+        page.popularPrograms[i - 1].rating!,
       );
     }
     // Same inputs, same output — twice.

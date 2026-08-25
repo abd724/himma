@@ -1,23 +1,41 @@
 import type { Eligibility, Participant, ParticipantId } from '@/types/domain';
 
+export interface DateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
 /**
  * Fixed mock "today" for deterministic age computation — docs/08 §10.
- * Never use the device clock in mock logic.
+ * Never use the device clock in mock logic. It remains the DEFAULT so the
+ * frozen mock family and its determinism suite stand unchanged; REAL
+ * surfaces pass `currentDateParts()` so a real participant's age is true.
  */
-export const MOCK_TODAY = { year: 2026, month: 8, day: 2 } as const;
+export const MOCK_TODAY: DateParts = { year: 2026, month: 8, day: 2 };
 
-/** Age in whole years on MOCK_TODAY for an ISO yyyy-mm-dd date of birth. */
-export function childAge(dateOfBirth: string): number {
+/** The device's real calendar date — for REAL account participants. */
+export function currentDateParts(): DateParts {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+}
+
+/** Age in whole years on `today` for an ISO yyyy-mm-dd date of birth. */
+export function childAge(dateOfBirth: string, today: DateParts = MOCK_TODAY): number {
   const [year, month, day] = dateOfBirth.split('-').map(Number);
-  let age = MOCK_TODAY.year - year;
-  const hadBirthday =
-    MOCK_TODAY.month > month || (MOCK_TODAY.month === month && MOCK_TODAY.day >= day);
+  let age = today.year - year;
+  const hadBirthday = today.month > month || (today.month === month && today.day >= day);
   if (!hadBirthday) age -= 1;
   return age;
 }
 
-export function participantAge(participant: Participant): number | undefined {
-  return participant.dateOfBirth === undefined ? undefined : childAge(participant.dateOfBirth);
+export function participantAge(
+  participant: Participant,
+  today: DateParts = MOCK_TODAY,
+): number | undefined {
+  return participant.dateOfBirth === undefined
+    ? undefined
+    : childAge(participant.dateOfBirth, today);
 }
 
 /**
@@ -93,10 +111,11 @@ export interface ParticipantSuitability {
 export function participantSuitability(
   eligibility: Eligibility,
   participant: Participant,
+  today: DateParts = MOCK_TODAY,
 ): ParticipantSuitability {
   const ageLabel = ageRangeLabel(eligibility) ?? 'All ages';
   if (participant.kind === 'child') {
-    const age = participantAge(participant) ?? 0;
+    const age = participantAge(participant, today) ?? 0;
     const suitable = suitsChild(eligibility, age);
     return {
       participantId: participant.id,
@@ -123,8 +142,9 @@ export function participantSuitability(
 export function householdSuitability(
   eligibility: Eligibility,
   participants: Participant[],
+  today: DateParts = MOCK_TODAY,
 ): ParticipantSuitability[] {
   return participants
     .filter((participant) => participant.kind !== 'everyone')
-    .map((participant) => participantSuitability(eligibility, participant));
+    .map((participant) => participantSuitability(eligibility, participant, today));
 }

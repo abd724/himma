@@ -14,8 +14,10 @@ interface Props {
   program: Program;
   providerName: string;
   areaLabel: string;
-  isFavourite: boolean;
-  onToggleFavourite: (programId: string) => void;
+  /** Saved/favourites is a deferred domain — omit both props and the heart
+   *  affordance disappears (owner RI-2 §14). */
+  isFavourite?: boolean;
+  onToggleFavourite?: (programId: string) => void;
   /** Opens Program Details (HMA-015); the favourite toggle stays a sibling. */
   onPress?: () => void;
 }
@@ -37,7 +39,7 @@ export function CompactProgramRow({
   onToggleFavourite,
   onPress,
 }: Props) {
-  const price = formatPrice(program.price);
+  const price = program.price === undefined ? undefined : formatPrice(program.price);
   const ladies = isLadiesOnly(program.eligibility);
   const ageLabel = isChildRelevant(program.eligibility)
     ? ageRangeLabel(program.eligibility)
@@ -57,7 +59,17 @@ export function CompactProgramRow({
     <View style={styles.card}>
       <PressableFeedback
         onPress={onPress}
-        accessibilityLabel={`${program.title} by ${providerName}. ${areaLabel}. ${program.scheduleLabel}. ${price.amount}${price.unit ? ` ${price.unit}` : ''}.${badge ? ` ${badge.label}.` : ''}${ageLabel ? ` ${spokenAgeLabel(ageLabel)}.` : ''} Rated ${program.rating.toFixed(1)}`}
+        accessibilityLabel={[
+          `${program.title} by ${providerName}.`,
+          areaLabel ? `${areaLabel}.` : '',
+          program.scheduleLabel !== undefined ? `${program.scheduleLabel}.` : '',
+          price !== undefined ? `${price.amount}${price.unit ? ` ${price.unit}` : ''}.` : '',
+          badge ? `${badge.label}.` : '',
+          ageLabel ? `${spokenAgeLabel(ageLabel)}.` : '',
+          program.rating !== undefined ? `Rated ${program.rating.toFixed(1)}` : '',
+        ]
+          .filter((part) => part !== '')
+          .join(' ')}
         accessibilityHint={onPress ? 'Opens program details' : undefined}
         style={styles.pressable}
       >
@@ -89,41 +101,49 @@ export function CompactProgramRow({
             <Text style={styles.provider} numberOfLines={1}>
               {providerName}
             </Text>
-            <View style={styles.rating}>
-              <Ionicons name="star" size={12} color={colors.brand.reward} />
-              <Text style={styles.ratingText}>{program.rating.toFixed(1)}</Text>
-            </View>
+            {program.rating !== undefined ? (
+              <View style={styles.rating}>
+                <Ionicons name="star" size={12} color={colors.brand.reward} />
+                <Text style={styles.ratingText}>{program.rating.toFixed(1)}</Text>
+              </View>
+            ) : null}
           </View>
           <Text style={styles.meta} numberOfLines={1}>
-            {areaLabel} · {program.scheduleLabel}
+            {[areaLabel, program.scheduleLabel]
+              .filter((part) => part !== undefined && part !== '')
+              .join(' · ')}
           </Text>
           {/* Dedicated full-width price row: the pricing model always renders
               in full at 360 pt; a long unit wraps under the amount as a whole
               instead of squeezing beside the rating. */}
-          <View style={styles.priceRow}>
-            <Text style={styles.price}>{price.amount}</Text>
-            {price.unit ? <Text style={styles.priceUnit}>{price.unit}</Text> : null}
-          </View>
+          {price !== undefined ? (
+            <View style={styles.priceRow}>
+              <Text style={styles.price}>{price.amount}</Text>
+              {price.unit ? <Text style={styles.priceUnit}>{price.unit}</Text> : null}
+            </View>
+          ) : null}
         </View>
       </PressableFeedback>
-      <PressableFeedback
-        accessibilityLabel={
-          isFavourite
-            ? `Remove ${program.title} from favourites`
-            : `Add ${program.title} to favourites`
-        }
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: isFavourite, selected: isFavourite }}
-        onPress={() => onToggleFavourite(program.id)}
-        style={styles.heart}
-        hitSlop={4}
-      >
-        <Ionicons
-          name={isFavourite ? 'heart' : 'heart-outline'}
-          size={20}
-          color={isFavourite ? colors.brand.accentWarm : colors.text.primary}
-        />
-      </PressableFeedback>
+      {onToggleFavourite !== undefined ? (
+        <PressableFeedback
+          accessibilityLabel={
+            isFavourite === true
+              ? `Remove ${program.title} from favourites`
+              : `Add ${program.title} to favourites`
+          }
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: isFavourite === true, selected: isFavourite === true }}
+          onPress={() => onToggleFavourite(program.id)}
+          style={styles.heart}
+          hitSlop={4}
+        >
+          <Ionicons
+            name={isFavourite === true ? 'heart' : 'heart-outline'}
+            size={20}
+            color={isFavourite === true ? colors.brand.accentWarm : colors.text.primary}
+          />
+        </PressableFeedback>
+      ) : null}
     </View>
   );
 }

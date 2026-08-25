@@ -40,7 +40,7 @@ describe('Program detail lookup (docs/20 §8.4, docs/16 §2)', () => {
       expect(page?.formatLabel.length).toBeGreaterThan(0);
       expect(page?.priceLabel.length).toBeGreaterThan(0);
       expect(page?.provider.id).toBe(program.providerId);
-      expect(page?.policy).toBe(cancellationPolicies[page!.extras.policyId]);
+      expect(page?.policy).toBe(cancellationPolicies[programDetailExtras[program.id]!.policyId]);
       expect(page?.areaLabel.length).toBeGreaterThan(0);
     }
   });
@@ -229,7 +229,7 @@ describe('Provider storefront lookup (docs/20 §8.4, docs/16 §2)', () => {
       expect(page?.extras.reviewCount).toBeGreaterThan(0);
       expect(page?.monogram.length).toBeGreaterThan(0);
       expect(page?.branches.length).toBeGreaterThanOrEqual(1);
-      expect(page?.policy).toBe(cancellationPolicies[page!.extras.policyId]);
+      expect(page?.policy).toBe(cancellationPolicies[providerDetailExtras[provider.id]!.policyId]);
       expect(page?.areaLabel.length).toBeGreaterThan(0);
       expect(page?.programCount).toBeGreaterThan(0);
     }

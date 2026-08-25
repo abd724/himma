@@ -1,3 +1,4 @@
+import type { FixtureProgram } from '@/data/mock/catalogue';
 import {
   activityTypes,
   areas,
@@ -16,14 +17,7 @@ import type {
 } from '@/services/contracts/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
 import { passesFilters } from '@/services/mock/results-engine';
-import type {
-  Area,
-  AreaId,
-  CategoryId,
-  Participant,
-  ParticipantId,
-  Program,
-} from '@/types/domain';
+import type { Area, AreaId, CategoryId, Participant, ParticipantId,  } from '@/types/domain';
 import { participantAge, suitsAdult, suitsChild } from '@/utils/eligibility';
 
 const CAPS = { popularPrograms: 6, providers: 4, offers: 4 } as const;
@@ -36,7 +30,7 @@ function participantById(id: ParticipantId): Participant {
 }
 
 /** Child contexts hard-exclude by provider-defined age range (docs/16 §4). */
-function inParticipantContext(program: Program, participant: Participant): boolean {
+function inParticipantContext(program: FixtureProgram, participant: Participant): boolean {
   if (participant.kind !== 'child') return true;
   return suitsChild(program.eligibility, participantAge(participant) ?? 0);
 }
@@ -182,10 +176,10 @@ export class MockCatalogueService implements CatalogueService {
    * without hiding child programs (docs/16 §4), then rating, area proximity,
    * and stable catalogue order. No behavioral signals.
    */
-  private rank(list: Program[], areaId: AreaId, participant: Participant): Program[] {
+  private rank(list: FixtureProgram[], areaId: AreaId, participant: Participant): FixtureProgram[] {
     const reference = areas.find((area) => area.id === areaId) ?? areas[0];
     const indexById = new Map(programs.map((program, index) => [program.id, index]));
-    const adultEmphasis = (program: Program) =>
+    const adultEmphasis = (program: FixtureProgram) =>
       participant.kind === 'self' && !suitsAdult(program.eligibility) ? 1 : 0;
     return [...list].sort(
       (a, b) =>

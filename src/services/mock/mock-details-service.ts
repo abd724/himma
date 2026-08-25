@@ -1,3 +1,4 @@
+import type { FixtureProgram } from '@/data/mock/catalogue';
 import { bookingExtras, type BookingExtras } from '@/data/mock/booking-extras';
 import { activityTypes, areas, categories, programs, providers } from '@/data/mock/catalogue';
 import { cancellationPolicies } from '@/data/mock/policies';
@@ -11,7 +12,7 @@ import type {
   ProviderStorefrontPage,
   StorefrontProgramGroup,
 } from '@/services/contracts/details';
-import type { Participant, Program, ProviderBranch, SessionOccurrence } from '@/types/domain';
+import type { Participant, ProviderBranch, SessionOccurrence } from '@/types/domain';
 import {
   ageRangeLabel,
   householdSuitability,
@@ -42,11 +43,11 @@ export function dayLabelForOffset(offset: number): string {
  * fields — docs/20 §8.3, docs/09 §20.9. No randomness, no device clock;
  * extras may override with 'none' or an explicit list. Booking extras
  * overlay per-index places (`sessionSpots`, 0 = full) or an empty list
- * (`noUpcomingSessions`) so Program Details and the booking flow share one
+ * (`noUpcomingSessions`) so FixtureProgram Details and the booking flow share one
  * availability source (docs/09 §21.5).
  */
 export function buildUpcomingSessions(
-  program: Program,
+  program: FixtureProgram,
   extras: ProgramDetailExtras,
   booking?: BookingExtras,
 ): SessionOccurrence[] {
@@ -119,7 +120,7 @@ export function providerMonogram(name: string): string {
 }
 
 /** Whether the selected participant can join a program — docs/05 §7. */
-function programEligible(program: Program, participant: Participant | undefined): boolean {
+function programEligible(program: FixtureProgram, participant: Participant | undefined): boolean {
   if (participant === undefined || participant.kind === 'everyone') return true;
   if (participant.kind === 'child') {
     return suitsChild(program.eligibility, participantAge(participant) ?? 0);

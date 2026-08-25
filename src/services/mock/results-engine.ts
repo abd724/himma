@@ -1,6 +1,7 @@
+import type { FixtureProgram } from '@/data/mock/catalogue';
 import { areas, programs as catalogue, recommendationOrder } from '@/data/mock/catalogue';
 import type { FilterSelection, SortId } from '@/services/contracts/filters';
-import type { Area, AreaId, PriceModel, Program } from '@/types/domain';
+import type { Area, AreaId, PriceModel } from '@/types/domain';
 import { isChildRelevant, isLadiesOnly, suitsAdult } from '@/utils/eligibility';
 
 export function priceValue(price: PriceModel): number {
@@ -12,13 +13,15 @@ export function priceValue(price: PriceModel): number {
       return price.amount;
     case 'camp':
       return price.amountPerWeek;
+    case 'from':
+      return price.amount;
     case 'free':
     case 'freeTrial':
       return 0;
   }
 }
 
-function inPriceBand(program: Program, band: FilterSelection['priceBand']): boolean {
+function inPriceBand(program: FixtureProgram, band: FilterSelection['priceBand']): boolean {
   if (band === undefined) return true;
   const value = priceValue(program.price);
   if (band === 'under-100') return value < 100;
@@ -26,7 +29,7 @@ function inPriceBand(program: Program, band: FilterSelection['priceBand']): bool
   return value > 500;
 }
 
-function overlapsAgeBand(program: Program, band: { min: number; max: number | null }): boolean {
+function overlapsAgeBand(program: FixtureProgram, band: { min: number; max: number | null }): boolean {
   const { allAges, minimumAge, maximumAge } = program.eligibility;
   if (allAges) return true;
   const programMin = minimumAge ?? 0;
@@ -39,7 +42,7 @@ function overlapsAgeBand(program: Program, band: { min: number; max: number | nu
  * Applies every narrowing filter — docs/16 §3. "Near me" reorders only.
  * Ladies-only off means NO gender-based narrowing of any kind.
  */
-export function passesFilters(program: Program, filters: FilterSelection): boolean {
+export function passesFilters(program: FixtureProgram, filters: FilterSelection): boolean {
   if (filters.ladiesOnly && !isLadiesOnly(program.eligibility)) return false;
   if (filters.audience === 'adults' && !suitsAdult(program.eligibility)) return false;
   if (filters.audience === 'children' && !isChildRelevant(program.eligibility)) return false;
@@ -86,14 +89,14 @@ function areaRank(areaId: AreaId, reference: Area): number {
 const popularityIds = recommendationOrder.everyone;
 const catalogueIndexById = new Map(catalogue.map((program, index) => [program.id, index]));
 
-function soonness(program: Program): number {
+function soonness(program: FixtureProgram): number {
   if (program.availableToday) return 0;
   if (program.runsOnWeekend) return 1;
   if (program.isCamp) return 3;
   return 2;
 }
 
-function popularity(program: Program): number {
+function popularity(program: FixtureProgram): number {
   const index = popularityIds.indexOf(program.id);
   const curated = index === -1 ? popularityIds.length : index;
   return curated * 100 + Math.round((5 - program.rating) * 10);
@@ -106,16 +109,16 @@ function popularity(program: Program): number {
  * `nearest` (which already is proximity).
  */
 export function sortPrograms(
-  list: Program[],
+  list: FixtureProgram[],
   sort: SortId,
   referenceAreaId: AreaId,
   nearMe: boolean,
-): Program[] {
+): FixtureProgram[] {
   const reference = areas.find((area) => area.id === referenceAreaId) ?? areas[0];
   const relevanceById = new Map(list.map((program, index) => [program.id, index]));
-  const relevance = (program: Program) => relevanceById.get(program.id) ?? 0;
+  const relevance = (program: FixtureProgram) => relevanceById.get(program.id) ?? 0;
   const result = [...list];
-  const by = (compare: (a: Program, b: Program) => number) =>
+  const by = (compare: (a: FixtureProgram, b: FixtureProgram) => number) =>
     result.sort((a, b) => compare(a, b) || relevance(a) - relevance(b));
 
   switch (sort) {

@@ -5,7 +5,6 @@ import { FilterSheet } from '@/components/domain/filter-sheet';
 import { ParticipantChips } from '@/components/domain/participant-chips';
 import { Chip } from '@/components/ui/chip';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
-import { providers as allProviders } from '@/data/mock/catalogue';
 import { CataloguePageHeader } from '@/features/catalogue/catalogue-page-header';
 import { CataloguePageSkeleton } from '@/features/catalogue/category-screen';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
@@ -15,9 +14,8 @@ import {
   emptyFilters,
   type FilterSelection,
 } from '@/services/contracts/filters';
-import { catalogueService, providerProgramCount, searchService } from '@/services/composition';
+import { catalogueService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
-import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession } from '@/state/results-session-context';
 import { colors, dockTokens, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
@@ -25,8 +23,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const providerNameById = new Map(allProviders.map((provider) => [provider.id, provider.name]));
 
 type Segment = 'programs' | 'providers';
 
@@ -48,9 +44,9 @@ export function ActivityTypeScreen() {
 
   const session = useResultsSession();
   const { participants, participantId, setParticipantId } = useParticipantContext();
-  const { areaId, areaLabelById } = useAreaContext();
-  const { isFavourite, toggleFavourite } = useFavourites();
+  const { areaId } = useAreaContext();
   const { openProgram, openProvider } = useDetailNavigation();
+  const participant = participants.find((entry) => entry.id === participantId);
 
   const [page, setPage] = useState<ActivityTypePage | null>(null);
   const [missing, setMissing] = useState(false);
@@ -61,15 +57,28 @@ export function ActivityTypeScreen() {
   // Previous content stays visible while a context change reloads (Home rule).
   useEffect(() => {
     let cancelled = false;
-    catalogueService.getActivityTypePage({ activityTypeId, areaId, participantId }).then((result) => {
-      if (!cancelled) {
-        setPage(result ?? null);
-        setMissing(result === undefined);
-      }
-    });
+    catalogueService
+      .getActivityTypePage({
+        activityTypeId,
+        areaId,
+        participantId,
+        ...(participant !== undefined ? { participant } : {}),
+      })
+      .then(
+        (result) => {
+          if (!cancelled) {
+            setPage(result ?? null);
+            setMissing(result === undefined);
+          }
+        },
+        () => {
+          if (!cancelled) setMissing(true);
+        },
+      );
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activityTypeId, areaId, participantId]);
 
   const goBack = () => {
@@ -103,14 +112,6 @@ export function ActivityTypeScreen() {
     session.setFilters(draftFilters);
     router.push('/discover/results');
   };
-
-  const draftCount = useMemo(
-    () =>
-      filterSheetOpen
-        ? searchService.countResults({ query: '', participantId, areaId, filters: draftFilters })
-        : 0,
-    [filterSheetOpen, participantId, areaId, draftFilters],
-  );
 
   const participantLabel =
     participants.find((participant) => participant.id === participantId)?.label ?? 'Everyone';
@@ -216,10 +217,8 @@ export function ActivityTypeScreen() {
                       <CompactProgramRow
                         key={program.id}
                         program={program}
-                        providerName={providerNameById.get(program.providerId) ?? ''}
-                        areaLabel={areaLabelById.get(program.areaId) ?? ''}
-                        isFavourite={isFavourite('program', program.id)}
-                        onToggleFavourite={(id) => toggleFavourite('program', id)}
+                        providerName={program.providerName ?? ''}
+                        areaLabel={program.areaLabel ?? ''}
                         onPress={() => openProgram(program.id)}
                       />
                     ))}
@@ -241,8 +240,7 @@ export function ActivityTypeScreen() {
                     <CompactProviderRow
                       key={provider.id}
                       provider={provider}
-                      areaLabel={areaLabelById.get(provider.areaId) ?? ''}
-                      programCount={providerProgramCount(provider.id)}
+                      areaLabel={provider.areaLabel ?? ''}
                       onPress={() => openProvider(provider.id)}
                     />
                   ))}
@@ -256,7 +254,6 @@ export function ActivityTypeScreen() {
       <FilterSheet
         visible={filterSheetOpen}
         filters={draftFilters}
-        resultCount={draftCount}
         onChange={setDraftFilters}
         onClearAll={() => setDraftFilters(emptyFilters)}
         onClose={() => setFilterSheetOpen(false)}

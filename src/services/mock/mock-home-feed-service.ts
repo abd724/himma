@@ -1,3 +1,4 @@
+import type { FixtureProgram } from '@/data/mock/catalogue';
 import { areas, programs } from '@/data/mock/catalogue';
 import type {
   HeroContent,
@@ -9,7 +10,7 @@ import type {
 } from '@/services/contracts/home-feed';
 import type { ScheduleEntry } from '@/services/contracts/schedule';
 import { weekEntries } from '@/services/mock/mock-schedule-service';
-import type { Area, AreaId, Participant, Program } from '@/types/domain';
+import type { Area, AreaId, Participant } from '@/types/domain';
 import { participantAge, suitsAdult, suitsChild } from '@/utils/eligibility';
 
 /**
@@ -31,7 +32,7 @@ const guestWelcome: HeroContent = {
 };
 
 const stableIndex = new Map(programs.map((program, index) => [program.id, index]));
-const stable = (program: Program) => stableIndex.get(program.id) ?? 0;
+const stable = (program: FixtureProgram) => stableIndex.get(program.id) ?? 0;
 
 function areaRank(areaId: AreaId, reference: Area): number {
   if (areaId === reference.id) return 0;
@@ -40,7 +41,7 @@ function areaRank(areaId: AreaId, reference: Area): number {
 }
 
 /** Minutes since midnight for "7:30 PM"; non-clock labels sort last. */
-function todayTimeMinutes(program: Program): number {
+function todayTimeMinutes(program: FixtureProgram): number {
   const match = program.todayTime?.match(/^(\d{1,2}):(\d{2}) (AM|PM)$/);
   if (!match) return Number.POSITIVE_INFINITY;
   const hours = (Number(match[1]) % 12) + (match[3] === 'PM' ? 12 : 0);
@@ -54,8 +55,8 @@ function entryTimeMinutes(entry: ScheduleEntry): number {
   return hours * 60 + Number(match[2]);
 }
 
-/** Provider-defined eligibility for one account participant (docs/05 §7). */
-function eligibleFor(program: Program, participant: Participant): boolean {
+/** FixtureProvider-defined eligibility for one account participant (docs/05 §7). */
+function eligibleFor(program: FixtureProgram, participant: Participant): boolean {
   if (participant.kind === 'child') {
     return suitsChild(program.eligibility, participantAge(participant) ?? 0);
   }
@@ -63,19 +64,19 @@ function eligibleFor(program: Program, participant: Participant): boolean {
 }
 
 /** Eligibility across the whole account; a guest (no participants) is open. */
-function eligibleForAccount(program: Program, participants: Participant[]): boolean {
+function eligibleForAccount(program: FixtureProgram, participants: Participant[]): boolean {
   if (participants.length === 0) return true;
   return participants.some((participant) => eligibleFor(program, participant));
 }
 
-const byRating = (a: Program, b: Program) => b.rating - a.rating || stable(a) - stable(b);
+const byRating = (a: FixtureProgram, b: FixtureProgram) => b.rating - a.rating || stable(a) - stable(b);
 
 /**
  * Declared-interest ranking with discovery diversity — docs/05 §9: interest
  * matches lead, but the rail always keeps room for one popular non-match so
  * recommendations never collapse to exact interest matches only.
  */
-function interestRanked(pool: Program[], interests: string[], cap: number): Program[] {
+function interestRanked(pool: FixtureProgram[], interests: string[], cap: number): FixtureProgram[] {
   const interestSet = new Set(interests);
   const matches = pool.filter((p) => interestSet.has(p.activityTypeId)).sort(byRating);
   const others = pool.filter((p) => !interestSet.has(p.activityTypeId)).sort(byRating);
@@ -113,7 +114,7 @@ export function buildHomeFeed(input: HomeFeedBuildInput): HomeFeed {
   const hasSchedule = scheduleEntries.length > 0;
 
   const sections: HomeSection[] = [];
-  const pushPrograms = (id: string, title: string, list: Program[]) => {
+  const pushPrograms = (id: string, title: string, list: FixtureProgram[]) => {
     if (list.length > 0) sections.push({ kind: 'programs', id, title, programs: list });
   };
 
@@ -220,7 +221,7 @@ export function buildHomeFeed(input: HomeFeedBuildInput): HomeFeed {
 export class MockHomeFeedService implements HomeFeedService {
   constructor(private readonly delayMs: number = 400) {}
 
-  getAreas(): Area[] {
+  async getAreas(): Promise<Area[]> {
     return areas;
   }
 

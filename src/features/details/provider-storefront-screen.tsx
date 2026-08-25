@@ -13,7 +13,6 @@ import { shareEntity } from '@/features/details/share-entity';
 import type { ProviderStorefrontPage } from '@/services/contracts/details';
 import { detailsService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
-import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { ageRangeLabel, participantAge, spokenAgeLabel } from '@/utils/eligibility';
@@ -39,7 +38,6 @@ export function ProviderStorefrontScreen() {
 
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areaId } = useAreaContext();
-  const { isFavourite, toggleFavourite } = useFavourites();
   const { openProgram } = useDetailNavigation();
 
   const [page, setPage] = useState<ProviderStorefrontPage | null>(null);
@@ -158,7 +156,6 @@ export function ProviderStorefrontScreen() {
     );
   }
 
-  const saved = page !== null && isFavourite('provider', page.provider.id);
   const selectedParticipant = participants.find(
     (participant) => participant.id === participantId,
   );
@@ -219,14 +216,18 @@ export function ProviderStorefrontScreen() {
                 </View>
               </View>
 
-              <View
-                style={styles.ratingRow}
-                accessibilityLabel={`Rated ${page.provider.rating.toFixed(1)} out of 5 from ${page.extras.reviewCount} reviews`}
-              >
-                <Ionicons name="star" size={15} color={colors.brand.reward} />
-                <Text style={styles.ratingValue}>{page.provider.rating.toFixed(1)}</Text>
-                <Text style={styles.ratingCount}>({page.extras.reviewCount} reviews)</Text>
-              </View>
+              {/* Ratings/reviews are a deferred domain — the row renders only
+                  when a real rating authority provides one (never in RI-2). */}
+              {page.provider.rating !== undefined && page.extras.reviewCount !== undefined ? (
+                <View
+                  style={styles.ratingRow}
+                  accessibilityLabel={`Rated ${page.provider.rating.toFixed(1)} out of 5 from ${page.extras.reviewCount} reviews`}
+                >
+                  <Ionicons name="star" size={15} color={colors.brand.reward} />
+                  <Text style={styles.ratingValue}>{page.provider.rating.toFixed(1)}</Text>
+                  <Text style={styles.ratingCount}>({page.extras.reviewCount} reviews)</Text>
+                </View>
+              ) : null}
 
               <Text style={styles.bodyText}>{page.extras.description}</Text>
 
@@ -299,7 +300,10 @@ export function ProviderStorefrontScreen() {
               <View>
                 <SectionTitle
                   title="Programs"
-                  detail={`${page.programCount} ${page.programCount === 1 ? 'program' : 'programs'}${multiBranch ? ` at ${page.selectedBranch.label}` : ''}`}
+                  // RI-2 truth: the real public listing set is PROVIDER-wide
+                  // (summaries carry no per-branch association) — the count
+                  // never claims branch specificity.
+                  detail={`${page.programCount} ${page.programCount === 1 ? 'program' : 'programs'}`}
                 />
 
                 {childContext && page.eligibleProgramCount === 0 ? (
@@ -364,8 +368,6 @@ export function ProviderStorefrontScreen() {
                             program={program}
                             providerName={page.provider.name}
                             areaLabel={page.areaLabel}
-                            isFavourite={isFavourite('program', program.id)}
-                            onToggleFavourite={(id) => toggleFavourite('program', id)}
                             onPress={() => openProgram(program.id)}
                           />
                         ))}
@@ -408,8 +410,6 @@ export function ProviderStorefrontScreen() {
                               program={program}
                               providerName={page.provider.name}
                               areaLabel={page.areaLabel}
-                              isFavourite={isFavourite('program', program.id)}
-                              onToggleFavourite={(id) => toggleFavourite('program', id)}
                               onPress={() => openProgram(program.id)}
                             />
                             <IneligibleReason
@@ -435,8 +435,6 @@ export function ProviderStorefrontScreen() {
                         program={program}
                         providerName={page.provider.name}
                         areaLabel={page.areaLabel}
-                        isFavourite={isFavourite('program', program.id)}
-                        onToggleFavourite={(id) => toggleFavourite('program', id)}
                         onPress={() => openProgram(program.id)}
                       />
                     ))}
@@ -483,17 +481,20 @@ export function ProviderStorefrontScreen() {
                 </View>
               ) : null}
 
-              <View>
-                <SectionTitle title="Cancellation policy" />
-                <View style={styles.policyCard}>
-                  <Text style={styles.policyTitle}>{page.policy.title}</Text>
-                  {page.policy.summaryLines.map((line) => (
-                    <Text key={line} style={styles.policyLine}>
-                      {line}
-                    </Text>
-                  ))}
+              {/* No public policy authority yet — renders only when present. */}
+              {page.policy !== undefined ? (
+                <View>
+                  <SectionTitle title="Cancellation policy" />
+                  <View style={styles.policyCard}>
+                    <Text style={styles.policyTitle}>{page.policy.title}</Text>
+                    {page.policy.summaryLines.map((line) => (
+                      <Text key={line} style={styles.policyLine}>
+                        {line}
+                      </Text>
+                    ))}
+                  </View>
                 </View>
-              </View>
+              ) : null}
 
               {/* Schematic map entry — area-based, never geographic
                   coordinates (docs/09 §20.7). */}
@@ -532,23 +533,8 @@ export function ProviderStorefrontScreen() {
               accessibilityLabel={`Share ${page.provider.name}`}
               onPress={share}
             />
-            <PressableFeedback
-              accessibilityLabel={
-                saved
-                  ? `Remove ${page.provider.name} from favourites`
-                  : `Save ${page.provider.name} to favourites`
-              }
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: saved, selected: saved }}
-              onPress={() => toggleFavourite('provider', page.provider.id)}
-              style={styles.saveButton}
-            >
-              <Ionicons
-                name={saved ? 'heart' : 'heart-outline'}
-                size={22}
-                color={saved ? colors.brand.accentWarm : colors.text.primary}
-              />
-            </PressableFeedback>
+            {/* Saved/favourites is a deferred domain (owner RI-2 §14) — no
+                save affordance renders until a real saved state exists. */}
           </View>
         ) : null}
       </View>

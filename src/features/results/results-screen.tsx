@@ -10,14 +10,13 @@ import { Chip } from '@/components/ui/chip';
 import { IconButton } from '@/components/ui/icon-button';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
-import { areas, categories as allCategories, programs as catalogue, providers } from '@/data/mock/catalogue';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { sortOptions, type FilterSelection } from '@/services/contracts/filters';
 import type { ResultsPage } from '@/services/contracts/search';
-import { searchService, providerProgramCount } from '@/services/composition';
+import { searchService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
-import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
+import { useTaxonomy } from '@/state/use-taxonomy';
 import { useResultsSession, type ResultsTab } from '@/state/results-session-context';
 import { colors, dockTokens, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,14 +32,6 @@ const tabs: { id: ResultsTab; label: string }[] = [
   { id: 'categories', label: 'Categories' },
 ];
 
-const providerNameById = new Map(providers.map((provider) => [provider.id, provider.name]));
-const categoryCountById = new Map(
-  allCategories.map((category) => [
-    category.id,
-    catalogue.filter((program) => program.categoryId === category.id).length,
-  ]),
-);
-
 /** HMA-010 — the complete Results experience (docs/14 §3.2, docs/17 §10). */
 export function ResultsScreen() {
   const router = useRouter();
@@ -50,9 +41,8 @@ export function ResultsScreen() {
   const session = useResultsSession();
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areaId, areaLabelById } = useAreaContext();
-  const { isFavourite, toggleFavourite } = useFavourites();
-  const isProgramFavourite = (id: string) => isFavourite('program', id);
-  const toggleProgramFavourite = (id: string) => toggleFavourite('program', id);
+  const { taxonomy } = useTaxonomy();
+  const participant = participants.find((entry) => entry.id === participantId);
 
   const [page, setPage] = useState<ResultsPage | null>(null);
   const [failed, setFailed] = useState(false);
@@ -80,6 +70,7 @@ export function ResultsScreen() {
       .getResults({
         query: session.query,
         participantId,
+        ...(participant !== undefined ? { participant } : {}),
         areaId,
         filters: session.filters,
         sort: session.sort,
@@ -100,20 +91,8 @@ export function ResultsScreen() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.query, session.filters, session.sort, session.page, participantId, areaId, simulateFailure]);
-
-  const resultCountForSheet = useMemo(() => {
-    try {
-      return searchService.countResults({
-        query: session.query,
-        participantId,
-        areaId,
-        filters: session.filters,
-      });
-    } catch {
-      return 0;
-    }
-  }, [session.query, session.filters, participantId, areaId]);
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
@@ -128,7 +107,11 @@ export function ResultsScreen() {
   const participantLabel =
     participants.find((participant) => participant.id === participantId)?.label ?? 'Everyone';
 
-  const activeChips = buildActiveChips(session.filters, areaLabelById);
+  const categoryLabelById = useMemo(
+    () => new Map((taxonomy?.categories ?? []).map((category) => [category.id, category.label])),
+    [taxonomy],
+  );
+  const activeChips = buildActiveChips(session.filters, areaLabelById, categoryLabelById);
 
   const emptyMessage =
     session.filters.ladiesOnly && !['me', 'everyone'].includes(participantId)
@@ -201,31 +184,9 @@ export function ResultsScreen() {
               />
             ) : null}
             <View style={styles.toolbarDivider} />
-            <Chip
-              label="Today"
-              selected={session.filters.when === 'today'}
-              accessibilityRole="checkbox"
-              onPress={() =>
-                session.patchFilters({ when: session.filters.when === 'today' ? undefined : 'today' })
-              }
-            />
-            <Chip
-              label="This weekend"
-              selected={session.filters.when === 'weekend'}
-              accessibilityRole="checkbox"
-              onPress={() =>
-                session.patchFilters({
-                  when: session.filters.when === 'weekend' ? undefined : 'weekend',
-                })
-              }
-            />
-            <Chip
-              label="Near me"
-              icon="navigate-outline"
-              selected={session.filters.nearMe}
-              accessibilityRole="checkbox"
-              onPress={() => session.patchFilters({ nearMe: !session.filters.nearMe })}
-            />
+            {/* Quick chips = exactly the server-supported dimensions
+                (docs/28 §11): schedule/proximity/popularity chips have no
+                backend authority and are not offered. */}
             <Chip
               label="Ladies only"
               icon="woman-outline"
@@ -247,11 +208,11 @@ export function ResultsScreen() {
               }
             />
             <Chip
-              label="Offers"
+              label="Free trial"
               icon="pricetag-outline"
-              selected={session.filters.offers}
+              selected={session.filters.trial}
               accessibilityRole="checkbox"
-              onPress={() => session.patchFilters({ offers: !session.filters.offers })}
+              onPress={() => session.patchFilters({ trial: !session.filters.trial })}
             />
           </ScrollView>
 
@@ -325,12 +286,14 @@ export function ResultsScreen() {
                   Showing results for “{page.correctedQuery}”
                 </Text>
               ) : null}
-              <Text style={styles.countLine} accessibilityLiveRegion="polite">
-                {page.totalPrograms} {page.totalPrograms === 1 ? 'activity' : 'activities'} ·{' '}
-                {page.totalProviders} {page.totalProviders === 1 ? 'provider' : 'providers'}
-              </Text>
+              {page.totalPrograms !== undefined && page.totalProviders !== undefined ? (
+                <Text style={styles.countLine} accessibilityLiveRegion="polite">
+                  {page.totalPrograms} {page.totalPrograms === 1 ? 'activity' : 'activities'} ·{' '}
+                  {page.totalProviders} {page.totalProviders === 1 ? 'provider' : 'providers'}
+                </Text>
+              ) : null}
 
-              {page.totalPrograms === 0 && session.tab !== 'providers' && session.tab !== 'categories' ? (
+              {page.programs.length === 0 && !page.hasMorePrograms && session.tab !== 'providers' && session.tab !== 'categories' ? (
                 <EmptyFeedCard
                   message={emptyMessage}
                   actionLabel={session.activeCount > 0 ? 'Clear filters' : 'Try another search'}
@@ -340,9 +303,9 @@ export function ResultsScreen() {
                   }}
                 />
               ) : session.tab === 'all' ? (
-                <AllTab page={page} onSeeAll={session.setTab} onOpenCategory={openCategory} isFavourite={isProgramFavourite} onToggleFavourite={toggleProgramFavourite} />
+                <AllTab page={page} onSeeAll={session.setTab} onOpenCategory={openCategory} />
               ) : session.tab === 'programs' ? (
-                <ProgramsTab page={page} isFavourite={isProgramFavourite} onToggleFavourite={toggleProgramFavourite} onLoadMore={session.loadMore} />
+                <ProgramsTab page={page} onLoadMore={session.loadMore} />
               ) : session.tab === 'providers' ? (
                 <ProvidersTab page={page} onLoadMore={session.loadMore} />
               ) : (
@@ -356,7 +319,6 @@ export function ResultsScreen() {
       <FilterSheet
         visible={filterSheetOpen}
         filters={session.filters}
-        resultCount={resultCountForSheet}
         onChange={session.setFilters}
         onClearAll={session.clearFilters}
         onClose={() => setFilterSheetOpen(false)}
@@ -382,13 +344,10 @@ interface ChipDescriptor {
 function buildActiveChips(
   filters: FilterSelection,
   areaLabelById: Map<string, string>,
+  categoryLabelById: Map<string, string>,
 ): ChipDescriptor[] {
   const chips: ChipDescriptor[] = [];
   if (filters.ladiesOnly) chips.push({ key: 'ladies', label: 'Ladies only', remove: { ladiesOnly: false } });
-  if (filters.when === 'today') chips.push({ key: 'today', label: 'Today', remove: { when: undefined } });
-  if (filters.when === 'weekend') chips.push({ key: 'weekend', label: 'This weekend', remove: { when: undefined } });
-  if (filters.afterSchool) chips.push({ key: 'after-school', label: 'After school', remove: { afterSchool: false } });
-  if (filters.nearMe) chips.push({ key: 'near-me', label: 'Near me', remove: { nearMe: false } });
   if (filters.audience !== undefined) {
     chips.push({
       key: 'audience',
@@ -416,9 +375,12 @@ function buildActiveChips(
   if (filters.categoryId !== undefined) {
     chips.push({
       key: 'category',
-      label: allCategories.find((category) => category.id === filters.categoryId)?.label ?? 'Category',
+      label: categoryLabelById.get(filters.categoryId) ?? 'Category',
       remove: { categoryId: undefined, activityTypeId: undefined, skillLevel: undefined },
     });
+  }
+  if (filters.collectionId !== undefined) {
+    chips.push({ key: 'collection', label: 'Collection', remove: { collectionId: undefined } });
   }
   if (filters.formats.length > 0) {
     chips.push({ key: 'formats', label: filters.formats.includes('camp') && filters.formats.length === 1 ? 'Camps' : 'Formats', remove: { formats: [] } });
@@ -432,7 +394,6 @@ function buildActiveChips(
   }
   if (filters.priceBand !== undefined) chips.push({ key: 'price', label: 'Price', remove: { priceBand: undefined } });
   if (filters.free) chips.push({ key: 'free', label: 'Free', remove: { free: false } });
-  if (filters.offers) chips.push({ key: 'offers', label: 'Offers', remove: { offers: false } });
   if (filters.trial) chips.push({ key: 'trial', label: 'Free trial', remove: { trial: false } });
   if (filters.skillLevel !== undefined) {
     chips.push({
@@ -441,21 +402,10 @@ function buildActiveChips(
       remove: { skillLevel: undefined },
     });
   }
-  if (filters.topRated) chips.push({ key: 'top-rated', label: 'Top rated', remove: { topRated: false } });
   return chips;
 }
 
-const areaLabel = (areaId: string) => areas.find((area) => area.id === areaId)?.label ?? '';
-
-function ProgramList({
-  programs,
-  isFavourite,
-  onToggleFavourite,
-}: {
-  programs: ResultsPage['programs'];
-  isFavourite: (id: string) => boolean;
-  onToggleFavourite: (id: string) => void;
-}) {
+function ProgramList({ programs }: { programs: ResultsPage['programs'] }) {
   const { openProgram } = useDetailNavigation();
   return (
     <View style={styles.list}>
@@ -463,10 +413,8 @@ function ProgramList({
         <CompactProgramRow
           key={program.id}
           program={program}
-          providerName={providerNameById.get(program.providerId) ?? ''}
-          areaLabel={areaLabel(program.areaId)}
-          isFavourite={isFavourite(program.id)}
-          onToggleFavourite={onToggleFavourite}
+          providerName={program.providerName ?? ''}
+          areaLabel={program.areaLabel ?? ''}
           onPress={() => openProgram(program.id)}
         />
       ))}
@@ -478,14 +426,10 @@ function AllTab({
   page,
   onSeeAll,
   onOpenCategory,
-  isFavourite,
-  onToggleFavourite,
 }: {
   page: ResultsPage;
   onSeeAll: (tab: ResultsTab) => void;
   onOpenCategory: (categoryId: string) => void;
-  isFavourite: (id: string) => boolean;
-  onToggleFavourite: (id: string) => void;
 }) {
   const { openProvider } = useDetailNavigation();
   return (
@@ -494,29 +438,24 @@ function AllTab({
         <View style={styles.list}>
           <GroupHeader
             title="Programs"
-            showSeeAll={page.totalPrograms > 3}
+            showSeeAll={page.programs.length > 3 || page.hasMorePrograms}
             onSeeAll={() => onSeeAll('programs')}
           />
-          <ProgramList
-            programs={page.programs.slice(0, 3)}
-            isFavourite={isFavourite}
-            onToggleFavourite={onToggleFavourite}
-          />
+          <ProgramList programs={page.programs.slice(0, 3)} />
         </View>
       ) : null}
       {page.providers.length > 0 ? (
         <View style={styles.list}>
           <GroupHeader
             title="Providers"
-            showSeeAll={page.totalProviders > 3}
+            showSeeAll={page.providers.length > 3 || page.hasMoreProviders}
             onSeeAll={() => onSeeAll('providers')}
           />
           {page.providers.slice(0, 3).map((provider) => (
             <CompactProviderRow
               key={provider.id}
               provider={provider}
-              areaLabel={areaLabel(provider.areaId)}
-              programCount={providerProgramCount(provider.id)}
+              areaLabel={provider.areaLabel ?? ''}
               onPress={() => openProvider(provider.id)}
             />
           ))}
@@ -533,7 +472,6 @@ function AllTab({
             <CategoryResultRow
               key={category.id}
               category={category}
-              programCount={categoryCountById.get(category.id) ?? 0}
               onPress={() => onOpenCategory(category.id)}
             />
           ))}
@@ -566,20 +504,10 @@ function GroupHeader({
   );
 }
 
-function ProgramsTab({
-  page,
-  isFavourite,
-  onToggleFavourite,
-  onLoadMore,
-}: {
-  page: ResultsPage;
-  isFavourite: (id: string) => boolean;
-  onToggleFavourite: (id: string) => void;
-  onLoadMore: () => void;
-}) {
+function ProgramsTab({ page, onLoadMore }: { page: ResultsPage; onLoadMore: () => void }) {
   return (
     <View style={styles.list}>
-      <ProgramList programs={page.programs} isFavourite={isFavourite} onToggleFavourite={onToggleFavourite} />
+      <ProgramList programs={page.programs} />
       <ListFooter
         hasMore={page.hasMorePrograms}
         shownCount={page.programs.length}
@@ -598,8 +526,7 @@ function ProvidersTab({ page, onLoadMore }: { page: ResultsPage; onLoadMore: () 
         <CompactProviderRow
           key={provider.id}
           provider={provider}
-          areaLabel={areaLabel(provider.areaId)}
-          programCount={providerProgramCount(provider.id)}
+          areaLabel={provider.areaLabel ?? ''}
           onPress={() => openProvider(provider.id)}
         />
       ))}
@@ -626,7 +553,6 @@ function CategoriesTab({
         <CategoryResultRow
           key={category.id}
           category={category}
-          programCount={categoryCountById.get(category.id) ?? 0}
           onPress={() => onOpenCategory(category.id)}
         />
       ))}
@@ -642,7 +568,7 @@ function ListFooter({
 }: {
   hasMore: boolean;
   shownCount: number;
-  total: number;
+  total: number | undefined;
   onLoadMore: () => void;
 }) {
   if (hasMore) {
@@ -652,7 +578,7 @@ function ListFooter({
       </PressableFeedback>
     );
   }
-  if (total > 3 && shownCount === total) {
+  if (total !== undefined && total > 3 && shownCount === total) {
     return <Text style={styles.endOfResults}>You’ve seen all {total} results</Text>;
   }
   return null;

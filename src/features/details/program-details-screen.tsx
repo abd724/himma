@@ -15,7 +15,6 @@ import { shareEntity } from '@/features/details/share-entity';
 import type { ProgramDetailPage } from '@/services/contracts/details';
 import { detailsService, providerMonogram } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
-import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
 import type { SkillLevel } from '@/types/domain';
@@ -51,7 +50,6 @@ export function ProgramDetailsScreen() {
 
   const { participants, participantId, setParticipantId } = useParticipantContext();
   const { areaId } = useAreaContext();
-  const { isFavourite, toggleFavourite } = useFavourites();
   const { openProgram, openProvider } = useDetailNavigation();
   const { openBooking } = useBookingEntry();
 
@@ -143,12 +141,12 @@ export function ProgramDetailsScreen() {
     );
   }
 
-  const saved = page !== null && isFavourite('program', page.program.id);
-  const price = page === null ? null : formatPrice(page.program.price);
+  const price =
+    page === null || page.program.price === undefined ? null : formatPrice(page.program.price);
   const ctaLabel =
     page === null
       ? 'Book'
-      : page.program.price.kind === 'free'
+      : page.program.price?.kind === 'free'
         ? 'Book free session'
         : page.program.offer?.kind === 'freeTrial'
           ? 'Book free trial'
@@ -218,14 +216,18 @@ export function ProgramDetailsScreen() {
                 <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
               </PressableFeedback>
 
-              <View
-                style={styles.ratingRow}
-                accessibilityLabel={`Rated ${page.program.rating.toFixed(1)} out of 5 from ${page.extras.reviewCount} reviews`}
-              >
-                <Ionicons name="star" size={15} color={colors.brand.reward} />
-                <Text style={styles.ratingValue}>{page.program.rating.toFixed(1)}</Text>
-                <Text style={styles.ratingCount}>({page.extras.reviewCount} reviews)</Text>
-              </View>
+              {/* Ratings/reviews are a deferred domain — the row renders only
+                  when a real rating authority provides one (never in RI-2). */}
+              {page.program.rating !== undefined && page.extras.reviewCount !== undefined ? (
+                <View
+                  style={styles.ratingRow}
+                  accessibilityLabel={`Rated ${page.program.rating.toFixed(1)} out of 5 from ${page.extras.reviewCount} reviews`}
+                >
+                  <Ionicons name="star" size={15} color={colors.brand.reward} />
+                  <Text style={styles.ratingValue}>{page.program.rating.toFixed(1)}</Text>
+                  <Text style={styles.ratingCount}>({page.extras.reviewCount} reviews)</Text>
+                </View>
+              ) : null}
 
               <View style={styles.factsRow}>
                 <FactPill label={page.ageLabel} spoken={spokenAgeLabel(page.ageLabel)} />
@@ -286,7 +288,7 @@ export function ProgramDetailsScreen() {
               ) : null}
 
               <View style={styles.priceBlock}>
-                {price !== null ? (
+                {price !== null && page.program.price !== undefined ? (
                   <View
                     style={styles.priceLine}
                     accessibilityLabel={spokenPriceLabel(page.program.price)}
@@ -300,10 +302,12 @@ export function ProgramDetailsScreen() {
                 ) : null}
               </View>
 
-              <View style={styles.metaRow}>
-                <Ionicons name="calendar-outline" size={16} color={colors.text.secondary} />
-                <Text style={styles.metaText}>{page.program.scheduleLabel}</Text>
-              </View>
+              {page.program.scheduleLabel !== undefined ? (
+                <View style={styles.metaRow}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.text.secondary} />
+                  <Text style={styles.metaText}>{page.program.scheduleLabel}</Text>
+                </View>
+              ) : null}
               <View style={styles.metaRow}>
                 <Ionicons name="location-outline" size={16} color={colors.text.secondary} />
                 <Text style={styles.metaText}>
@@ -331,21 +335,33 @@ export function ProgramDetailsScreen() {
                         key={session.id}
                         style={styles.sessionRow}
                         accessibilityLabel={`${session.dayLabel}, ${session.timeLabel}${
-                          session.spotsLeft === 0
+                          session.branchLabel !== undefined ? `, ${session.branchLabel}` : ''
+                        }${
+                          session.availability === 'full' || session.spotsLeft === 0
                             ? ', full'
-                            : session.spotsLeft !== undefined
-                              ? `, ${session.spotsLeft} places left`
-                              : ''
+                            : session.availability === 'closed'
+                              ? ', registration closed'
+                              : session.spotsLeft !== undefined
+                                ? `, ${session.spotsLeft} places left`
+                                : ''
                         }`}
                       >
                         <Text style={styles.sessionDay}>{session.dayLabel}</Text>
-                        <Text style={styles.sessionTime}>{session.timeLabel}</Text>
-                        {/* A zero-spot occurrence reads Full here too, so the
-                            informational list and the booking flow share one
-                            availability truth (docs/09 §21.5). */}
-                        {session.spotsLeft === 0 ? (
+                        <Text style={styles.sessionTime}>
+                          {session.timeLabel}
+                          {session.branchLabel !== undefined ? ` · ${session.branchLabel}` : ''}
+                        </Text>
+                        {/* The customer-safe D-RI-4 bands: full and closed
+                            occurrences stay VISIBLE with their truthful state;
+                            a low count appears ONLY when the server put it
+                            there (fewLeft) — never a total capacity. */}
+                        {session.availability === 'full' || session.spotsLeft === 0 ? (
                           <View style={styles.fullPill}>
                             <Text style={styles.fullPillText}>Full</Text>
+                          </View>
+                        ) : session.availability === 'closed' ? (
+                          <View style={styles.fullPill}>
+                            <Text style={styles.fullPillText}>Closed</Text>
                           </View>
                         ) : session.spotsLeft !== undefined ? (
                           <View style={styles.spotsPill}>
@@ -422,17 +438,22 @@ export function ProgramDetailsScreen() {
                 </View>
               ) : null}
 
-              <View>
-                <DetailSectionTitle title="Cancellation policy" />
-                <View style={styles.policyCard}>
-                  <Text style={styles.policyTitle}>{page.policy.title}</Text>
-                  {page.policy.summaryLines.map((line) => (
-                    <Text key={line} style={styles.policyLine}>
-                      {line}
-                    </Text>
-                  ))}
+              {/* No public policy authority exists yet — the section renders
+                  only when a policy is genuinely present (the real snapshot
+                  arrives with the RI-3 quote). */}
+              {page.policy !== undefined ? (
+                <View>
+                  <DetailSectionTitle title="Cancellation policy" />
+                  <View style={styles.policyCard}>
+                    <Text style={styles.policyTitle}>{page.policy.title}</Text>
+                    {page.policy.summaryLines.map((line) => (
+                      <Text key={line} style={styles.policyLine}>
+                        {line}
+                      </Text>
+                    ))}
+                  </View>
                 </View>
-              </View>
+              ) : null}
 
               {page.program.eligibility.eligibilityNotes !== undefined ||
               page.extras.safetyNote !== undefined ? (
@@ -459,9 +480,7 @@ export function ProgramDetailsScreen() {
                         key={program.id}
                         program={program}
                         providerName={page.provider.name}
-                        areaLabel={page.areaLabel}
-                        isFavourite={isFavourite('program', program.id)}
-                        onToggleFavourite={(id) => toggleFavourite('program', id)}
+                        areaLabel={program.areaLabel ?? page.areaLabel}
                         onPress={() => openProgram(program.id)}
                       />
                     ))}
@@ -493,23 +512,8 @@ export function ProgramDetailsScreen() {
               accessibilityLabel={`Share ${page.program.title}`}
               onPress={share}
             />
-            <PressableFeedback
-              accessibilityLabel={
-                saved
-                  ? `Remove ${page.program.title} from favourites`
-                  : `Save ${page.program.title} to favourites`
-              }
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: saved, selected: saved }}
-              onPress={() => toggleFavourite('program', page.program.id)}
-              style={styles.saveButton}
-            >
-              <Ionicons
-                name={saved ? 'heart' : 'heart-outline'}
-                size={22}
-                color={saved ? colors.brand.accentWarm : colors.text.primary}
-              />
-            </PressableFeedback>
+            {/* Saved/favourites is a deferred domain (owner RI-2 §14) — no
+                save affordance renders until a real saved state exists. */}
           </View>
         ) : null}
       </View>
@@ -535,7 +539,9 @@ export function ProgramDetailsScreen() {
               when the browsing participant is ineligible — booking-time
               participant selection is the real gate (docs/02 §8). */}
           <PressableFeedback
-            accessibilityLabel={`${ctaLabel}: ${page.program.title}, ${spokenPriceLabel(page.program.price)}`}
+            accessibilityLabel={`${ctaLabel}: ${page.program.title}${
+              page.program.price !== undefined ? `, ${spokenPriceLabel(page.program.price)}` : ''
+            }`}
             onPress={() => openBooking(page.program.id)}
             style={styles.ctaButton}
           >

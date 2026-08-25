@@ -48,6 +48,8 @@ export interface FilterSelection {
   categoryId?: CategoryId;
   activityTypeId?: string;
   formats: ProgramFormatFilter[];
+  /** Editorial collection preset — resolved SERVER-side (docs/28 §11). */
+  collectionId?: string;
   setting?: 'indoor' | 'outdoor';
   priceBand?: PriceBand;
   free: boolean;
@@ -90,7 +92,9 @@ export function quickFilterSelection(quickFilterId?: QuickFilterId): FilterSelec
     case 'camps':
       return { ...emptyFilters, formats: ['camp'] };
     case 'offers':
-      return { ...emptyFilters, offers: true };
+      // The certified server dimension is `trial` (current trial offers);
+      // a generic offers filter has no backend authority.
+      return { ...emptyFilters, trial: true };
   }
 }
 
@@ -100,6 +104,9 @@ export function quickFilterSelection(quickFilterId?: QuickFilterId): FilterSelec
  */
 export function collectionFilterSelection(collection: Collection): FilterSelection {
   const { preset } = collection;
+  // Real collections carry no client preset — the server resolves the
+  // editorial preset authoritatively via the `collectionId` dimension.
+  if (preset === undefined) return { ...emptyFilters, collectionId: collection.id };
   return {
     ...emptyFilters,
     ladiesOnly: preset.ladiesOnly === true,
@@ -125,6 +132,7 @@ export function activeFilterCount(filters: FilterSelection): number {
   if (filters.categoryId !== undefined) count += 1;
   if (filters.activityTypeId !== undefined) count += 1;
   if (filters.formats.length > 0) count += 1;
+  if (filters.collectionId !== undefined) count += 1;
   if (filters.setting !== undefined) count += 1;
   if (filters.priceBand !== undefined) count += 1;
   if (filters.free) count += 1;
@@ -144,12 +152,13 @@ export type SortId =
   | 'price'
   | 'newest';
 
+/**
+ * The offered sort set = exactly the certified server sorts (docs/28 §11).
+ * Rating/popularity/proximity/schedule sorts have no backend authority and
+ * are not offered — nothing is simulated client-side.
+ */
 export const sortOptions: { id: SortId; label: string }[] = [
   { id: 'recommended', label: 'Recommended' },
-  { id: 'nearest', label: 'Nearest' },
-  { id: 'soonest', label: 'Soonest available' },
-  { id: 'rating', label: 'Highest rated' },
-  { id: 'popular', label: 'Most popular' },
   { id: 'price', label: 'Lowest price' },
   { id: 'newest', label: 'Newest' },
 ];

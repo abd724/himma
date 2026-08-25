@@ -252,7 +252,7 @@ describe('Discover feed — quick filters (docs/09 §17.4 semantics)', () => {
     expect(programsList[0].areaId).toBe('khalifa-city');
     for (let i = 1; i < programsList.length; i += 1) {
       if (programsList[i].areaId === programsList[i - 1].areaId) {
-        expect(programsList[i].rating).toBeLessThanOrEqual(programsList[i - 1].rating);
+        expect(programsList[i].rating!).toBeLessThanOrEqual(programsList[i - 1].rating!);
       }
     }
   });
@@ -264,7 +264,7 @@ describe('Discover feed — quick filters (docs/09 §17.4 semantics)', () => {
       (program) => today!.scheduleOverrides?.[program.id] ?? program.scheduleLabel,
     );
     for (const label of labels) {
-      expect(label.startsWith('Today') || label.startsWith('Daily')).toBe(true);
+      expect(label!.startsWith('Today') || label!.startsWith('Daily')).toBe(true);
     }
   });
 });
@@ -280,7 +280,8 @@ describe('Collections — presets are data, resolved by services (docs/15 §2)',
     expect(quickFilterSelection('weekend').when).toBe('weekend');
     expect(quickFilterSelection('near-me').nearMe).toBe(true);
     expect(quickFilterSelection('camps').formats).toEqual(['camp']);
-    expect(quickFilterSelection('offers').offers).toBe(true);
+    // RI-2: the Offers chip maps to the certified server `trial` dimension.
+    expect(quickFilterSelection('offers').trial).toBe(true);
   });
 
   test('collection presets resolve to the shared FilterSelection shape', () => {
@@ -321,7 +322,7 @@ describe('Collections — presets are data, resolved by services (docs/15 §2)',
 
   test('at least three rich collections and one deliberately thin collection exist', () => {
     const summaries = feed('everyone').collections;
-    const rich = summaries.filter((summary) => summary.programCount >= 4);
+    const rich = summaries.filter((summary) => summary.programCount! >= 4);
     expect(rich.length).toBeGreaterThanOrEqual(3);
     const thin = summaries.find((summary) => summary.collection.id === 'try-something-new');
     expect(thin).toBeDefined();

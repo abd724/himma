@@ -243,7 +243,7 @@ export function CheckoutScreen() {
                     ) : null}
                   </View>
                   <Text style={styles.recapMeta} numberOfLines={1}>
-                    {areaLabelById.get(page.summary.program.areaId) ?? ''}
+                    {areaLabelById.get(page.summary.program.areaId ?? '') ?? page.summary.program.areaLabel ?? ''}
                     {page.summary.branch === undefined ? '' : ` · ${page.summary.branch.label}`}
                   </Text>
                 </View>

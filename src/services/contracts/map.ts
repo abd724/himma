@@ -1,5 +1,5 @@
 import type { FilterSelection, SortId } from '@/services/contracts/filters';
-import type { Area, AreaId, ParticipantId } from '@/types/domain';
+import type { Area, AreaId, Participant, ParticipantId } from '@/types/domain';
 
 /**
  * A fictional provider marker on an area node. Pins are illustrative only —
@@ -27,6 +27,8 @@ export interface MapAreaSummary {
 export interface MapQuery {
   query: string;
   participantId: ParticipantId;
+  /** Selected browsing participant — child context narrows by age (server-side). */
+  participant?: Participant;
   /** Reference area for ranking — never a narrowing filter (docs/11 §6). */
   areaId: AreaId;
   filters: FilterSelection;

@@ -22,6 +22,9 @@ export function formatPrice(price: PriceModel): { amount: string; unit: string }
       return { amount: 'Free', unit: '' };
     case 'freeTrial':
       return { amount: 'Free', unit: 'trial' };
+    case 'from':
+      // Server-derived minimum over the active options (docs/28 §14).
+      return { amount: `From AED ${price.amount.toLocaleString('en-US')}`, unit: '' };
   }
 }
 
@@ -52,6 +55,8 @@ export function spokenPriceLabel(price: PriceModel): string {
       return 'Free';
     case 'freeTrial':
       return 'Free trial';
+    case 'from':
+      return `from ${dirhams(price.amount)}`;
   }
 }
 
@@ -68,6 +73,7 @@ export function spokenLabel(label: string): string {
 /** Commercial-shape label for the details key-facts strip — docs/15 §2. */
 export function programFormatLabel(program: Pick<Program, 'price' | 'isCamp'>): string {
   if (program.isCamp) return 'Camp';
+  if (program.price === undefined) return 'Activity';
   switch (program.price.kind) {
     case 'dropIn':
       return 'Drop-in';
@@ -83,5 +89,7 @@ export function programFormatLabel(program: Pick<Program, 'price' | 'isCamp'>): 
       return 'Trial';
     case 'camp':
       return 'Camp';
+    case 'from':
+      return 'Activity';
   }
 }

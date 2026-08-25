@@ -64,6 +64,8 @@ const SearchResultSchema = Type.Object({
   media: Type.Array(PublicMediaSchema),
   fromPrice: FromPriceSchema,
   offerBadges: Type.Array(Type.String()),
+  // RI-2 (additive): public branch area labels — location display identity.
+  areaLabels: Type.Array(Type.String()),
   provider: Type.Object({ id: Uuid, displayName: Type.String() }),
 });
 

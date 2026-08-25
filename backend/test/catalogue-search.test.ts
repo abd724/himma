@@ -318,6 +318,9 @@ async function searchIds(params: Record<string, string | number | boolean>): Pro
 const RESULT_KEYS = [
   'activityType',
   'allAges',
+  // RI-2 (owning-slice amendment): public branch area labels — the same
+  // area_label values the detail read serves; location display only.
+  'areaLabels',
   'category',
   'fromPrice',
   'genderEligibility',

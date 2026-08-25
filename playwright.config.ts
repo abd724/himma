@@ -24,7 +24,9 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'npm run dev:server',
+      // The idempotent dev seed guarantees real catalogue truth (and
+      // rebuilt search documents) before the server accepts the journeys.
+      command: 'npm run dev:seed && npm run dev:server',
       cwd: './backend',
       url: 'http://127.0.0.1:3101/internal/health',
       reuseExistingServer: true,
