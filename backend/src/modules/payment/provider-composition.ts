@@ -85,3 +85,60 @@ export function resolvePaymentProvider(
   }
   return { kind: 'unconfigured', reason: 'no payment provider configured' };
 }
+
+/**
+ * W5-6 — the COMPUTED payment capability report (docs/33 §17 W5-6
+ * "capability report wiring"; the B2-6C pattern): readiness is derived
+ * from actual configured integration, never asserted by a flag. There is
+ * deliberately NO input that can force any field — in particular,
+ * `productionChargingPossible` is the literal type `false` in W5: the
+ * repository holds no live-charging capability (test-key-only driver,
+ * production-refusing composition, D-W5-3 VAT gate, docs/23 §19), and
+ * changing that is its own reviewed code change, not configuration.
+ * Surfacing this report on an operations/health surface is a recorded
+ * later item; W5-6 ships the computation.
+ */
+export interface PaymentCapabilityReport {
+  provider: 'stripe' | 'deterministicTest' | 'none';
+  providerConfigured: boolean;
+  checkoutUrlsConfigured: boolean;
+  webhookSecretConfigured: boolean;
+  /** Customer paid initiation can serve (provider + server-authored URLs). */
+  customerCheckoutAvailable: boolean;
+  /** The webhook ingress registers (a composed provider exists). */
+  webhookIngressAvailable: boolean;
+  /** Structurally false in W5 — see above. */
+  productionChargingPossible: false;
+  reasons: string[];
+}
+
+export function paymentCapabilityReport(
+  nodeEnv: NodeEnv,
+  selection: PaymentProviderSelection = {},
+  checkoutUrls?: { successUrl: string; cancelUrl: string },
+): PaymentCapabilityReport {
+  const resolution = resolvePaymentProvider(nodeEnv, selection);
+  const providerConfigured = resolution.kind === 'configured';
+  const reasons: string[] = [];
+  if (!providerConfigured) reasons.push(resolution.reason);
+  const checkoutUrlsConfigured = checkoutUrls !== undefined;
+  if (!checkoutUrlsConfigured) {
+    reasons.push('checkout success/cancel URLs are not configured');
+  }
+  const webhookSecretConfigured =
+    selection.deterministic !== undefined ||
+    (selection.stripe !== undefined && selection.stripe.webhookSecret !== undefined);
+  if (!webhookSecretConfigured) {
+    reasons.push('webhook signing secret is not configured');
+  }
+  return {
+    provider: providerConfigured ? resolution.provider.provider : 'none',
+    providerConfigured,
+    checkoutUrlsConfigured,
+    webhookSecretConfigured,
+    customerCheckoutAvailable: providerConfigured && checkoutUrlsConfigured,
+    webhookIngressAvailable: providerConfigured,
+    productionChargingPossible: false,
+    reasons,
+  };
+}
