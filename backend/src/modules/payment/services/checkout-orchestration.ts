@@ -64,6 +64,7 @@
 import { appendAuditEvent } from '../../../db/audit';
 import type { Db } from '../../../db/kysely';
 import { newId } from '../../../db/ids';
+import { computeCommissionSplit } from '../commission';
 import {
   initiateBooking,
 } from '../../booking/services/booking-lifecycle';
@@ -101,6 +102,12 @@ export type StartPaidCheckoutResult =
     }
   /** Provider unconfigured — refused BEFORE any Booking/intent exists. */
   | { kind: 'paymentUnavailable'; reason: string }
+  /**
+   * D-W5-7: no ACTIVE agreed commission term exists for the provider —
+   * paid checkout fails closed BEFORE any Booking/intent/money (rates are
+   * provider-specific and NEVER defaulted).
+   */
+  | { kind: 'commissionTermsUnavailable' }
   /** Passthroughs from the certified S5-3 initiation boundary. */
   | { kind: 'holdNotFound' }
   | { kind: 'holdNotActive'; state: 'consumed' | 'expired' | 'released' }
@@ -138,6 +145,31 @@ export async function startPaidCheckout(
   }
   const provider = deps.provider.provider;
 
+  // D-W5-7 commission gate — BEFORE any Booking/intent/money: a paid
+  // checkout may proceed only when the provider has an ACTIVE agreed
+  // commission term (provider-specific bps; never hard-coded, never
+  // defaulted). The rate/basis/split are entirely SERVER-derived — no
+  // input field exists for any of them. Zero-total quotes fall through to
+  // the certified S5-3 `paymentNotRequired` refusal (the free path owns
+  // them); missing/mismatched quotes fall through to its typed gates.
+  const quote = await deps.db
+    .selectFrom('price_quote')
+    .select(['total_fils', 'organization_id'])
+    .where('id', '=', input.quoteId)
+    .executeTakeFirst();
+  let commissionTerm: { id: string; organization_id: string; rate_bps: number } | undefined;
+  if (quote !== undefined && Number(quote.total_fils) > 0) {
+    commissionTerm = await deps.db
+      .selectFrom('organization_commission_term')
+      .select(['id', 'organization_id', 'rate_bps'])
+      .where('organization_id', '=', quote.organization_id)
+      .where('state', '=', 'active')
+      .executeTakeFirst();
+    if (commissionTerm === undefined) {
+      return { kind: 'commissionTermsUnavailable' };
+    }
+  }
+
   // T1 — the certified S5-3 boundary (nonzero quote, active hold, one
   // pending_payment Booking; replays rejoin).
   const initiation = await initiateBooking({ db: deps.db }, actor, {
@@ -159,11 +191,15 @@ export async function startPaidCheckout(
     .select(['id', 'state', 'expires_at'])
     .where('id', '=', input.holdId)
     .executeTakeFirstOrThrow();
-  const quote = await deps.db
-    .selectFrom('price_quote')
-    .select(['total_fils'])
-    .where('id', '=', booking.quoteId)
-    .executeTakeFirstOrThrow();
+  if (quote === undefined || commissionTerm === undefined) {
+    // Unreachable: `bookingPending` implies the quote exists with a
+    // nonzero total, and the D-W5-7 gate above resolved the term.
+    throw new Error('paid initiation succeeded without quote/commission context');
+  }
+  const commissionSplit = computeCommissionSplit(
+    Number(quote.total_fils),
+    commissionTerm.rate_bps,
+  );
 
   let intent: { id: string; state: string; expires_at: Date; amount_fils: string | number | bigint };
   try {
@@ -186,6 +222,24 @@ export async function startPaidCheckout(
         .returning(['id'])
         .executeTakeFirst();
       if (inserted !== undefined) {
+        // D-W5-7: the immutable economics snapshot commits ATOMICALLY with
+        // the commercial intent — an idempotent retry finds both and
+        // writes neither again (1:1 by primary key). Basis = the certified
+        // pre-tax quote amount; split via the owner round-half-up rule;
+        // organization pinned to the booking's org by trigger + the term
+        // composite FK (cross-provider substitution impossible).
+        await trx
+          .insertInto('payment_intent_economics')
+          .values({
+            intent_id: inserted.id,
+            organization_id: commissionTerm.organization_id,
+            commission_term_id: commissionTerm.id,
+            commission_basis_amount_fils: commissionSplit.commissionBasisAmountFils,
+            platform_commission_rate_bps: commissionSplit.platformCommissionRateBps,
+            platform_commission_amount_fils: commissionSplit.platformCommissionAmountFils,
+            provider_share_amount_fils: commissionSplit.providerShareAmountFils,
+          } as never)
+          .execute();
         await appendAuditEvent(trx, {
           actorType: 'user',
           actorId: actor.accountId,

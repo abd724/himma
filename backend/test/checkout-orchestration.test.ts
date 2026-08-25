@@ -34,6 +34,7 @@ import type {
 } from '../src/modules/payment/services/checkout-orchestration';
 import { capabilitiesForRole } from '../src/modules/provider/provider-capabilities';
 import type { OrgScope } from '../src/modules/provider/services/provider-principal';
+import { createCommissionTerm } from './helpers/booking-fixtures';
 import {
   createAccount,
   createSelfParticipant,
@@ -173,6 +174,7 @@ async function auditCount(action: string, entityId: string): Promise<number> {
 beforeAll(async () => {
   testDb = await createMigratedTestDb();
   orgA = await createProviderOrg(testDb.db, { state: 'live', branches: 2 });
+  await createCommissionTerm(testDb.db, orgA.orgId, 1000); // D-W5-7: 10%
   const category = await sql<{ id: string }>`
     SELECT id FROM category WHERE slug = 'fitness'`.execute(testDb.db);
   const typeId = newId();

@@ -130,6 +130,19 @@ export async function createOffer(
 
 /** D-8 test composition: a deterministic FICTIONAL template (draft → active)
  *  proving the snapshot mechanics — production seeds nothing. */
+/** D-W5-7: the provider's ACTIVE agreed commission term (bps; no default
+ *  exists anywhere — every paid-checkout fixture states its rate). */
+export async function createCommissionTerm(
+  db: Kysely<DB>,
+  organizationId: string,
+  rateBps: number,
+): Promise<string> {
+  const id = newId();
+  await sql`INSERT INTO organization_commission_term (id, organization_id, rate_bps)
+            VALUES (${id}, ${organizationId}, ${rateBps})`.execute(db);
+  return id;
+}
+
 export async function createActivePolicyTemplate(db: Kysely<DB>): Promise<string> {
   const id = newId();
   await sql`INSERT INTO cancellation_policy_template (id, template_version, title_en, rules)

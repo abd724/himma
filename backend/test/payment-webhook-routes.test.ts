@@ -31,7 +31,10 @@ import { startPaidCheckout } from '../src/modules/payment/services/checkout-orch
 import { capabilitiesForRole } from '../src/modules/provider/provider-capabilities';
 import type { OrgScope } from '../src/modules/provider/services/provider-principal';
 import { parseStaffInvitationConfig } from '../src/modules/provider/staff-invitation-config';
-import { createActivePolicyTemplate } from './helpers/booking-fixtures';
+import {
+  createActivePolicyTemplate,
+  createCommissionTerm,
+} from './helpers/booking-fixtures';
 import {
   createAccount,
   createSelfParticipant,
@@ -246,6 +249,7 @@ describe('the trusted end-to-end journey at the wire (W5-4)', () => {
     // hosted completion, then one signed webhook delivery over the real
     // transport — the entire trusted path, no session, no browser claim.
     const org = await createProviderOrg(testDb.db, { state: 'live', branches: 1 });
+    await createCommissionTerm(testDb.db, org.orgId, 1000); // D-W5-7: 10%
     const category = await sql<{ id: string }>`
       SELECT id FROM category WHERE slug = 'fitness'`.execute(testDb.db);
     const typeId = newId();

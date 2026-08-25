@@ -297,6 +297,14 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_payment_attempt_transition' },
     { kind: 'function', name: 'enforce_gateway_event_transition' },
   ],
+  '0016_commission_economics': [
+    { kind: 'table', name: 'organization_commission_term' },
+    { kind: 'table', name: 'payment_intent_economics' },
+    { kind: 'constraint', name: 'uq_commission_term_id_org' },
+    { kind: 'constraint', name: 'ck_economics_reconciles' },
+    { kind: 'function', name: 'enforce_commission_term_transition' },
+    { kind: 'function', name: 'enforce_economics_org_binding' },
+  ],
 };
 
 export interface VerificationReport {

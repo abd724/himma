@@ -42,7 +42,10 @@ import {
 } from '../src/modules/payment/services/webhook-ingestion';
 import { capabilitiesForRole } from '../src/modules/provider/provider-capabilities';
 import type { OrgScope } from '../src/modules/provider/services/provider-principal';
-import { createActivePolicyTemplate } from './helpers/booking-fixtures';
+import {
+  createActivePolicyTemplate,
+  createCommissionTerm,
+} from './helpers/booking-fixtures';
 import {
   createAccount,
   createSelfParticipant,
@@ -57,6 +60,7 @@ let orgA: { orgId: string; branchIds: string[] };
 let programA: string;
 let accountParent: string;
 let participantChild: string;
+let commissionTermA: string;
 
 const FUTURE = new Date('2026-09-01T08:00:00.000Z');
 const FUTURE_END = new Date('2026-09-01T09:00:00.000Z');
@@ -225,6 +229,20 @@ async function makeLapsedCheckout(
   await sql`UPDATE payment_intent SET state = 'in_progress' WHERE id = ${intentId}`.execute(
     testDb.db,
   );
+  // D-W5-7: mirror the production shape — the immutable economics
+  // snapshot exists for every paid intent (10% of 5000 = 500 / 4500).
+  await testDb.db
+    .insertInto('payment_intent_economics')
+    .values({
+      intent_id: intentId,
+      organization_id: orgA.orgId,
+      commission_term_id: commissionTermA,
+      commission_basis_amount_fils: 5000,
+      platform_commission_rate_bps: 1000,
+      platform_commission_amount_fils: 500,
+      provider_share_amount_fils: 4500,
+    } as never)
+    .execute();
   const created = await provider.createHostedCheckout({
     intentId,
     idempotencyKey: `himma:checkout:${intentId}:1`,
@@ -335,6 +353,7 @@ const CONFIRMED: Partial<Truths> = {
 beforeAll(async () => {
   testDb = await createMigratedTestDb();
   orgA = await createProviderOrg(testDb.db, { state: 'live', branches: 2 });
+  commissionTermA = await createCommissionTerm(testDb.db, orgA.orgId, 1000); // D-W5-7: 10%
   const category = await sql<{ id: string }>`
     SELECT id FROM category WHERE slug = 'fitness'`.execute(testDb.db);
   const typeId = newId();

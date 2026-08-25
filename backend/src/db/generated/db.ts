@@ -470,6 +470,16 @@ export interface Organization {
   version: Generated<number>;
 }
 
+export interface OrganizationCommissionTerm {
+  created_at: Generated<Timestamp>;
+  id: string;
+  organization_id: string;
+  rate_bps: number;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface OrganizationPublicProfile {
   cover_media_ref: string | null;
   created_at: Generated<Timestamp>;
@@ -549,6 +559,17 @@ export interface PaymentIntent {
   state: Generated<string>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface PaymentIntentEconomics {
+  commission_basis_amount_fils: Int8;
+  commission_term_id: string;
+  created_at: Generated<Timestamp>;
+  intent_id: string;
+  organization_id: string;
+  platform_commission_amount_fils: Int8;
+  platform_commission_rate_bps: number;
+  provider_share_amount_fils: Int8;
 }
 
 export interface PaymentTransaction {
@@ -939,12 +960,14 @@ export interface DB {
   mfa_recovery_code_batch: MfaRecoveryCodeBatch;
   offer: Offer;
   organization: Organization;
+  organization_commission_term: OrganizationCommissionTerm;
   organization_public_profile: OrganizationPublicProfile;
   outbox_event: OutboxEvent;
   package_entitlement: PackageEntitlement;
   participant: Participant;
   payment_attempt: PaymentAttempt;
   payment_intent: PaymentIntent;
+  payment_intent_economics: PaymentIntentEconomics;
   payment_transaction: PaymentTransaction;
   price_quote: PriceQuote;
   price_quote_line: PriceQuoteLine;
