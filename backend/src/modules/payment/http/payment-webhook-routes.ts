@@ -30,6 +30,7 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Db } from '../../../db/kysely';
 import type { PaymentProviderPort } from '../provider-port';
+import { sweepLapsedPaidCheckouts } from '../services/checkout-orchestration';
 import { processTrustedPaymentResults } from '../services/payment-saga';
 import {
   ingestGatewayDelivery,
@@ -90,10 +91,16 @@ export function registerPaymentWebhookRoutes(
         // because durability, not processing, is the acceptance): first
         // the W5-3 event lifecycle, then the W5-4 trusted saga over any
         // `verified` success work items (only a trusted W5-3 result can
-        // ever enter it — this call site holds no other authority).
+        // ever enter it — this call site holds no other authority), then
+        // the W5-5 D-W5-5 wind-down sweep over lapsed-hold checkouts
+        // (AFTER the saga so a live-hold success confirms first; the sweep
+        // only ends checkouts whose hold is already dead — best-effort
+        // session expiry, never a capacity authority, and a completion
+        // that slips through still enters W5-4 compensation).
         try {
           await processPendingGatewayEvents(deps);
           await processTrustedPaymentResults(deps);
+          await sweepLapsedPaidCheckouts(deps);
         } catch (error) {
           request.log.error({ err: error }, 'gateway event processing deferred to sweep');
         }

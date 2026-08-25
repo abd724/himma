@@ -407,6 +407,74 @@ export async function startPaidCheckout(
 }
 
 /**
+ * The bounded lapsed-paid-checkout wind-down sweep (D-W5-5 final ruling:
+ * "at hold expiry: attempt explicit Stripe Checkout expiration PROMPTLY;
+ * correctness NEVER depends on that call succeeding or arriving first").
+ *
+ * This is the W5-5 owner-probe correction closing the recorded W5-2→W5-4
+ * assignment gap: until now the only dead-hold discovery was the SAME
+ * customer retrying the same command. The sweep gives the payment core an
+ * autonomous discovery path on the certified S5-2/W5-3 sweep convention —
+ * bounded, idempotent, safe under concurrency, and NEVER a capacity
+ * authority:
+ *
+ *   1. discover LIVE intents (`created`/`in_progress`) whose Himma hold is
+ *      effectively dead (settled non-active OR past `expires_at` — the
+ *      10-minute authority; no reliance on the S5-2 settlement sweep);
+ *   2. wind each down through the SAME certified primitive the retry path
+ *      uses (`windDownDeadHoldCheckout`): CAS attempt → `errored`
+ *      (`holdExpired`), CAS intent → `expired`, audit on real transition
+ *      only, then BEST-EFFORT `expireCheckout` on the recorded opaque ref
+ *      (race-safe: `expired`/`alreadyFinalized`/`notFound`/`unknownOutcome`
+ *      are all tolerable — a completion that slips through is exactly the
+ *      W5-4 §8.6 compensation case);
+ *   3. touch NOTHING inventory-shaped: holds/counters/bookings stay with
+ *      their certified owners (S5-2 settlement, S5-3 gates, W5-4 saga).
+ *
+ * Driver: the webhook post-ack pass invokes it (the certified in-process
+ * catch-up pattern — the database is the only queue), and it stays
+ * directly callable for the future W6 scheduled runner. Financial truth
+ * never depends on it: late success after a wind-down still converges
+ * through W5-3/W5-4 compensation.
+ */
+export interface PaidCheckoutSweepDeps {
+  db: Db;
+  provider: PaymentProviderPort;
+}
+
+export interface LapsedCheckoutSweepSummary {
+  examined: number;
+  woundDown: number;
+}
+
+export async function sweepLapsedPaidCheckouts(
+  deps: PaidCheckoutSweepDeps,
+  options: { limit?: number } = {},
+): Promise<LapsedCheckoutSweepSummary> {
+  const candidates = await deps.db
+    .selectFrom('payment_intent as i')
+    .innerJoin('capacity_hold as h', 'h.id', 'i.hold_id')
+    .select(['i.id'])
+    .where('i.state', 'in', ['created', 'in_progress'])
+    .where((eb) =>
+      eb.or([
+        eb('h.state', '!=', 'active'),
+        eb('h.expires_at', '<=', eb.fn<Date>('now', [])),
+      ]),
+    )
+    .orderBy('i.created_at', 'asc')
+    .orderBy('i.id', 'asc')
+    .limit(options.limit ?? 20)
+    .execute();
+  let woundDown = 0;
+  for (const candidate of candidates) {
+    const result = await windDownDeadHoldCheckout(deps.db, deps.provider, candidate.id);
+    if (result.kind === 'holdExpired') woundDown += 1;
+  }
+  return { examined: candidates.length, woundDown };
+}
+
+/**
  * The dead-hold wind-down (D-W5-5 Option-A primitive): the intent ends
  * truthfully (`expired`), the working attempt records the abandonment, and
  * the provider session is BEST-EFFORT expired so the hosted page stops

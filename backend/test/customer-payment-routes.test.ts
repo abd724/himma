@@ -30,8 +30,10 @@ import { InMemoryRateLimiterStore } from '../src/modules/identity/http/rate-limi
 import { CaptureMailSender } from '../src/modules/identity/mail/mail-sender';
 import { FakeAccessTokenVerifier } from '../src/modules/identity/providers/fake/fake-access-token-verifier';
 import { FakeAuthProviderAdapter } from '../src/modules/identity/providers/fake/fake-adapter';
+import { claimHold } from '../src/modules/booking/services/hold-claim';
 import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
 import { resolvePaymentProvider } from '../src/modules/payment/provider-composition';
+import { sweepLapsedPaidCheckouts } from '../src/modules/payment/services/checkout-orchestration';
 import {
   processTrustedPaymentResults,
 } from '../src/modules/payment/services/payment-saga';
@@ -47,6 +49,7 @@ import {
   createPriceOption,
   createSession,
   publishProgram,
+  reconcileUnit,
   type BookingFixture,
 } from './helpers/booking-fixtures';
 import { createAccount, createSelfParticipant, createUser } from './helpers/identity-fixtures';
@@ -190,6 +193,16 @@ async function auditCount(): Promise<number> {
     testDb.db,
   );
   return Number(result.rows[0]!.n);
+}
+
+
+/** Narrowed provider inspection status (test convenience). */
+async function inspectStatus(
+  prov: DeterministicPaymentProvider,
+  gatewayRef: string,
+): Promise<string> {
+  const inspection = await prov.inspectPayment(gatewayRef);
+  return inspection.kind === 'payment' ? inspection.status : 'notFound';
 }
 
 async function attemptRefFor(bookingId: string): Promise<string> {
@@ -891,5 +904,329 @@ describe('the converged payment-status projection', () => {
     expect(retry.json().code).toBe('holdExpired');
     const after = await paymentStatus(app, customer, bookingId);
     expect(after.payment).toEqual({ status: 'expired' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W5-5 OWNER PROBE — D-W5-5 replay / wind-down (2026-08-25 owner review).
+// A genuinely TIME-LAPSED hold (short injected TTL; the row stays
+// physically `active` — no settlement sweep involved) proves that provider
+// idempotency may recover financial infrastructure but NEVER extends
+// inventory authority, and that the D-W5-5 prompt best-effort session
+// expiry now has an autonomous payment-core discovery path.
+// ---------------------------------------------------------------------------
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Real time passes the hold's `expires_at`; the row is NOT settled. */
+async function waitForHoldLapse(holdId: string): Promise<void> {
+  for (let i = 0; i < 100; i += 1) {
+    const row = await sql<{ state: string; lapsed: boolean }>`
+      SELECT state, expires_at <= now() AS lapsed
+      FROM capacity_hold WHERE id = ${holdId}`.execute(testDb.db);
+    if (row.rows[0]!.lapsed) return;
+    await sleep(100);
+  }
+  throw new Error('hold did not lapse in time');
+}
+
+/**
+ * A live paid checkout on a SHORT (2 s) genuinely ticking hold, started
+ * over the real wire. The certified 10-minute default is untouched — the
+ * injectable per-service TTL (D-6) only shortens the probe's clock.
+ */
+async function shortHoldPaidCheckout(): Promise<{
+  customer: HttpCustomer;
+  sessionId: string;
+  quoteId: string;
+  holdId: string;
+  idempotencyKey: string;
+  bookingId: string;
+  redirectUrl: string;
+  gatewayRef: string;
+}> {
+  const customer = await httpCustomer();
+  const sessionId = await createSession(f);
+  const quoteId = await quoteViaHttp(app, customer, sessionId, dropInOption);
+  const claim = await claimHold(
+    { db: testDb.db, holdTtlSeconds: 2 },
+    { accountId: customer.accountId },
+    {
+      unit: { kind: 'session', id: sessionId },
+      participantId: customer.participantId,
+      quoteId,
+      idempotencyKey: newId(),
+    },
+  );
+  if (claim.outcome.kind !== 'holdClaimed') throw new Error(claim.outcome.kind);
+  const holdId = claim.outcome.hold.holdId;
+  const idempotencyKey = newId();
+  const started = await inject(app, 'POST', '/customer/bookings/initiate', customer.bearer, {
+    holdId,
+    quoteId,
+    idempotencyKey,
+  });
+  expect(started.statusCode).toBe(201);
+  const bookingId = started.json().checkout.bookingId as string;
+  return {
+    customer,
+    sessionId,
+    quoteId,
+    holdId,
+    idempotencyKey,
+    bookingId,
+    redirectUrl: started.json().checkout.redirectUrl as string,
+    gatewayRef: await attemptRefFor(bookingId),
+  };
+}
+
+describe('W5-5 owner probe — replay after Himma hold expiry (A/B)', () => {
+  it('A+B: once the Himma hold lapses, the SAME-key replay refuses truthfully (no provider create, no recovered redirect, wind-down + prompt session expiry) and a NEW key cannot resurrect the hold', async () => {
+    const probe = await shortHoldPaidCheckout();
+    // The hosted session exists and is still OPEN while the hold lives.
+    expect(await inspectStatus(provider, probe.gatewayRef)).toBe('pending');
+    const counts = await tableCounts();
+    const sessions = provider.sessionCount;
+    const creates = provider.createRequestCount;
+
+    // Real time passes the 10-minute-authority expiry (2 s here) — the row
+    // is STILL physically `active`: no settlement sweep was involved.
+    await waitForHoldLapse(probe.holdId);
+    const physical = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold WHERE id = ${probe.holdId}`.execute(testDb.db);
+    expect(physical.rows[0]!.state).toBe('active');
+
+    // A. Same-key replay: MUST NOT present the old session as a valid
+    // checkout. The liveness gate runs BEFORE the provider call, so the
+    // provider's idempotent create is never even consulted.
+    const replay = await inject(app, 'POST', '/customer/bookings/initiate', probe.customer.bearer, {
+      holdId: probe.holdId,
+      quoteId: probe.quoteId,
+      idempotencyKey: probe.idempotencyKey,
+    });
+    expect(replay.statusCode).toBe(409);
+    expect(replay.json().code).toBe('holdExpired');
+    expect(replay.body).not.toContain(probe.redirectUrl);
+    expect(provider.createRequestCount).toBe(creates);
+    expect(provider.sessionCount).toBe(sessions);
+    expect(await tableCounts()).toEqual(counts); // no 2nd booking/intent/economics
+    const attempts = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM payment_attempt a
+      JOIN payment_intent i ON i.id = a.intent_id
+      WHERE i.booking_id = ${probe.bookingId}`.execute(testDb.db);
+    expect(Number(attempts.rows[0]!.n)).toBe(1); // no 2nd attempt
+    // The replay path wound the checkout down truthfully AND promptly
+    // best-effort-expired the hosted session (D-W5-5).
+    const wound = await sql<{ intent_state: string; attempt_state: string; failure_code: string }>`
+      SELECT i.state AS intent_state, a.state AS attempt_state, a.failure_code
+      FROM payment_intent i JOIN payment_attempt a ON a.intent_id = i.id
+      WHERE i.booking_id = ${probe.bookingId}`.execute(testDb.db);
+    expect(wound.rows[0]).toEqual({
+      intent_state: 'expired',
+      attempt_state: 'errored',
+      failure_code: 'holdExpired',
+    });
+    expect(await inspectStatus(provider, probe.gatewayRef)).toBe('expired');
+    // No claim of seat ownership survives: the projection is `expired`.
+    expect((await paymentStatus(app, probe.customer, probe.bookingId)).payment).toEqual({
+      status: 'expired',
+    });
+    // A further same-key replay of the concluded trail stays typed.
+    const again = await inject(app, 'POST', '/customer/bookings/initiate', probe.customer.bearer, {
+      holdId: probe.holdId,
+      quoteId: probe.quoteId,
+      idempotencyKey: probe.idempotencyKey,
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json().code).toBe('checkoutConcluded');
+
+    // B. A NEW idempotency key cannot resurrect the expired hold: refused
+    // BEFORE any new commercial checkout, and the certified S5-3 boundary
+    // settles the lapsed hold (seat reclaimed — the S5-2 authority, never
+    // the payment path).
+    const fresh = await inject(app, 'POST', '/customer/bookings/initiate', probe.customer.bearer, {
+      holdId: probe.holdId,
+      quoteId: probe.quoteId,
+      idempotencyKey: newId(),
+    });
+    expect(fresh.statusCode).toBe(409);
+    expect(fresh.json().code).toBe('holdExpired');
+    expect(await tableCounts()).toEqual(counts);
+    expect(provider.sessionCount).toBe(sessions);
+    const settled = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold WHERE id = ${probe.holdId}`.execute(testDb.db);
+    expect(settled.rows[0]!.state).toBe('expired');
+    const unit = await reconcileUnit(testDb.db, { kind: 'session', id: probe.sessionId });
+    expect(unit.heldCount).toBe(0);
+    expect(unit.bookedCount).toBe(0);
+  });
+
+  it('C: a lapsed hold never overwrites stronger financial truth — durable success evidence projects `processing`, then resolves through W5-4 compensation, never `confirmed`, never a bare "start again"', async () => {
+    const probe = await shortHoldPaidCheckout();
+    // The customer PAYS while the hold is alive; the webhook is durable
+    // but UNRESOLVED when the hold lapses.
+    provider.completeCheckout(probe.gatewayRef);
+    const delivery = provider.buildWebhookDelivery({
+      gatewayEventId: nextEventId(),
+      eventType: 'checkout.completed',
+      gatewayRef: probe.gatewayRef,
+    });
+    const ingested = await ingestGatewayDelivery(
+      { db: testDb.db, provider },
+      delivery.rawBody,
+      delivery.headers,
+    );
+    expect(ingested.kind).toBe('accepted');
+    await waitForHoldLapse(probe.holdId);
+    // Precedence: evidence beats the lapsed hold — truthful `processing`.
+    expect((await paymentStatus(app, probe.customer, probe.bookingId)).payment).toEqual({
+      status: 'processing',
+    });
+    // Resolution follows W5-4 truth: inventory is gone → compensation.
+    await processPendingGatewayEvents({ db: testDb.db, provider });
+    await processTrustedPaymentResults({ db: testDb.db, provider });
+    expect((await paymentStatus(app, probe.customer, probe.bookingId)).payment).toEqual({
+      status: 'compensated',
+    });
+    const truth = await sql<{ booking_state: string; captures: string; reversals: string }>`
+      SELECT b.state AS booking_state,
+             (SELECT count(*) FROM payment_transaction t
+               JOIN payment_attempt a ON a.id = t.attempt_id
+               JOIN payment_intent i ON i.id = a.intent_id
+               WHERE i.booking_id = b.id AND t.kind = 'capture') AS captures,
+             (SELECT count(*) FROM payment_transaction t
+               JOIN payment_attempt a ON a.id = t.attempt_id
+               JOIN payment_intent i ON i.id = a.intent_id
+               WHERE i.booking_id = b.id AND t.kind = 'reversal') AS reversals
+      FROM booking b WHERE b.id = ${probe.bookingId}`.execute(testDb.db);
+    expect(truth.rows[0]!.booking_state).not.toBe('confirmed');
+    expect(Number(truth.rows[0]!.captures)).toBe(1);
+    expect(Number(truth.rows[0]!.reversals)).toBe(1);
+  });
+});
+
+describe('W5-5 owner probe — the D-W5-5 wind-down sweep (D/E)', () => {
+  it('D: the payment-core sweep autonomously discovers a lapsed-hold checkout (no customer retry), winds it down, best-effort-expires the session, and is idempotent — while NEVER acting as capacity authority', async () => {
+    const probe = await shortHoldPaidCheckout();
+    await waitForHoldLapse(probe.holdId);
+    // No customer retry happens. The sweep discovers and winds down.
+    const summary = await sweepLapsedPaidCheckouts({ db: testDb.db, provider });
+    expect(summary.woundDown).toBeGreaterThanOrEqual(1);
+    const wound = await sql<{ intent_state: string; attempt_state: string; failure_code: string }>`
+      SELECT i.state AS intent_state, a.state AS attempt_state, a.failure_code
+      FROM payment_intent i JOIN payment_attempt a ON a.intent_id = i.id
+      WHERE i.booking_id = ${probe.bookingId}`.execute(testDb.db);
+    expect(wound.rows[0]).toEqual({
+      intent_state: 'expired',
+      attempt_state: 'errored',
+      failure_code: 'holdExpired',
+    });
+    expect(await inspectStatus(provider, probe.gatewayRef)).toBe('expired');
+    // NEVER a capacity authority: the hold row and counters are untouched —
+    // settlement stays with the certified S5-2 boundaries.
+    const hold = await sql<{ state: string }>`
+      SELECT state FROM capacity_hold WHERE id = ${probe.holdId}`.execute(testDb.db);
+    expect(hold.rows[0]!.state).toBe('active'); // physically unsettled
+    const unit = await reconcileUnit(testDb.db, { kind: 'session', id: probe.sessionId });
+    expect(unit.heldCount).toBe(1); // the S5-2 authority reclaims it, not the sweep
+    const booking = await sql<{ state: string }>`
+      SELECT state FROM booking WHERE id = ${probe.bookingId}`.execute(testDb.db);
+    expect(booking.rows[0]!.state).toBe('pending_payment');
+    // Idempotent: a second sweep finds nothing live and re-emits nothing.
+    const again = await sweepLapsedPaidCheckouts({ db: testDb.db, provider });
+    expect(again.examined).toBe(0);
+    const audits = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM audit_event
+      WHERE action = 'payment.intent.expired'
+        AND entity_id IN (SELECT id::text FROM payment_intent
+                          WHERE booking_id = ${probe.bookingId})`.execute(testDb.db);
+    expect(Number(audits.rows[0]!.n)).toBe(1);
+  });
+
+  it('D (driver): the webhook post-ack pass drives the sweep — an unrelated signed delivery winds down a lapsed checkout with zero customer involvement', async () => {
+    const probe = await shortHoldPaidCheckout();
+    await waitForHoldLapse(probe.holdId);
+    const unrelated = provider.buildWebhookDelivery({
+      gatewayEventId: nextEventId(),
+      eventType: 'gateway.someday.new' as never,
+    });
+    expect(await postWebhook(app, unrelated)).toBe(200);
+    const intent = await sql<{ state: string }>`
+      SELECT state FROM payment_intent WHERE booking_id = ${probe.bookingId}`.execute(testDb.db);
+    expect(intent.rows[0]!.state).toBe('expired');
+    expect(await inspectStatus(provider, probe.gatewayRef)).toBe('expired');
+  });
+
+  it('E: race — financial success beats the expiration attempt: the wind-down tolerates alreadyFinalized, and the late success enters W5-4 compensation exactly once (no oversell, no ignored money)', async () => {
+    const probe = await shortHoldPaidCheckout();
+    // The customer completes the hosted page right at the boundary…
+    provider.completeCheckout(probe.gatewayRef);
+    await waitForHoldLapse(probe.holdId);
+    // …then the sweep's expiration attempt arrives too late: tolerated.
+    const summary = await sweepLapsedPaidCheckouts({ db: testDb.db, provider });
+    expect(summary.woundDown).toBeGreaterThanOrEqual(1);
+    expect(await inspectStatus(provider, probe.gatewayRef)).toBe('captured');
+    // The trusted evidence arrives; captured money is never ignored and the
+    // seat is never resurrected: compensation, exactly once.
+    const delivery = provider.buildWebhookDelivery({
+      gatewayEventId: nextEventId(),
+      eventType: 'checkout.completed',
+      gatewayRef: probe.gatewayRef,
+    });
+    expect(await postWebhook(app, delivery)).toBe(200);
+    expect((await paymentStatus(app, probe.customer, probe.bookingId)).payment).toEqual({
+      status: 'compensated',
+    });
+    const truth = await sql<{
+      booking_state: string;
+      booked: number;
+      captures: string;
+      reversals: string;
+    }>`SELECT b.state AS booking_state, s.booked_count AS booked,
+              (SELECT count(*) FROM payment_transaction t
+                JOIN payment_attempt a ON a.id = t.attempt_id
+                JOIN payment_intent i ON i.id = a.intent_id
+                WHERE i.booking_id = b.id AND t.kind = 'capture') AS captures,
+              (SELECT count(*) FROM payment_transaction t
+                JOIN payment_attempt a ON a.id = t.attempt_id
+                JOIN payment_intent i ON i.id = a.intent_id
+                WHERE i.booking_id = b.id AND t.kind = 'reversal') AS reversals
+       FROM booking b JOIN session s ON s.id = b.session_id
+       WHERE b.id = ${probe.bookingId}`.execute(testDb.db);
+    expect(truth.rows[0]!.booking_state).not.toBe('confirmed');
+    expect(truth.rows[0]!.booked).toBe(0); // zero oversell
+    expect(Number(truth.rows[0]!.captures)).toBe(1);
+    expect(Number(truth.rows[0]!.reversals)).toBe(1);
+  });
+
+  it('E: race — the expiration attempt beats completion: the session is dead provider-side, no capture can exist, and a stale success claim converges with ZERO financial effect', async () => {
+    const probe = await shortHoldPaidCheckout();
+    await waitForHoldLapse(probe.holdId);
+    await sweepLapsedPaidCheckouts({ db: testDb.db, provider });
+    // The customer tries to complete AFTER the explicit expiration: the
+    // hosted page is dead — no money can move.
+    provider.completeCheckout(probe.gatewayRef);
+    expect(await inspectStatus(provider, probe.gatewayRef)).toBe('expired');
+    // Even a (stale/forged-order) success delivery is contradicted by
+    // provider truth and completes with zero commercial effect.
+    const delivery = provider.buildWebhookDelivery({
+      gatewayEventId: nextEventId(),
+      eventType: 'checkout.completed',
+      gatewayRef: probe.gatewayRef,
+    });
+    expect(await postWebhook(app, delivery)).toBe(200);
+    const truth = await sql<{ postings: string; booking_state: string }>`
+      SELECT (SELECT count(*) FROM payment_transaction t
+               JOIN payment_attempt a ON a.id = t.attempt_id
+               JOIN payment_intent i ON i.id = a.intent_id
+               WHERE i.booking_id = ${probe.bookingId}) AS postings,
+             (SELECT state FROM booking WHERE id = ${probe.bookingId}) AS booking_state`.execute(
+      testDb.db,
+    );
+    expect(Number(truth.rows[0]!.postings)).toBe(0);
+    expect(truth.rows[0]!.booking_state).toBe('pending_payment');
+    expect((await paymentStatus(app, probe.customer, probe.bookingId)).payment).toEqual({
+      status: 'expired',
+    });
   });
 });
