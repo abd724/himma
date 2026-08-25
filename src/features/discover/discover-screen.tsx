@@ -24,8 +24,7 @@ import {
   type FilterSelection,
   type QuickFilterId,
 } from '@/services/contracts/filters';
-import { discoverFeedService } from '@/services/mock/mock-discover-feed-service';
-import { searchService } from '@/services/mock/mock-search-service';
+import { discoverFeedService, searchService } from '@/services/composition';
 import { useAccount } from '@/state/account-context';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';

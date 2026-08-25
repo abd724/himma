@@ -18,8 +18,9 @@ import {
   type HomeFeed,
   type HomeSection,
 } from '@/services/contracts/home-feed';
-import { homeFeedService } from '@/services/mock/mock-home-feed-service';
+import { homeFeedService } from '@/services/composition';
 import { useAccount } from '@/state/account-context';
+import { useAuth } from '@/state/auth-context';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';
 import { useResultsSession } from '@/state/results-session-context';
@@ -51,6 +52,7 @@ export function HomeScreen() {
   const session = useResultsSession();
 
   const account = useAccount();
+  const auth = useAuth();
   const { areas, areaId, setAreaId, areaLabelById } = useAreaContext();
   const { isFavourite, toggleFavourite } = useFavourites();
   const { openProgram } = useDetailNavigation();
@@ -154,6 +156,16 @@ export function HomeScreen() {
         <HomeHeader
           areaLabel={areaLabelById.get(areaId) ?? ''}
           onPressLocation={() => setLocationSheetOpen(true)}
+          profileName={
+            auth.status === 'authenticated'
+              ? (auth.profile?.account?.displayName ?? 'Customer')
+              : null
+          }
+          onPressProfile={() =>
+            auth.status === 'authenticated'
+              ? router.push('/profile' as never)
+              : router.push('/auth/sign-in?next=/' as never)
+          }
         />
         <ScrollView
           style={styles.scroll}

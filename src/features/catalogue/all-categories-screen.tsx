@@ -4,7 +4,7 @@ import { collections } from '@/data/mock/catalogue';
 import { CataloguePageHeader } from '@/features/catalogue/catalogue-page-header';
 import type { AllCategoriesListing } from '@/services/contracts/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
-import { catalogueService } from '@/services/mock/mock-catalogue-service';
+import { catalogueService } from '@/services/composition';
 import { useResultsSession } from '@/state/results-session-context';
 import { colors, dockTokens, pagePadding, radii, spacing } from '@/theme';
 import type { BrowseEntry } from '@/types/domain';

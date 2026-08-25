@@ -2,7 +2,7 @@
   "name": "@himma/backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Himma production backend (W4) — modular monolith on Fastify 5 + PostgreSQL. Slice 1: database and migration foundation.",
+  "description": "Himma production backend (W4) \u2014 modular monolith on Fastify 5 + PostgreSQL. Slice 1: database and migration foundation.",
   "type": "commonjs",
   "engines": {
     "node": ">=24.0.0 <25"
@@ -18,7 +18,8 @@
     "db:codegen": "tsx scripts/db-codegen.ts",
     "db:seed-admins": "tsx scripts/db-seed-admins.ts",
     "stripe:smoke": "tsx scripts/stripe-sandbox-smoke.ts",
-    "bootstrap:admins": "tsx scripts/db-bootstrap-admins.ts"
+    "bootstrap:admins": "tsx scripts/db-bootstrap-admins.ts",
+    "dev:server": "tsx scripts/dev-server.ts"
   },
   "dependencies": {
     "@fastify/type-provider-typebox": "^5.2.0",

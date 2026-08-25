@@ -39,8 +39,11 @@ import { registerSearchRoutes } from '../modules/catalogue/http/search-routes';
 import { PostgresSearchReadPort } from '../modules/catalogue/services/search-read-port';
 import { installAuthPipeline } from '../modules/identity/http/auth-plugin';
 import { registerAdminRoutes } from '../modules/identity/http/admin-routes';
+import { registerDevIdentityRoutes } from '../modules/identity/http/dev-identity-routes';
 import { registerIdentityRoutes } from '../modules/identity/http/identity-routes';
 import { registerMfaRoutes } from '../modules/identity/http/mfa-routes';
+import { registerParticipantRoutes } from '../modules/identity/http/participant-routes';
+import type { DevPasswordIdentityProvider } from '../modules/identity/providers/dev/dev-password-identity';
 import { registerOrganizationAdminRoutes } from '../modules/provider/http/organization-admin-routes';
 import { registerOrganizationAdminReadRoutes } from '../modules/provider/http/organization-admin-read-routes';
 import { registerProviderRoutes } from '../modules/provider/http/provider-routes';
@@ -206,6 +209,15 @@ export interface BuildAppOptions {
     provider: PaymentProviderPort;
     checkoutUrls?: { successUrl: string; cancelUrl: string };
   };
+  /**
+   * RI-1 (D-RI-3): DEVELOPMENT-ONLY token-acquisition stand-in for the real
+   * Cognito client flows. Registering it composes the /dev/identity routes;
+   * PRODUCTION REFUSES this composition outright (startup error) — the dev
+   * identity provider can never exist there, exactly like the deterministic
+   * payment provider. Real Apple/Google/email sign-in arrives as Cognito
+   * configuration, never through this seam.
+   */
+  devIdentity?: { provider: DevPasswordIdentityProvider };
 }
 
 /** Typed error envelope per docs/24 §11.2. */
@@ -485,6 +497,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           }
         : {}),
     });
+
+    // Customer participant management (RI-1, docs/34 §4.1): the bounded
+    // companion closing the recorded gap — list/create-child/update/archive
+    // over the certified participant schema. Registers with the identity
+    // surface (the customer session policy is its whole gate).
+    registerParticipantRoutes(app, { db: identity.db });
+
+    // DEV-ONLY identity token acquisition (RI-1, D-RI-3): a Cognito client
+    // stand-in, structurally impossible in production.
+    if (options.devIdentity !== undefined) {
+      if (nodeEnv === 'production') {
+        throw new Error(
+          'The dev identity provider is never available in production (D-RI-3): real customer authentication arrives as Cognito configuration, and no dev token-acquisition surface may exist there.',
+        );
+      }
+      registerDevIdentityRoutes(app, { provider: options.devIdentity.provider });
+    }
 
     // W5-3 gateway webhook ingress: machine-to-machine, signature-trusted
     // only, raw-body scope, durable §7.8 receipt before any processing.

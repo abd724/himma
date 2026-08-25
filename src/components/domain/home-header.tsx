@@ -7,9 +7,12 @@ import { StyleSheet, Text, View } from 'react-native';
 interface Props {
   areaLabel: string;
   onPressLocation: () => void;
+  /** RI-1: real account display name, or null for a guest. */
+  profileName: string | null;
+  onPressProfile: () => void;
 }
 
-export function HomeHeader({ areaLabel, onPressLocation }: Props) {
+export function HomeHeader({ areaLabel, onPressLocation, profileName, onPressProfile }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.left}>
@@ -31,8 +34,18 @@ export function HomeHeader({ areaLabel, onPressLocation }: Props) {
       </View>
       <View style={styles.actions}>
         <IconButton icon="notifications-outline" accessibilityLabel="Notifications" />
-        <PressableFeedback accessibilityLabel="Profile, signed in as Sarah" style={styles.avatar}>
-          <Text style={styles.avatarInitial}>S</Text>
+        <PressableFeedback
+          accessibilityLabel={
+            profileName === null ? 'Profile. Sign in' : `Profile, signed in as ${profileName}`
+          }
+          style={styles.avatar}
+          onPress={onPressProfile}
+        >
+          {profileName === null ? (
+            <Ionicons name="person-outline" size={16} color={colors.brand.primary} />
+          ) : (
+            <Text style={styles.avatarInitial}>{profileName.slice(0, 1).toUpperCase()}</Text>
+          )}
         </PressableFeedback>
       </View>
     </View>

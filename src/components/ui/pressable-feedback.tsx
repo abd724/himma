@@ -37,6 +37,8 @@ interface Props {
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   hitSlop?: number;
+  /** Test hook pass-through (Playwright/E2E selectors). */
+  testID?: string;
 }
 
 /**
@@ -54,6 +56,7 @@ export function PressableFeedback({
   disabled,
   style,
   hitSlop,
+  testID,
   children,
 }: PropsWithChildren<Props>) {
   const reducedMotion = useReducedMotion();
@@ -61,6 +64,7 @@ export function PressableFeedback({
   return (
     <Pressable
       onPress={onPress ?? (() => {})}
+      testID={testID}
       accessible={accessible}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}

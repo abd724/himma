@@ -1,6 +1,7 @@
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { colors, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface Props {
@@ -9,14 +10,17 @@ interface Props {
 }
 
 /**
- * Lightweight guest setup invitation — docs/18 §9 A. Routes to sign-in once
- * auth ships; inert with press feedback until then. Never an add-child
- * prompt (docs/09 §19.6).
+ * Lightweight guest setup invitation — docs/18 §9 A. RI-1: routes to the
+ * REAL sign-in flow. Never an add-child prompt (docs/09 §19.6).
  */
 export function HomeActionCard({ title, body }: Props) {
   return (
     <View style={styles.wrap}>
-      <PressableFeedback accessibilityLabel={`${title}. ${body}`} style={styles.card}>
+      <PressableFeedback
+        accessibilityLabel={`${title}. ${body}`}
+        style={styles.card}
+        onPress={() => router.push('/auth/sign-in?next=/' as never)}
+      >
         <View style={styles.info}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.body}>{body}</Text>

@@ -5,7 +5,7 @@ import { resultsNavigationAction, type SearchOrigin } from '@/features/search/se
 import { collections } from '@/data/mock/catalogue';
 import { collectionFilterSelection } from '@/services/contracts/filters';
 import type { SearchSuggestion, SuggestionKind } from '@/services/contracts/search';
-import { searchService } from '@/services/mock/mock-search-service';
+import { searchService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession, type ResultsTab } from '@/state/results-session-context';

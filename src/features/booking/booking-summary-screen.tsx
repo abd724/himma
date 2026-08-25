@@ -15,7 +15,7 @@ import {
 } from '@/features/booking/summary-presentation';
 import { demoImage } from '@/data/mock/images';
 import type { BookingOptionsPage, BookingSummary } from '@/services/contracts/booking';
-import { bookingService } from '@/services/mock/mock-booking-service';
+import { bookingService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';

@@ -14,8 +14,7 @@ import { areas, categories as allCategories, programs as catalogue, providers } 
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { sortOptions, type FilterSelection } from '@/services/contracts/filters';
 import type { ResultsPage } from '@/services/contracts/search';
-import { searchService } from '@/services/mock/mock-search-service';
-import { providerProgramCount } from '@/services/mock/results-engine';
+import { searchService, providerProgramCount } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';

@@ -147,11 +147,16 @@ describe('structural locks', () => {
       // W5-5 (owning-slice amendment): the converged payment-status read.
       'GET /customer/bookings/:bookingId/payment → authenticatedCustomer',
       'GET /customer/holds/:holdId → authenticatedCustomer',
+      // RI-1 (owning-slice amendment): customer participant management.
+      'GET /customer/participants → authenticatedCustomer',
       'GET /customer/programs/:programId/availability → authenticatedCustomer',
+      'PATCH /customer/participants/:participantId → authenticatedCustomer',
       'POST /customer/bookings/confirm-free → authenticatedCustomer',
       'POST /customer/bookings/initiate → authenticatedCustomer',
       'POST /customer/holds → authenticatedCustomer',
       'POST /customer/holds/:holdId/release → authenticatedCustomer',
+      'POST /customer/participants → authenticatedCustomer',
+      'POST /customer/participants/:participantId/archive → authenticatedCustomer',
       'POST /customer/quotes → authenticatedCustomer',
     ]);
     // The trusted W5 seam stays route-less: no HTTP module anywhere imports

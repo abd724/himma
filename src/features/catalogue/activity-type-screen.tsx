@@ -15,9 +15,7 @@ import {
   emptyFilters,
   type FilterSelection,
 } from '@/services/contracts/filters';
-import { catalogueService } from '@/services/mock/mock-catalogue-service';
-import { providerProgramCount } from '@/services/mock/results-engine';
-import { searchService } from '@/services/mock/mock-search-service';
+import { catalogueService, providerProgramCount, searchService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';

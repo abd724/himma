@@ -20,6 +20,8 @@
   "exclude": [
     "node_modules",
     "backend",
-    "portal"
+    "portal",
+    "admin",
+    "e2e"
   ]
 }

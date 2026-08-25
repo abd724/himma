@@ -311,3 +311,119 @@ export async function completeChallengeCas(trx: Trx, challengeId: string): Promi
     .executeTakeFirst();
   return result.numUpdatedRows === 1n;
 }
+
+// ---------------------------------------------------------------------------
+// RI-1 — customer participant management (docs/34 §4.1)
+// ---------------------------------------------------------------------------
+
+export interface ParticipantRow {
+  id: string;
+  kind: string;
+  first_name: string;
+  date_of_birth: Date | null;
+  status: string;
+  version: number;
+}
+
+const PARTICIPANT_COLUMNS = [
+  'id',
+  'kind',
+  'first_name',
+  'date_of_birth',
+  'status',
+  'version',
+] as const;
+
+export async function listActiveParticipants(
+  trx: Trx,
+  accountId: string,
+): Promise<ParticipantRow[]> {
+  return trx
+    .selectFrom('participant')
+    .select(PARTICIPANT_COLUMNS)
+    .where('account_id', '=', accountId)
+    .where('status', '=', 'active')
+    .orderBy('kind', 'desc') // self first ('self' > 'child')
+    .orderBy('created_at', 'asc')
+    .execute();
+}
+
+export async function findParticipantForAccount(
+  trx: Trx,
+  participantId: string,
+  accountId: string,
+): Promise<ParticipantRow | undefined> {
+  return trx
+    .selectFrom('participant')
+    .select(PARTICIPANT_COLUMNS)
+    .where('id', '=', participantId)
+    .where('account_id', '=', accountId)
+    .executeTakeFirst();
+}
+
+export async function insertChildParticipant(
+  trx: Trx,
+  input: { accountId: string; firstName: string; dateOfBirth: string },
+): Promise<string> {
+  const id = newId();
+  await trx
+    .insertInto('participant')
+    .values({
+      id,
+      account_id: input.accountId,
+      kind: 'child',
+      first_name: input.firstName,
+      // Plain YYYY-MM-DD string → pg `date`: no timezone arithmetic ever.
+      date_of_birth: input.dateOfBirth as unknown as Date,
+    })
+    .execute();
+  return id;
+}
+
+/** Version-CAS field update; false = stale version (nothing changed). */
+export async function updateParticipantCas(
+  trx: Trx,
+  input: {
+    participantId: string;
+    accountId: string;
+    version: number;
+    firstName?: string;
+    dateOfBirth?: string;
+  },
+): Promise<boolean> {
+  const moved = await trx
+    .updateTable('participant')
+    .set({
+      ...(input.firstName !== undefined ? { first_name: input.firstName } : {}),
+      ...(input.dateOfBirth !== undefined
+        ? { date_of_birth: input.dateOfBirth as unknown as Date }
+        : {}),
+    })
+    .where('id', '=', input.participantId)
+    .where('account_id', '=', input.accountId)
+    .where('version', '=', input.version)
+    .executeTakeFirst();
+  return (moved.numUpdatedRows ?? 0n) > 0n;
+}
+
+/** Version-CAS archive; false = stale version. */
+export async function archiveParticipantCas(
+  trx: Trx,
+  input: { participantId: string; accountId: string; version: number },
+): Promise<boolean> {
+  const moved = await trx
+    .updateTable('participant')
+    .set({ status: 'archived' })
+    .where('id', '=', input.participantId)
+    .where('account_id', '=', input.accountId)
+    .where('version', '=', input.version)
+    .executeTakeFirst();
+  return (moved.numUpdatedRows ?? 0n) > 0n;
+}
+
+/** Server-clock calendar date (DOB "not in the future" floor). */
+export async function currentServerDate(trx: Trx): Promise<string> {
+  const result = await sql<{ today: string }>`
+    SELECT to_char(now(), 'YYYY-MM-DD') AS today`.execute(trx);
+  return result.rows[0]!.today;
+}

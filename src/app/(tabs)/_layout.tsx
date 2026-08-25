@@ -5,6 +5,8 @@ import { Tabs } from 'expo-router';
 const routeToDock: Record<string, DockDestinationId> = {
   index: 'home',
   discover: 'discover',
+  // RI-1: Profile is a real destination (HMA-008 bounded scope).
+  profile: 'profile',
 };
 
 interface TabBarState {
@@ -20,11 +22,12 @@ interface TabBarNavigation {
 }
 
 /**
- * The approved FloatingDock as the Tabs custom tab bar. Home and Discover are
- * real destinations; Bookings, Saved, and Profile stay inert with press
- * feedback only, and the active pill never moves to them (docs/09 §17.2,
- * docs/11 §8). The dock overlays content (absolute position), so scenes keep
- * full height and screens keep their own bottom clearance.
+ * The approved FloatingDock as the Tabs custom tab bar. Home, Discover, and
+ * (since RI-1) Profile are real destinations; Bookings and Saved stay inert
+ * with press feedback only until their integration slices (RI-3/RI-2), and
+ * the active pill never moves to them (docs/09 §17.2, docs/11 §8). The dock
+ * overlays content (absolute position), so scenes keep full height and
+ * screens keep their own bottom clearance.
  */
 function DockTabBar({ state, navigation }: { state: TabBarState; navigation: TabBarNavigation }) {
   const activeRoute = state.routes[state.index];
@@ -50,6 +53,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" />
       <Tabs.Screen name="discover" />
+      <Tabs.Screen name="profile" />
     </Tabs>
   );
 }

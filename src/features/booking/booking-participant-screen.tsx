@@ -13,7 +13,7 @@ import {
 import { buildParticipantRows, type ParticipantRow } from '@/features/booking/participant-rows';
 import { programHref } from '@/features/details/detail-navigation';
 import type { BookingOptionsPage } from '@/services/contracts/booking';
-import { bookingService } from '@/services/mock/mock-booking-service';
+import { bookingService } from '@/services/composition';
 import { useAccount } from '@/state/account-context';
 import { useAreaContext } from '@/state/area-context';
 import { useBookingSession } from '@/state/booking-session-context';
@@ -109,8 +109,16 @@ export function BookingParticipantScreen() {
   const browse = () => router.replace('/discover');
 
   const guest = account.account === null;
-  const rows = page === null ? [] : buildParticipantRows(page.householdEligibility, participants);
-  const noneEligible = page !== null && !guest && rows.every((row) => !row.suitable);
+  // RI-1: while the authenticated account's REAL participant list is still
+  // loading, keep the page skeleton — never flash a wrong empty/ineligible
+  // state built from an incomplete list.
+  const participantsLoading = !guest && account.participantsReady === false;
+  const rows =
+    page === null || participantsLoading
+      ? []
+      : buildParticipantRows(page.householdEligibility, participants);
+  const noneEligible =
+    page !== null && !guest && !participantsLoading && rows.every((row) => !row.suitable);
   const selectedRow = rows.find((row) => row.participantId === draft.participantId);
   const selectionValid =
     page !== null && participantSelectionValid(page.householdEligibility, draft.participantId);
@@ -151,7 +159,7 @@ export function BookingParticipantScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {page === null && !missing && !failed ? (
+        {(page === null || participantsLoading) && !missing && !failed ? (
           <ParticipantSkeleton />
         ) : missing ? (
           <View style={styles.stateWrap}>
@@ -184,9 +192,9 @@ export function BookingParticipantScreen() {
             </View>
 
             {guest ? (
-              // Sign-in-required contract state — docs/09 §21.9. The action
-              // stays inert with press feedback until authentication exists;
-              // nothing is fabricated (no `Me`, no participant radios).
+              // Sign-in-required contract state — docs/09 §21.9. RI-1: the
+              // action routes to the REAL sign-in flow and returns here to
+              // continue the booking; nothing is fabricated meanwhile.
               <View style={styles.guestCard}>
                 <View style={styles.guestIcon}>
                   <Ionicons name="person-circle-outline" size={26} color={colors.brand.primary} />
@@ -195,7 +203,15 @@ export function BookingParticipantScreen() {
                 <Text style={styles.guestMessage}>
                   Create an account or sign in to book activities for you and your family.
                 </Text>
-                <PressableFeedback accessibilityLabel="Sign in" style={styles.primaryAction}>
+                <PressableFeedback
+                  accessibilityLabel="Sign in"
+                  style={styles.primaryAction}
+                  onPress={() =>
+                    router.push(
+                      `/auth/sign-in?next=${encodeURIComponent(`/booking/${programId}/participant`)}` as never,
+                    )
+                  }
+                >
                   <Text style={styles.primaryActionLabel}>Sign in</Text>
                 </PressableFeedback>
               </View>

@@ -267,6 +267,22 @@ export const HTTP_OUTCOMES = {
     code: 'trialAlreadyRedeemed',
     message: 'The free trial for this activity has already been used for this participant.',
   },
+  // -- RI-1 customer participant management (docs/34 §4.1) -----------------
+  invalidParticipant: {
+    statusCode: 422,
+    code: 'invalidParticipant',
+    message: 'The participant details are not valid.',
+  },
+  participantArchived: {
+    statusCode: 409,
+    code: 'participantArchived',
+    message: 'This participant profile has been archived.',
+  },
+  cannotArchiveSelf: {
+    statusCode: 409,
+    code: 'cannotArchiveSelf',
+    message: 'Your own profile cannot be archived.',
+  },
   // -- W5-5 customer paid-checkout vocabulary (docs/33 §15) ----------------
   checkoutAlreadyActive: {
     statusCode: 409,

@@ -13,7 +13,7 @@ import type {
   BookingOptionsPage,
   SessionOption,
 } from '@/services/contracts/booking';
-import { bookingService } from '@/services/mock/mock-booking-service';
+import { bookingService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';

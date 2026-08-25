@@ -59,6 +59,13 @@ export interface ResolvedAccount {
   scheduleEntries: ScheduleEntry[];
   activePlans: ActivePlan[];
   credit?: CreditSummary;
+  /**
+   * RI-1 (real accounts only): false while the authenticated participant
+   * list is still loading — participant-dependent screens hold their
+   * loading state instead of flashing a wrong empty/ineligible state.
+   * Fixture accounts omit it (always ready).
+   */
+  participantsReady?: boolean;
 }
 
 /**

@@ -13,7 +13,7 @@ import { useBookingEntry } from '@/features/booking/booking-navigation';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { shareEntity } from '@/features/details/share-entity';
 import type { ProgramDetailPage } from '@/services/contracts/details';
-import { detailsService, providerMonogram } from '@/services/mock/mock-details-service';
+import { detailsService, providerMonogram } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';

@@ -1,7 +1,9 @@
 import { AccountProvider } from '@/state/account-context';
 import { AreaProvider } from '@/state/area-context';
+import { AuthProvider } from '@/state/auth-context';
 import { FavouritesProvider } from '@/state/favourites-context';
 import { ParticipantProvider } from '@/state/participant-context';
+import { ProfilesProvider } from '@/state/profiles-context';
 import { ResultsSessionProvider } from '@/state/results-session-context';
 import { colors } from '@/theme';
 import {
@@ -38,6 +40,8 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <AuthProvider>
+      <ProfilesProvider>
       <AccountProvider>
       <ParticipantProvider>
         <AreaProvider>
@@ -55,6 +59,11 @@ export default function RootLayout() {
                 }}
               >
                 <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="auth/sign-in" />
+                <Stack.Screen name="auth/sign-up" />
+                <Stack.Screen name="account/participants/index" />
+                <Stack.Screen name="account/participants/new" />
+                <Stack.Screen name="account/participants/[participantId]" />
                 <Stack.Screen name="search" />
                 <Stack.Screen name="map" />
                 <Stack.Screen name="program/[programId]" />
@@ -67,6 +76,8 @@ export default function RootLayout() {
         </AreaProvider>
       </ParticipantProvider>
       </AccountProvider>
+      </ProfilesProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

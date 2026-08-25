@@ -11,7 +11,7 @@ import { demoImage } from '@/data/mock/images';
 import { useDetailNavigation } from '@/features/details/detail-navigation';
 import { shareEntity } from '@/features/details/share-entity';
 import type { ProviderStorefrontPage } from '@/services/contracts/details';
-import { detailsService } from '@/services/mock/mock-details-service';
+import { detailsService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useFavourites } from '@/state/favourites-context';
 import { useParticipantContext } from '@/state/participant-context';
