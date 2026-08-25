@@ -267,6 +267,29 @@ export const HTTP_OUTCOMES = {
     code: 'trialAlreadyRedeemed',
     message: 'The free trial for this activity has already been used for this participant.',
   },
+  // -- W5-5 customer paid-checkout vocabulary (docs/33 §15) ----------------
+  checkoutAlreadyActive: {
+    statusCode: 409,
+    code: 'checkoutAlreadyActive',
+    message: 'Another checkout is already in progress for this reservation.',
+  },
+  checkoutConcluded: {
+    statusCode: 409,
+    code: 'checkoutConcluded',
+    message: 'This checkout has already concluded. Check the booking status.',
+  },
+  checkoutCreateFailed: {
+    statusCode: 503,
+    code: 'checkoutCreateFailed',
+    message:
+      'Starting payment did not succeed. Your reservation is still held — please try again.',
+  },
+  checkoutPending: {
+    statusCode: 503,
+    code: 'checkoutPending',
+    message:
+      'Payment setup did not complete. Please retry to continue this checkout — no duplicate charge can be created.',
+  },
   policyUnavailable: {
     statusCode: 503,
     code: 'policyUnavailable',

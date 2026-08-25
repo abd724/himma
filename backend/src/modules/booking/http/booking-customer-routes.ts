@@ -4,16 +4,20 @@
  *
  * Exactly the approved customer boundaries: availability read (derived
  * projection — no counters on the wire), quote issuance, hold claim /
- * status / release, atomic free confirmation, the FAIL-CLOSED paid
- * boundary, and own-booking reads. Every route declares
- * `authPolicy: 'authenticatedCustomer'`; the account is the session's
- * resolved `customer_account` — customers command only their OWN flow, and
- * cross-account ids are not-found-shaped by the services.
+ * status / release, atomic free confirmation, the paid-checkout initiation
+ * (W5-5, docs/33 §15: the real W5-2 orchestration when the payment
+ * capability is genuinely composed; the certified fail-closed refusal
+ * otherwise), the converged payment-status read, and own-booking reads.
+ * Every route declares `authPolicy: 'authenticatedCustomer'`; the account
+ * is the session's resolved `customer_account` — customers command only
+ * their OWN flow, and cross-account ids are not-found-shaped by the
+ * services.
  *
  * Deliberately ABSENT (structurally locked by the route-inventory test):
  * any route to the trusted paid-confirmation service (the W5 seam stays
- * route-less), payment success claims, cancellation, waitlists, package
- * redemption. All
+ * route-less), payment success claims (a browser return is navigation,
+ * never evidence — no success/cancel landing route exists), refunds,
+ * commission surfaces, cancellation, waitlists, package redemption. All
  * bodies are additionalProperties:false; smuggled counters/states/prices
  * are inexpressible (the app-wide Ajv strips undeclared properties and no
  * contract field exists for them — money comes ONLY from the server quote).
@@ -25,6 +29,9 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import type { Db } from '../../../db/kysely';
 import { requirePrincipal } from '../../identity/http/auth-plugin';
 import { sendOutcome, type HttpOutcomeName } from '../../identity/http/http-outcomes';
+import type { PaymentProviderResolution } from '../../payment/provider-composition';
+import { customerPaymentStatus } from '../../payment/services/customer-payment-read';
+import { startPaidCheckout } from '../../payment/services/checkout-orchestration';
 import { UNIT_KINDS } from '../services/booking-shared';
 import {
   confirmFreeBooking,
@@ -143,8 +150,24 @@ const CustomerBookingSchema = Type.Object({
   confirmedAt: NullableString,
 });
 
+/**
+ * W5-5 paid-checkout composition (docs/33 §15). The success/cancel URLs are
+ * SERVER-AUTHORED configuration — navigation targets only, never customer
+ * input and never financial truth (docs/24 §10: a browser return is not
+ * evidence of payment; no backend route consumes these URLs). Paid checkout
+ * is available ONLY when a genuinely composed provider AND the configured
+ * URLs both exist — otherwise the certified S5-5 fail-closed shaping stands
+ * byte-identically.
+ */
+export interface CustomerPaymentComposition {
+  resolution: PaymentProviderResolution;
+  checkoutUrls?: { successUrl: string; cancelUrl: string };
+}
+
 export interface BookingCustomerRouteDeps {
   db: Db;
+  /** Absent → paid checkout keeps the certified fail-closed behavior. */
+  payment?: CustomerPaymentComposition;
 }
 
 export function registerBookingCustomerRoutes(
@@ -205,9 +228,21 @@ export function registerBookingCustomerRoutes(
                                     ? 'notFreeQuote'
                                     : kind === 'paymentNotRequired'
                                       ? 'paymentNotRequired'
-                                      : kind === 'paymentUnavailable'
-                                        ? 'paymentUnavailable'
-                                        : kind === 'trialAlreadyRedeemed'
+                                      : kind === 'paymentUnavailable' ||
+                                          kind === 'commissionTermsUnavailable'
+                                        ? // D-W5-7: a missing provider commission term is INTERNAL
+                                          // commercial state — the customer learns only that paid
+                                          // checkout is unavailable (nothing created, no charge).
+                                          'paymentUnavailable'
+                                        : kind === 'checkoutAlreadyActive'
+                                          ? 'checkoutAlreadyActive'
+                                          : kind === 'intentNotLive'
+                                            ? 'checkoutConcluded'
+                                            : kind === 'checkoutCreateFailed'
+                                              ? 'checkoutCreateFailed'
+                                              : kind === 'checkoutPending'
+                                                ? 'checkoutPending'
+                                                : kind === 'trialAlreadyRedeemed'
                                           ? 'trialAlreadyRedeemed'
                                           : kind === 'policyUnavailable'
                                             ? 'policyUnavailable'
@@ -416,8 +451,29 @@ export function registerBookingCustomerRoutes(
   );
 
   // -------------------------------------------------------------------------
-  // Paid boundary — FAIL-CLOSED while W5 is absent (docs/32 §12 seam)
+  // Paid checkout initiation — the W5-5 DELIBERATE replacement of the S5-5
+  // fail-closed boundary (docs/33 §15). Same URL, same auth, same body: the
+  // customer supplies ONLY identifiers (quote, hold, idempotency key) — every
+  // commercial/financial value is server-derived; no amount, currency,
+  // provider, commission, status, or gateway field is expressible on the
+  // wire. Configured platform → the certified W5-2 orchestration (T1 is the
+  // frozen S5-3 `initiateBooking`; there is NO second paid-booking
+  // implementation). Unconfigured platform → the certified fail-closed
+  // shaping stands byte-identically (typed refusals, zero mutations, no
+  // readiness flag).
   // -------------------------------------------------------------------------
+
+  const CheckoutStartedSchema = Type.Object({
+    bookingId: Uuid,
+    /** Transient hosted-Checkout redirect — returned, never persisted. */
+    redirectUrl: Type.String(),
+    /**
+     * The HIMMA hold expiry (D-W5-5: the ten-minute inventory authority).
+     * The hosted session's own (~30-minute-plus) lifetime is deliberately
+     * NOT on the wire — it never extends inventory ownership.
+     */
+    holdExpiresAt: Type.String(),
+  });
 
   app.post(
     '/customer/bookings/initiate',
@@ -429,20 +485,89 @@ export function registerBookingCustomerRoutes(
           { holdId: Uuid, quoteId: Uuid, idempotencyKey: IdempotencyKey },
           { additionalProperties: false },
         ),
-        // No 2xx success shape exists on this route today: the genuine W5
-        // orchestration replaces this refusal with the real contract. There
-        // is deliberately no flag to flip.
-        response: { ...ERRORS },
+        response: { 201: Type.Object({ checkout: CheckoutStartedSchema }), ...ERRORS },
       },
     },
     async (request, reply) => {
       const accountId = accountOf(request);
       if (accountId === undefined) return sendOutcome(reply, 'notFound');
-      const result = await paidCheckoutBoundary(serviceDeps, { accountId }, {
-        holdId: request.body.holdId,
-        quoteId: request.body.quoteId,
+      const payment = deps.payment;
+      if (
+        payment === undefined ||
+        payment.resolution.kind !== 'configured' ||
+        payment.checkoutUrls === undefined
+      ) {
+        // The certified S5-5 fail-closed boundary, unchanged: ownership and
+        // zero-total shaping first, then `paymentUnavailable` BEFORE any
+        // Booking exists. No flag can flip this — availability is code.
+        const refused = await paidCheckoutBoundary(serviceDeps, { accountId }, {
+          holdId: request.body.holdId,
+          quoteId: request.body.quoteId,
+        });
+        return failure(reply, refused.kind);
+      }
+      const result = await startPaidCheckout(
+        { db: deps.db, provider: payment.resolution },
+        { accountId },
+        {
+          holdId: request.body.holdId,
+          quoteId: request.body.quoteId,
+          idempotencyKey: request.body.idempotencyKey,
+          returnUrl: payment.checkoutUrls.successUrl,
+          cancelUrl: payment.checkoutUrls.cancelUrl,
+        },
+      );
+      if (result.kind !== 'checkoutStarted') return failure(reply, result.kind);
+      return reply.status(201).send({
+        checkout: {
+          bookingId: result.bookingId,
+          redirectUrl: result.redirectUrl,
+          holdExpiresAt: result.holdExpiresAt.toISOString(),
+        },
       });
-      return failure(reply, result.kind);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Converged payment/Booking status — the W5-5 customer-safe projection
+  // (docs/33 §15; docs/24 §8.7): the return/deep-link landing READS this;
+  // nothing here (or anywhere customer-reachable) can assert payment truth.
+  // Pure read — no mutation, no provider call, no audit/outbox emission.
+  // -------------------------------------------------------------------------
+
+  app.get(
+    '/customer/bookings/:bookingId/payment',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      schema: {
+        params: Type.Object({ bookingId: Uuid }),
+        response: {
+          200: Type.Object({
+            payment: Type.Object({
+              status: Type.Union([
+                Type.Literal('awaitingPayment'),
+                Type.Literal('processing'),
+                Type.Literal('confirmed'),
+                Type.Literal('expired'),
+                Type.Literal('compensationPending'),
+                Type.Literal('compensated'),
+              ]),
+              holdExpiresAt: Type.Optional(Type.String()),
+              referenceCode: Type.Optional(Type.String()),
+            }),
+          }),
+          ...ERRORS,
+        },
+      },
+    },
+    async (request, reply) => {
+      const accountId = accountOf(request);
+      if (accountId === undefined) return sendOutcome(reply, 'notFound');
+      const result = await customerPaymentStatus({ db: deps.db }, { accountId }, {
+        bookingId: request.params.bookingId,
+      });
+      if (result.kind !== 'paymentStatus') return failure(reply, result.kind);
+      return reply.status(200).send({ payment: result.payment });
     },
   );
 

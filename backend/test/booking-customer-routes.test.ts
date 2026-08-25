@@ -144,6 +144,8 @@ describe('structural locks', () => {
     expect(customerRoutes).toEqual([
       'GET /customer/bookings → authenticatedCustomer',
       'GET /customer/bookings/:bookingId → authenticatedCustomer',
+      // W5-5 (owning-slice amendment): the converged payment-status read.
+      'GET /customer/bookings/:bookingId/payment → authenticatedCustomer',
       'GET /customer/holds/:holdId → authenticatedCustomer',
       'GET /customer/programs/:programId/availability → authenticatedCustomer',
       'POST /customer/bookings/confirm-free → authenticatedCustomer',
@@ -169,9 +171,14 @@ describe('structural locks', () => {
         expect(source).not.toContain('confirmPaidBooking');
       }
     }
-    // And no route URL even hints at a paid confirmation.
+    // And no route URL even hints at a paid confirmation or payment
+    // authority (W5-5 route-security lock: /payment-success, /mark-paid,
+    // customer confirm-payment, refund, commission — all structurally
+    // absent; the converged read is `GET …/payment`, a projection only).
     for (const route of app.routePolicyInventory) {
-      expect(route.url).not.toMatch(/confirm-paid|payment-succeeded|capture/);
+      expect(route.url).not.toMatch(
+        /confirm-paid|payment-succeeded|payment-success|mark-paid|confirm-payment|capture|refund|commission/,
+      );
     }
   });
 

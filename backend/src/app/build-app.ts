@@ -191,14 +191,21 @@ export interface BuildAppOptions {
   logger?: boolean;
   identity?: IdentityHttpOptions;
   /**
-   * W5-3 payment webhook ingress: registers ONLY when a genuinely composed
-   * payment provider exists (docs/33 §13 fail-closed composition — in
-   * production `resolvePaymentProvider` cannot produce one in W5, so the
-   * route is structurally absent there; no flag can conjure it). The
-   * route is Stripe-authenticated (signature over the raw body), never
-   * Himma-authenticated.
+   * W5-3 payment webhook ingress + W5-5 customer paid checkout: both exist
+   * ONLY when a genuinely composed payment provider exists (docs/33 §13
+   * fail-closed composition — in production `resolvePaymentProvider` cannot
+   * produce one in W5, so the webhook route is structurally absent there
+   * and the customer paid boundary keeps its certified fail-closed refusal;
+   * no flag can conjure either). The webhook route is Stripe-authenticated
+   * (signature over the raw body), never Himma-authenticated. `checkoutUrls`
+   * are the SERVER-AUTHORED hosted-Checkout success/cancel navigation
+   * targets (W5-5): pure navigation, never customer input, never financial
+   * truth — absent, paid checkout stays fail-closed even with a provider.
    */
-  payment?: { provider: PaymentProviderPort };
+  payment?: {
+    provider: PaymentProviderPort;
+    checkoutUrls?: { successUrl: string; cancelUrl: string };
+  };
 }
 
 /** Typed error envelope per docs/24 §11.2. */
@@ -456,13 +463,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       searchPort: new PostgresSearchReadPort({ db: identity.db }),
     });
 
-    // Customer booking surface (S5-5, docs/32 §12): authenticatedCustomer
-    // routes over the certified S5-2/S5-3 domain — availability, quotes,
-    // holds, atomic free confirmation (D-10 authority inside), the
-    // fail-closed paid boundary, and own-booking reads. Registers with the
+    // Customer booking surface (S5-5, docs/32 §12; W5-5, docs/33 §15):
+    // authenticatedCustomer routes over the certified S5-2/S5-3 domain —
+    // availability, quotes, holds, atomic free confirmation (D-10 authority
+    // inside), paid-checkout initiation (the real W5-2 orchestration only
+    // when a composed provider AND server-authored checkout URLs exist —
+    // otherwise the certified fail-closed refusal), the converged
+    // payment-status read, and own-booking reads. Registers with the
     // identity surface (the customer session policy is its whole gate);
     // the trusted paid-confirmation seam remains route-less by design.
-    registerBookingCustomerRoutes(app, { db: identity.db });
+    registerBookingCustomerRoutes(app, {
+      db: identity.db,
+      ...(options.payment !== undefined
+        ? {
+            payment: {
+              resolution: { kind: 'configured' as const, provider: options.payment.provider },
+              ...(options.payment.checkoutUrls !== undefined
+                ? { checkoutUrls: options.payment.checkoutUrls }
+                : {}),
+            },
+          }
+        : {}),
+    });
 
     // W5-3 gateway webhook ingress: machine-to-machine, signature-trusted
     // only, raw-body scope, durable §7.8 receipt before any processing.
