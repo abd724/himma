@@ -1,0 +1,109 @@
+.loading {
+  color: var(--color-text-secondary, #5b6472);
+}
+
+.unavailable {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: start;
+  max-width: 28rem;
+}
+
+.desk {
+  display: grid;
+  gap: 1rem;
+  max-width: 30rem;
+}
+
+.alertFocus {
+  outline: none;
+}
+
+.alertFocus:empty {
+  display: none;
+}
+
+.codeForm {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border, #d8dde5);
+  border-radius: 0.75rem;
+  background: var(--color-surface, #fff);
+}
+
+.codeLabel {
+  font-weight: 600;
+}
+
+.codeHint {
+  margin: 0;
+  color: var(--color-text-secondary, #5b6472);
+  font-size: 0.9rem;
+}
+
+.codeInput {
+  width: 100%;
+  max-width: 14rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border, #c6ccd6);
+  border-radius: 0.5rem;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.35em;
+}
+
+.previewCard,
+.successCard {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border, #d8dde5);
+  border-radius: 0.75rem;
+  background: var(--color-surface, #fff);
+  max-width: 30rem;
+  outline: none;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.previewList {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.previewRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.previewRow dt {
+  color: var(--color-text-secondary, #5b6472);
+}
+
+.previewRow dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.successLead {
+  margin: 0;
+}
+
+.remainingNote {
+  margin: 0;
+  color: var(--color-text-secondary, #5b6472);
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}

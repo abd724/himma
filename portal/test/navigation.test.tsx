@@ -17,6 +17,7 @@ describe('primary navigation', () => {
       'Listings',
       'Schedule',
       'Bookings',
+      'Check-In',
       'Branches',
       'Team',
       'Business Profile',
@@ -25,7 +26,7 @@ describe('primary navigation', () => {
     ]);
     expect(links[0]).toHaveAttribute('href', `/o/${org1.id}`);
     expect(links[1]).toHaveAttribute('href', `/o/${org1.id}/listings`);
-    expect(links[8]).toHaveAttribute('href', `/o/${org1.id}/settings`);
+    expect(links[9]).toHaveAttribute('href', `/o/${org1.id}/settings`);
   });
 
   test('active navigation state follows the route', async () => {
@@ -86,14 +87,16 @@ describe('primary navigation', () => {
   });
 
   test('navigation metadata carries EXACTLY the known capability truth (W2-6/W2-7)', () => {
-    // Exactly two items are capability-gated today: Team (staff.read,
-    // owner-only) and Listings (catalogue.read — owner, org_manager,
-    // branch_manager, listings_editor). No other item may encode a
-    // permission guess — future domain permissions stay unknown until
-    // their backends land.
+    // Exactly three items are capability-gated today: Team (staff.read,
+    // owner-only), Listings (catalogue.read — owner, org_manager,
+    // branch_manager, listings_editor), and Check-In (attendance.manage —
+    // owner, org_manager, branch_manager, front_desk, coach; ACTIVATED in
+    // S6-2). No other item may encode a permission guess — future domain
+    // permissions stay unknown until their backends land.
     const expected: Record<string, string | null> = {
       team: 'staff.read',
       listings: 'catalogue.read',
+      'check-in': 'attendance.manage',
     };
     for (const item of portalNavItems) {
       expect(item.requiredCapability).toBe(expected[item.id] ?? null);

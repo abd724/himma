@@ -25,8 +25,25 @@ import {
 } from './catalogue-shared';
 import { createSensitiveRevision, emitListingEvent } from './program-management';
 
-export const PRICE_OPTION_KINDS = ['dropIn', 'monthly', 'term', 'camp', 'package', 'free'] as const;
+// W2-13 (owning-slice amendment; docs/24 Amendment A4, D-S6-3): `membership`
+// joined the COMMERCIAL vocabulary with migration 0017 — commercial only;
+// fulfillment semantics live on the immutable fulfillment revision, never
+// in this enum.
+export const PRICE_OPTION_KINDS = [
+  'dropIn',
+  'monthly',
+  'term',
+  'camp',
+  'package',
+  'free',
+  'membership',
+] as const;
 export type PriceOptionKind = (typeof PRICE_OPTION_KINDS)[number];
+
+/** Entitlement-producing kinds (docs/35 §3): the only kinds that carry a
+ *  fulfillment configuration, and the only kinds a genuine ZERO price is
+ *  legal for (a free introductory product's real price — 0017). */
+export const ENTITLEMENT_OPTION_KINDS = ['package', 'membership'] as const;
 
 export interface PriceOptionInput {
   kind: PriceOptionKind;
@@ -37,8 +54,10 @@ export interface PriceOptionInput {
   sortHint?: number;
 }
 
-/** The S4-1 CHECK ties, prechecked for typed outcomes: free ⇔ NULL amount,
- *  paid ⇒ positive integer fils, package ⇔ positive sessions_count. */
+/** The S4-1/0017 CHECK ties, prechecked for typed outcomes: free ⇔ NULL
+ *  amount; capacity paid kinds ⇒ positive integer fils; entitlement kinds
+ *  (package/membership) ⇒ integer fils ≥ 0 (a genuine zero price is legal
+ *  — 0017); package ⇔ positive sessions_count. */
 export function optionShapeValid(input: {
   kind: PriceOptionKind;
   amountFils?: number | null;
@@ -46,9 +65,14 @@ export function optionShapeValid(input: {
 }): boolean {
   const amount = input.amountFils ?? null;
   const sessions = input.sessionsCount ?? null;
+  const entitlementKind = (ENTITLEMENT_OPTION_KINDS as readonly string[]).includes(input.kind);
   if (input.kind === 'free') {
     if (amount !== null) return false;
-  } else if (amount === null || !Number.isInteger(amount) || amount <= 0) {
+  } else if (
+    amount === null ||
+    !Number.isInteger(amount) ||
+    (entitlementKind ? amount < 0 : amount <= 0)
+  ) {
     return false;
   }
   if (input.kind === 'package') {
@@ -83,6 +107,16 @@ export async function addPriceOption(
     const mode = editModeOf(program.listing_state);
     if (mode === 'locked') return { kind: 'lifecycleConflict' as const };
     if (!optionShapeValid(input.option)) return { kind: 'invalidPriceOption' as const };
+
+    // W2-13 recorded gap (STOP-before-migration honored): the 0008
+    // program_revision store's ck_program_revision_option_kind predates the
+    // `membership` kind, so a review-gated membership option change cannot
+    // be represented until the owner approves the one-line additive
+    // widening migration. Refuse typed — membership options are created on
+    // draft/changes_requested listings (the normal new-product path).
+    if (mode === 'reviewGated' && input.option.kind === 'membership') {
+      return { kind: 'lifecycleConflict' as const };
+    }
 
     if (mode === 'reviewGated') {
       const revision = await createSensitiveRevision(trx, scope, actor, input.programId, {
@@ -195,6 +229,11 @@ export async function updatePriceOption(
         input.patch.sessionsCount !== undefined ? input.patch.sessionsCount : option.sessions_count,
     };
     if (!optionShapeValid(merged)) return { kind: 'invalidPriceOption' as const };
+    // W2-13 recorded gap: see addPriceOption — review-gated membership-kind
+    // changes await the owner-approved program_revision widening.
+    if (mode === 'reviewGated' && input.patch.kind === 'membership') {
+      return { kind: 'lifecycleConflict' as const };
+    }
 
     if (mode === 'reviewGated') {
       const revision = await createSensitiveRevision(trx, scope, actor, input.programId, {

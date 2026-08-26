@@ -13,6 +13,7 @@ import { SignInPage } from '../pages/access/sign-in-page';
 import { SignedOutPage } from '../pages/access/signed-out-page';
 import { StepUpPage } from '../pages/access/step-up-page';
 import { BookingsPage } from '../pages/bookings-page';
+import { CheckInPage } from '../pages/check-in/check-in-page';
 import { BranchCreatePage } from '../pages/branches/branch-create-page';
 import { BranchDetailPage } from '../pages/branches/branch-detail-page';
 import { BranchesPage } from '../pages/branches/branch-list-page';
@@ -91,6 +92,7 @@ export const portalRoutes: RouteObject[] = [
               { path: 'listings/:programId/revision', element: <ListingRevisionPage /> },
               { path: 'schedule', element: <SchedulePage /> },
               { path: 'bookings', element: <BookingsPage /> },
+              { path: 'check-in', element: <CheckInPage /> },
               { path: 'branches', element: <BranchesPage /> },
               { path: 'branches/new', element: <BranchCreatePage /> },
               { path: 'branches/:branchId', element: <BranchDetailPage /> },

@@ -82,7 +82,7 @@ export interface LiveTransport {
   /** Bearer-authenticated Himma API call; null when no session is held. */
   authorizedRequest(
     path: string,
-    options?: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown },
+    options?: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown },
   ): Promise<ApiJsonResponse | null>;
   /** Unauthenticated Himma API call (public reads such as areas). */
   publicRequest(path: string): Promise<ApiJsonResponse>;
@@ -208,7 +208,7 @@ export function createLiveAuthRuntime(config: LiveAuthConfig): LiveAuthRuntime {
    *  pushes the one canonical interrupt (docs/26: revocation ⇒ sessionExpired). */
   const authorizedRequest = async (
     path: string,
-    options: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+    options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
   ) => {
     if (held === null) {
       return null;

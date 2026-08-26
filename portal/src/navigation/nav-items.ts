@@ -3,6 +3,7 @@ import {
   CalendarDays,
   ClipboardList,
   LayoutDashboard,
+  ScanLine,
   LifeBuoy,
   MapPin,
   Settings,
@@ -26,6 +27,7 @@ export type PortalSectionId =
   | 'listings'
   | 'schedule'
   | 'bookings'
+  | 'check-in'
   | 'branches'
   | 'team'
   | 'profile'
@@ -90,6 +92,19 @@ export const portalNavItems: readonly PortalNavItem[] = [
     group: 'workspace',
     comingSoon: true,
     requiredCapability: null,
+  },
+  {
+    id: 'check-in',
+    label: 'Check-In',
+    icon: ScanLine,
+    segment: 'check-in',
+    group: 'workspace',
+    comingSoon: false,
+    // `attendance.manage` (S6-2, activated) = owner, org_manager,
+    // branch_manager, front_desk, coach — the front-desk staff who run
+    // walk-in and session check-ins reach this directly (W2-13 item 8).
+    // Visibility is usability only; the backend stays the boundary.
+    requiredCapability: 'attendance.manage',
   },
   {
     id: 'branches',

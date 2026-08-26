@@ -46,7 +46,10 @@ export const LISTING_STATES = [
 ] as const;
 export type ListingState = (typeof LISTING_STATES)[number];
 
-/** backend PRICE_OPTION_KINDS (price-option-management.ts) — exact. */
+/** backend PRICE_OPTION_KINDS (price-option-management.ts) — exact.
+ *  W2-13: `membership` joined the COMMERCIAL vocabulary (docs/24 A4,
+ *  D-S6-3) — commercial only; fulfillment semantics live on the immutable
+ *  fulfillment revision (fulfillment-contract.ts), never in this enum. */
 export const PRICE_OPTION_KINDS = [
   'dropIn',
   'monthly',
@@ -54,6 +57,7 @@ export const PRICE_OPTION_KINDS = [
   'camp',
   'package',
   'free',
+  'membership',
 ] as const;
 export type PriceOptionKind = (typeof PRICE_OPTION_KINDS)[number];
 

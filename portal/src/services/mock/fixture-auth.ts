@@ -50,6 +50,12 @@ import type {
   UpdateBranchOutcome,
 } from '../../branches/contract';
 import { BRANCH_FIELD_LIMITS } from '../../branches/contract';
+import type { CheckInAttendance, CheckInPort, CheckInPreview } from '../../checkin/contract';
+import type {
+  FulfillmentConfigPort,
+  FulfillmentRevision,
+  FulfillmentTermsInput,
+} from '../../catalogue/fulfillment-contract';
 import type {
   ListingDetailOutcome,
   ListingPriceSummary,
@@ -360,6 +366,7 @@ const ROLE_CAPABILITIES: Record<ProviderRole, readonly string[]> = {
     'listings.manage',
     'listings.publish',
     'media.manage',
+    'attendance.manage',
   ],
   org_manager: [
     'org.read',
@@ -372,11 +379,12 @@ const ROLE_CAPABILITIES: Record<ProviderRole, readonly string[]> = {
     'listings.manage',
     'listings.publish',
     'media.manage',
+    'attendance.manage',
   ],
-  branch_manager: ['org.read', 'org.legal.view', 'branch.edit', 'catalogue.read', 'listings.manage', 'media.manage'],
+  branch_manager: ['org.read', 'org.legal.view', 'branch.edit', 'catalogue.read', 'listings.manage', 'media.manage', 'attendance.manage'],
   listings_editor: ['org.read', 'org.legal.view', 'catalogue.read', 'listings.manage', 'media.manage'],
-  coach: ['org.read'],
-  front_desk: ['org.read', 'org.legal.view'],
+  coach: ['org.read', 'attendance.manage'],
+  front_desk: ['org.read', 'org.legal.view', 'attendance.manage'],
   finance: ['org.read', 'org.legal.view'],
 };
 
@@ -1461,6 +1469,10 @@ export interface FixtureAuthRuntime {
   bulkImportPort: BulkImportPort;
   activityTypePort: ActivityTypeReadPort;
   categoryPort: CategoryReadPort;
+  fulfillmentPort: FulfillmentConfigPort;
+  checkinPort: CheckInPort;
+  /** Test-only: simulate a code consumed elsewhere between preview/confirm. */
+  consumeCheckInCode(organizationId: string, code: string): void;
   controls: FixtureAccessControls;
   /**
    * Test-harness seeding: aligns the fixture store with a prepared session
@@ -2806,7 +2818,7 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
    *  mutation refusal → transient-failure control. */
   const resolveCatalogueMutation = (
     organizationId: string,
-    capability: 'listings.manage' | 'media.manage' | 'listings.publish',
+    capability: 'listings.manage' | 'media.manage' | 'listings.publish' | 'attendance.manage',
   ):
     | { refusal: 'unavailable' | 'notFound' | 'forbidden' | 'organizationSuspended' }
     | {
@@ -2916,7 +2928,9 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
   };
 
   /** The S4-1 option CHECK ties (price-option-management.ts): free ⇔ NULL
-   *  amount, paid ⇒ positive integer fils, package ⇔ positive sessions. */
+   *  amount, paid ⇒ positive integer fils, package ⇔ positive sessions.
+   *  W2-13/S6-1: the ENTITLEMENT kinds (package/membership) may price at
+   *  zero — the zero-price acquisition path; capacity kinds stay positive. */
   const optionShapeValid = (input: {
     kind: string;
     amountFils?: number | null;
@@ -2924,9 +2938,14 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
   }): boolean => {
     const amount = input.amountFils ?? null;
     const sessions = input.sessionsCount ?? null;
+    const zeroLegal = input.kind === 'package' || input.kind === 'membership';
     if (input.kind === 'free') {
       if (amount !== null) return false;
-    } else if (amount === null || !Number.isInteger(amount) || amount <= 0) {
+    } else if (
+      amount === null ||
+      !Number.isInteger(amount) ||
+      (zeroLegal ? amount < 0 : amount <= 0)
+    ) {
       return false;
     }
     if (input.kind === 'package') {
@@ -3985,6 +4004,304 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     };
   };
 
+
+  // -------------------------------------------------------------------------
+  // W2-13 — fulfillment configuration (immutable revisions) + check-in.
+  // The fixture mirrors the REAL S6-1/S6-2 semantics behind the same
+  // contracts: fulfillment saves supersede-and-insert (history frozen;
+  // future purchases only); check-in preview grants nothing; redeem is the
+  // single consuming authority; codes are org-scoped and single-use.
+  // -------------------------------------------------------------------------
+
+  const fulfillmentStore = new Map<string, FulfillmentRevision[]>();
+
+  const fulfillmentTermsValid = (optionKind: string, terms: FulfillmentTermsInput): boolean => {
+    if (optionKind === 'package') {
+      if (terms.usageKind !== 'finite' || terms.usesTotal !== undefined) return false;
+    } else if (terms.usageKind === 'finite') {
+      if (terms.usesTotal === undefined || terms.usesTotal <= 0) return false;
+    } else if (terms.usesTotal !== undefined) {
+      return false;
+    }
+    if (terms.validityKind === 'daysFromConfirmation') {
+      if (terms.validityDays === undefined || terms.validityEndDate !== undefined) return false;
+    } else if (terms.validityKind === 'fixedEndDate') {
+      if (terms.validityEndDate === undefined || terms.validityDays !== undefined) return false;
+    } else {
+      if (terms.usageKind !== 'finite') return false;
+      if (terms.validityDays !== undefined || terms.validityEndDate !== undefined) return false;
+    }
+    if (!terms.reservationRequired && !terms.walkInAllowed) return false;
+    if (terms.scheduleTerms !== undefined) {
+      if (optionKind !== 'membership' || terms.scheduleTerms.length === 0) return false;
+      for (const term of terms.scheduleTerms) {
+        if (term.weekday < 0 || term.weekday > 6 || term.startTime >= term.endTime) return false;
+      }
+    }
+    return true;
+  };
+
+  const findOptionRow = (
+    organization: FixtureOrganizationState,
+    programId: string,
+    optionId: string,
+  ): { kind: string } | null => {
+    for (const row of organization.programs) {
+      if (row.id !== programId) continue;
+      const option = row.priceOptions.find((candidate) => candidate.id === optionId);
+      if (option !== undefined) return { kind: option.kind };
+    }
+    return null;
+  };
+
+  const fulfillmentPort: FulfillmentConfigPort = {
+    async loadFulfillment(organizationId, programId, optionId) {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return context.refusal === 'organizationSuspended'
+          ? { kind: 'forbidden' }
+          : context.refusal === 'unavailable'
+            ? { kind: 'unavailable' }
+            : { kind: context.refusal };
+      }
+      const option = findOptionRow(context.organization, programId, optionId);
+      if (option === null) return { kind: 'notFound' };
+      const supported = option.kind === 'package' || option.kind === 'membership';
+      const revisions = fulfillmentStore.get(optionId) ?? [];
+      const active = revisions.find((revision) => revision.state === 'active') ?? null;
+      return { kind: 'fulfillment', optionKind: option.kind, supported, active };
+    },
+    async setFulfillment(organizationId, programId, optionId, terms) {
+      const context = resolveCatalogueMutation(organizationId, 'listings.manage');
+      if (context.refusal !== null) {
+        return context.refusal === 'organizationSuspended'
+          ? { kind: 'forbidden' }
+          : context.refusal === 'unavailable'
+            ? { kind: 'unavailable' }
+            : { kind: context.refusal };
+      }
+      const option = findOptionRow(context.organization, programId, optionId);
+      if (option === null) return { kind: 'notFound' };
+      if (option.kind !== 'package' && option.kind !== 'membership') {
+        return { kind: 'invalidFulfillmentConfig' };
+      }
+      if (!fulfillmentTermsValid(option.kind, terms)) {
+        return { kind: 'invalidFulfillmentConfig' };
+      }
+      if (
+        terms.branchId !== undefined &&
+        !context.organization.branches.some(
+          (branch) => branch.id === terms.branchId && branch.active,
+        )
+      ) {
+        return { kind: 'invalidBranch' };
+      }
+      const revisions = fulfillmentStore.get(optionId) ?? [];
+      const superseded = revisions.map((revision) =>
+        revision.state === 'active'
+          ? ({ ...revision, state: 'superseded' } as FulfillmentRevision)
+          : revision,
+      );
+      const revision: FulfillmentRevision = {
+        revisionId: nextCatalogueId(),
+        revisionNo: superseded.length + 1,
+        state: 'active',
+        usageKind: terms.usageKind,
+        ...(terms.usesTotal !== undefined ? { usesTotal: terms.usesTotal } : {}),
+        validityKind: terms.validityKind,
+        ...(terms.validityDays !== undefined ? { validityDays: terms.validityDays } : {}),
+        ...(terms.validityEndDate !== undefined
+          ? { validityEndDate: terms.validityEndDate }
+          : {}),
+        reservationRequired: terms.reservationRequired,
+        walkInAllowed: terms.walkInAllowed,
+        ...(terms.branchId !== undefined ? { branchId: terms.branchId } : {}),
+        scheduleTerms: [...(terms.scheduleTerms ?? [])],
+        createdAt: nextCatalogueTimestamp(),
+      };
+      fulfillmentStore.set(optionId, [...superseded, revision]);
+      return { kind: 'revisionCreated', revision };
+    },
+  };
+
+  interface FixtureCredential {
+    credentialId: string;
+    code: string;
+    participantFirstName: string;
+    programTitle: string;
+    targetKind: CheckInPreview['targetKind'];
+    sessionStartAt?: string;
+    branchLabel?: string;
+    usesTotal?: number;
+    used?: number;
+    expiresAt: string;
+    state: 'live' | 'used' | 'expired';
+  }
+
+  /** Deterministic demo credentials per organization (Blue Wave carries the
+   *  walkthrough set). Codes are single-use; the store is stateful. */
+  const checkinStore = new Map<string, FixtureCredential[]>();
+  const checkinMisses = new Map<string, number>();
+  const seedCheckinCredentials = (organizationId: string): FixtureCredential[] => {
+    const existing = checkinStore.get(organizationId);
+    if (existing !== undefined) return existing;
+    const inTenMinutes = () => new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const seeded: FixtureCredential[] = [
+      {
+        credentialId: nextCatalogueId(),
+        code: '11112222',
+        participantFirstName: 'Maya',
+        programTitle: 'Aqua Fitness 8-pack',
+        targetKind: 'walkIn',
+        usesTotal: 8,
+        used: 2,
+        expiresAt: inTenMinutes(),
+        state: 'live',
+      },
+      {
+        credentialId: nextCatalogueId(),
+        code: '33334444',
+        participantFirstName: 'Omar',
+        programTitle: 'Junior Swim Squad',
+        targetKind: 'session',
+        sessionStartAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        branchLabel: 'Marina Branch',
+        expiresAt: inTenMinutes(),
+        state: 'live',
+      },
+      {
+        credentialId: nextCatalogueId(),
+        code: '77778888',
+        participantFirstName: 'Sara',
+        programTitle: 'Unlimited Swim Month',
+        targetKind: 'walkIn',
+        expiresAt: inTenMinutes(),
+        state: 'live',
+      },
+      {
+        credentialId: nextCatalogueId(),
+        code: '55556666',
+        participantFirstName: 'Zed',
+        programTitle: 'Aqua Fitness 8-pack',
+        targetKind: 'walkIn',
+        usesTotal: 8,
+        used: 3,
+        expiresAt: new Date(Date.now() - 60 * 1000).toISOString(),
+        state: 'live', // effectively expired by time — the backend rule
+      },
+    ];
+    checkinStore.set(organizationId, seeded);
+    return seeded;
+  };
+
+  const FIXTURE_ATTEMPT_LIMIT = 5;
+
+  const checkinRefusalOf = (
+    refusal: 'unavailable' | 'notFound' | 'forbidden' | 'organizationSuspended',
+  ): { kind: 'notAuthorized' | 'unavailable' } =>
+    refusal === 'forbidden' || refusal === 'organizationSuspended' || refusal === 'notFound'
+      ? { kind: 'notAuthorized' }
+      : { kind: 'unavailable' };
+
+  const previewOf = (credential: FixtureCredential): CheckInPreview => ({
+    credentialId: credential.credentialId,
+    expiresAt: credential.expiresAt,
+    participantFirstName: credential.participantFirstName,
+    programTitle: credential.programTitle,
+    targetKind: credential.targetKind,
+    ...(credential.sessionStartAt !== undefined
+      ? { sessionStartAt: credential.sessionStartAt }
+      : {}),
+    ...(credential.branchLabel !== undefined ? { branchLabel: credential.branchLabel } : {}),
+    ...(credential.usesTotal !== undefined
+      ? {
+          usage: {
+            usageKind: 'finite' as const,
+            usesTotal: credential.usesTotal,
+            used: credential.used ?? 0,
+            remaining: credential.usesTotal - (credential.used ?? 0),
+          },
+        }
+      : credential.targetKind === 'walkIn'
+        ? { usage: { usageKind: 'unlimited' as const } }
+        : {}),
+  });
+
+  const checkinPort: CheckInPort = {
+    async previewCheckIn(organizationId, code) {
+      const context = resolveCatalogueMutation(organizationId, 'attendance.manage');
+      if (context.refusal !== null) return checkinRefusalOf(context.refusal);
+      const misses = checkinMisses.get(organizationId) ?? 0;
+      if (misses >= FIXTURE_ATTEMPT_LIMIT) return { kind: 'tooManyAttempts' };
+      // Preview resolves ONLY effectively-live credentials — a consumed or
+      // unknown code is the SAME generic not-found (the S6-2 shaping; the
+      // truthful already-used refusal belongs to redeem-by-credentialId).
+      const credential = seedCheckinCredentials(organizationId).find(
+        (candidate) => candidate.code === code && candidate.state === 'live',
+      );
+      if (credential === undefined) {
+        checkinMisses.set(organizationId, misses + 1);
+        return { kind: 'codeNotFound' };
+      }
+      if (new Date(credential.expiresAt).getTime() <= Date.now()) {
+        return { kind: 'codeExpired' };
+      }
+      return { kind: 'preview', preview: previewOf(credential) };
+    },
+    async redeemCheckIn(organizationId, input) {
+      const context = resolveCatalogueMutation(organizationId, 'attendance.manage');
+      if (context.refusal !== null) return checkinRefusalOf(context.refusal);
+      const misses = checkinMisses.get(organizationId) ?? 0;
+      if (misses >= FIXTURE_ATTEMPT_LIMIT) return { kind: 'tooManyAttempts' };
+      const credential = seedCheckinCredentials(organizationId).find(
+        (candidate) =>
+          candidate.code === input.code && candidate.credentialId === input.credentialId,
+      );
+      if (credential === undefined) {
+        checkinMisses.set(organizationId, misses + 1);
+        return { kind: 'codeNotFound' };
+      }
+      if (credential.state === 'used') return { kind: 'codeAlreadyUsed' };
+      if (new Date(credential.expiresAt).getTime() <= Date.now()) {
+        return { kind: 'codeExpired' };
+      }
+      if (
+        credential.usesTotal !== undefined &&
+        (credential.used ?? 0) >= credential.usesTotal
+      ) {
+        return { kind: 'entitlementExhausted' };
+      }
+      credential.state = 'used';
+      if (credential.usesTotal !== undefined) {
+        credential.used = (credential.used ?? 0) + 1;
+      }
+      const remaining =
+        credential.usesTotal !== undefined
+          ? credential.usesTotal - (credential.used ?? 0)
+          : undefined;
+      const attendance: CheckInAttendance = {
+        attendanceId: nextCatalogueId(),
+        credentialId: credential.credentialId,
+        participantFirstName: credential.participantFirstName,
+        programTitle: credential.programTitle,
+        targetKind: credential.targetKind,
+        occurredAt: new Date().toISOString(),
+        ...(remaining !== undefined ? { remaining } : {}),
+        ...(remaining === 0 ? { entitlementExhausted: true } : {}),
+      };
+      return { kind: 'attendanceRecorded', attendance };
+    },
+  };
+
+  /** Test-only seam: simulate the credential being consumed/replaced on
+   *  another device between PREVIEW and CONFIRM (the S6-2 race truth). */
+  const consumeCheckInCode = (organizationId: string, code: string): void => {
+    const credential = seedCheckinCredentials(organizationId).find(
+      (candidate) => candidate.code === code,
+    );
+    if (credential !== undefined) credential.state = 'used';
+  };
+
   return {
     adapter,
     accessPort,
@@ -4000,6 +4317,9 @@ export function createFixtureAuthRuntime(): FixtureAuthRuntime {
     bulkImportPort,
     activityTypePort,
     categoryPort,
+    fulfillmentPort,
+    checkinPort,
+    consumeCheckInCode,
     controls,
     seedSession,
     sessionStateFor,

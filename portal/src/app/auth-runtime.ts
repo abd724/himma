@@ -8,6 +8,8 @@ import {
   createUnconfiguredBranchPort,
   createUnconfiguredBulkImportPort,
   createUnconfiguredCategoryPort,
+  createUnconfiguredCheckInPort,
+  createUnconfiguredFulfillmentPort,
   createUnconfiguredInvitationPort,
   createUnconfiguredListingEditorPort,
   createUnconfiguredListingLifecyclePort,
@@ -22,6 +24,8 @@ import type { ListingsReadPort } from '../catalogue/contract';
 import type { ListingEditorPort } from '../catalogue/editor-contract';
 import type { BulkImportPort } from '../catalogue/import-contract';
 import type { ListingLifecyclePort } from '../catalogue/lifecycle-contract';
+import type { FulfillmentConfigPort } from '../catalogue/fulfillment-contract';
+import type { CheckInPort } from '../checkin/contract';
 import type { InvitationPort } from '../invitations/contract';
 import type { OnboardingPort } from '../onboarding/contract';
 import type { OrganizationProfilePort } from '../profile/contract';
@@ -37,6 +41,8 @@ import { createLiveCatalogueReadPorts } from '../services/live/live-catalogue-po
 import { createLiveDomainPorts } from '../services/live/live-domain-ports';
 import { createLiveLifecyclePort } from '../services/live/live-lifecycle-port';
 import { createLiveListingEditorPort } from '../services/live/live-listing-editor-port';
+import { createLiveCheckInPort } from '../services/live/live-checkin-port';
+import { createLiveFulfillmentPort } from '../services/live/live-fulfillment-port';
 import { createFixtureAuthRuntime, type FixtureAccessControls } from '../services/mock/fixture-auth';
 
 export interface AuthRuntime {
@@ -55,12 +61,17 @@ export interface AuthRuntime {
   readonly bulkImportPort: BulkImportPort;
   readonly activityTypePort: ActivityTypeReadPort;
   readonly categoryPort: CategoryReadPort;
+  readonly fulfillmentPort: FulfillmentConfigPort;
+  readonly checkinPort: CheckInPort;
 }
 
 declare global {
   interface Window {
     /** Fixture-mode-only demo/e2e controls; never installed otherwise. */
     __himmaPortalAccessFixture?: FixtureAccessControls;
+    /** Fixture-mode-only check-in race seam (e2e): simulate a code being
+     *  consumed on another device between preview and confirm. */
+    __himmaPortalCheckInFixture?: { consume(organizationId: string, code: string): void };
   }
 }
 
@@ -118,6 +129,10 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       bulkImportPort: createUnconfiguredBulkImportPort(),
       activityTypePort: catalogue.activityTypePort,
       categoryPort: catalogue.categoryPort,
+      // W2-13: fulfillment configuration + front-desk check-in run LIVE
+      // over the same authenticated transport.
+      fulfillmentPort: createLiveFulfillmentPort(live.transport),
+      checkinPort: createLiveCheckInPort(live.transport),
     };
   }
 
@@ -125,6 +140,7 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
     const fixture = createFixtureAuthRuntime();
     if (typeof window !== 'undefined') {
       window.__himmaPortalAccessFixture = fixture.controls;
+      window.__himmaPortalCheckInFixture = { consume: fixture.consumeCheckInCode };
     }
     return {
       mode,
@@ -142,6 +158,8 @@ export function createAuthRuntime(env: PortalEnv): AuthRuntime {
       bulkImportPort: fixture.bulkImportPort,
       activityTypePort: fixture.activityTypePort,
       categoryPort: fixture.categoryPort,
+      fulfillmentPort: fixture.fulfillmentPort,
+      checkinPort: fixture.checkinPort,
     };
   }
 
@@ -187,5 +205,7 @@ function unconfiguredRuntime(): AuthRuntime {
     bulkImportPort: createUnconfiguredBulkImportPort(),
     activityTypePort: createUnconfiguredActivityTypePort(),
     categoryPort: createUnconfiguredCategoryPort(),
+    fulfillmentPort: createUnconfiguredFulfillmentPort(),
+    checkinPort: createUnconfiguredCheckInPort(),
   };
 }

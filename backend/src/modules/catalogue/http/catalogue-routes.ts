@@ -206,7 +206,9 @@ const EligibilityBodyFields = {
 };
 
 const PriceOptionBodyFields = {
-  amountFils: Type.Optional(Type.Union([Type.Integer({ minimum: 1 }), Type.Null()])),
+  // W2-13 (0017): entitlement kinds may carry a genuine ZERO amount — the
+  // per-kind floor stays SERVICE truth (optionShapeValid).
+  amountFils: Type.Optional(Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])),
   sessionsCount: Type.Optional(Type.Union([Type.Integer({ minimum: 1 }), Type.Null()])),
   labelEn: Type.Optional(NullableString(120)),
   labelAr: Type.Optional(NullableString(120)),

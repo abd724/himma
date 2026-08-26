@@ -178,6 +178,7 @@ export const PRICE_OPTION_KIND_LABELS: Record<string, string> = {
   camp: 'Camp',
   package: 'Package',
   free: 'Free',
+  membership: 'Membership',
 };
 
 export function priceOptionKindLabel(kind: string): string {

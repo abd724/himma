@@ -40,6 +40,8 @@ function renderWithClient(runtime: ReturnType<typeof createFixtureAuthRuntime>) 
     bulkImportPort: runtime.bulkImportPort,
     activityTypePort: runtime.activityTypePort,
     categoryPort: runtime.categoryPort,
+    fulfillmentPort: runtime.fulfillmentPort,
+    checkinPort: runtime.checkinPort,
   };
   const seeded = runtime.sessionStateFor('owner@bluewave.demo');
   if (!seeded || seeded.memberships.length === 0) throw new Error('fixture identity missing');

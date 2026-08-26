@@ -17,6 +17,7 @@ import {
   priceOptionName,
 } from '../listing-domain';
 import { StateChip } from '../state-chip';
+import { FulfillmentSection } from './fulfillment-section';
 import { commonMutationErrorCopy, REVISION_PENDING_COPY } from './editor-domain';
 import styles from './editor.module.css';
 
@@ -128,7 +129,10 @@ export function PricingSection({
     const kind = formState.kind;
     let amountFils: number | null = null;
     if (kind !== 'free') {
-      const parsed = parseAedToFils(formState.amount);
+      // Entitlement kinds may legitimately price at AED 0 (S6-1's
+      // zero-price acquisition); capacity kinds stay strictly positive.
+      const allowZero = kind === 'package' || kind === 'membership';
+      const parsed = parseAedToFils(formState.amount, { allowZero });
       if (parsed.kind === 'invalid') {
         return {
           ok: false,
@@ -415,6 +419,15 @@ export function PricingSection({
                       <VisuallyHidden> {priceOptionName(option)}</VisuallyHidden>
                     </Button>
                   </div>
+                ) : null}
+                {option.state === 'active' &&
+                (option.kind === 'package' || option.kind === 'membership') ? (
+                  <FulfillmentSection
+                    view={view}
+                    programId={program.id}
+                    option={option}
+                    canManage={!mutationsBlocked}
+                  />
                 ) : null}
                 {formOpenFor(option.id) ? (
                   <OptionForm

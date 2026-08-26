@@ -356,6 +356,11 @@ export const HTTP_OUTCOMES = {
     code: 'credentialAlreadyUsed',
     message: 'This check-in code has already been used.',
   },
+  invalidFulfillmentConfig: {
+    statusCode: 422,
+    code: 'invalidFulfillmentConfig',
+    message: 'The fulfillment configuration is not valid for this price option.',
+  },
   invalidCursor: {
     statusCode: 422,
     code: 'invalidCursor',

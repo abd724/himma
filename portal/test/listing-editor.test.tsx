@@ -202,6 +202,7 @@ describe('listing editor page (W2-8)', () => {
       'Camp',
       'Package',
       'Free',
+      'Membership',
     ]);
     await user.click(within(pricing()).getByRole('radio', { name: 'Monthly' }));
     await user.type(within(pricing()).getByLabelText('Price (AED)'), '450.50');

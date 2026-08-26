@@ -24,7 +24,13 @@ export type AedParseResult =
  *  provider sees exactly why instead of a silent reinterpretation. */
 const AED_SHAPE = /^(\d+)(?:\.(\d+))?$/;
 
-export function parseAedToFils(raw: string): AedParseResult {
+/** `allowZero` (W2-13): entitlement kinds (package/membership) may price at
+ *  AED 0 — S6-1's zero-price acquisition path. Capacity kinds keep the
+ *  strictly-positive rule. */
+export function parseAedToFils(
+  raw: string,
+  options?: { readonly allowZero?: boolean },
+): AedParseResult {
   const text = raw.trim();
   if (text === '') return { kind: 'invalid', reason: 'empty' };
   const match = AED_SHAPE.exec(text);
@@ -35,7 +41,9 @@ export function parseAedToFils(raw: string): AedParseResult {
   // 8 whole digits = up to AED 99,999,999 — bounded before any arithmetic.
   if (whole.length > 8) return { kind: 'invalid', reason: 'tooLarge' };
   const fils = Number(whole) * 100 + Number(decimals.padEnd(2, '0'));
-  if (fils === 0) return { kind: 'invalid', reason: 'notPositive' };
+  if (fils === 0 && options?.allowZero !== true) {
+    return { kind: 'invalid', reason: 'notPositive' };
+  }
   if (fils > MAX_AMOUNT_FILS) return { kind: 'invalid', reason: 'tooLarge' };
   return { kind: 'fils', fils };
 }

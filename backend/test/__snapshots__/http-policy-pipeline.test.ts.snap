@@ -40,6 +40,7 @@ exports[`route-policy registry and structural deny-by-default every registered r
   "GET /provider/organizations/:organizationId → provider",
   "GET /provider/organizations/:organizationId/listings → provider",
   "GET /provider/organizations/:organizationId/listings/:programId → provider",
+  "GET /provider/organizations/:organizationId/programs/:programId/price-options/:optionId/fulfillment → provider",
   "GET /provider/organizations/:organizationId/programs/:programId/schedules → provider",
   "GET /provider/organizations/:organizationId/programs/:programId/units → provider",
   "GET /provider/organizations/:organizationId/staff → provider",
@@ -82,6 +83,7 @@ exports[`route-policy registry and structural deny-by-default every registered r
   "HEAD /provider/organizations/:organizationId → provider",
   "HEAD /provider/organizations/:organizationId/listings → provider",
   "HEAD /provider/organizations/:organizationId/listings/:programId → provider",
+  "HEAD /provider/organizations/:organizationId/programs/:programId/price-options/:optionId/fulfillment → provider",
   "HEAD /provider/organizations/:organizationId/programs/:programId/schedules → provider",
   "HEAD /provider/organizations/:organizationId/programs/:programId/units → provider",
   "HEAD /provider/organizations/:organizationId/staff → provider",
@@ -177,5 +179,6 @@ exports[`route-policy registry and structural deny-by-default every registered r
   "POST /provider/organizations/:organizationId/units → provider",
   "POST /provider/organizations/:organizationId/units/:unitKind/:unitId/close → provider",
   "POST /provider/organizations/:organizationId/units/:unitKind/:unitId/open → provider",
+  "PUT /provider/organizations/:organizationId/programs/:programId/price-options/:optionId/fulfillment → provider",
 ]
 `;

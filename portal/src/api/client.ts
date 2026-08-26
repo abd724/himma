@@ -23,7 +23,7 @@ export interface ApiJsonResponse {
 }
 
 export interface ApiRequestOptions {
-  readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly body?: unknown;
   /** Bearer ACCESS token for authenticated calls — header-only, never URL. */
   readonly accessToken?: string;
