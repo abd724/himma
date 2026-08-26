@@ -5,6 +5,8 @@ import { Tabs } from 'expo-router';
 const routeToDock: Record<string, DockDestinationId> = {
   index: 'home',
   discover: 'discover',
+  // RI-3: Bookings is a real destination (HMA-006 v1).
+  bookings: 'bookings',
   // RI-1: Profile is a real destination (HMA-008 bounded scope).
   profile: 'profile',
 };
@@ -23,8 +25,8 @@ interface TabBarNavigation {
 
 /**
  * The approved FloatingDock as the Tabs custom tab bar. Home, Discover, and
- * (since RI-1) Profile are real destinations; Bookings and Saved stay inert
- * with press feedback only until their integration slices (RI-3/RI-2), and
+ * (since RI-1) Profile and (since RI-3) Bookings are real destinations;
+ * Saved stays inert with press feedback only until its slice, and
  * the active pill never moves to them (docs/09 §17.2, docs/11 §8). The dock
  * overlays content (absolute position), so scenes keep full height and
  * screens keep their own bottom clearance.
@@ -53,6 +55,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" />
       <Tabs.Screen name="discover" />
+      <Tabs.Screen name="bookings" />
       <Tabs.Screen name="profile" />
     </Tabs>
   );

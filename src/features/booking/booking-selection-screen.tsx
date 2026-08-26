@@ -13,7 +13,7 @@ import type {
   BookingOptionsPage,
   SessionOption,
 } from '@/services/contracts/booking';
-import { BOOKING_INTEGRATION_PENDING, bookingService, detailsService } from '@/services/composition';
+import { bookingService } from '@/services/composition';
 import { useAreaContext } from '@/state/area-context';
 import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';
@@ -49,34 +49,7 @@ export function BookingSelectionScreen() {
 
   const simulateFailure = params['qa-fail'] === '1' && !retried;
 
-  // RI-3 pending boundary (owner RI-2 §18): discovery is real but the
-  // booking service is still the deterministic mock. A real canonical
-  // program id must NEVER produce a mock quote/hold/Booking — the flow
-  // entry keeps the real selection context and states truthfully that
-  // booking is not available yet. The mock flow stays intact for its
-  // isolated tests; it is unreachable from real discovery.
-  const [pendingTitle, setPendingTitle] = useState<string | null>(null);
   useEffect(() => {
-    if (!BOOKING_INTEGRATION_PENDING) return;
-    let cancelled = false;
-    detailsService
-      .getProgramDetailPage({ programId, participantId, participants, areaId })
-      .then(
-        (result) => {
-          if (!cancelled) setPendingTitle(result?.program.title ?? null);
-        },
-        () => {
-          if (!cancelled) setPendingTitle(null);
-        },
-      );
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [programId]);
-
-  useEffect(() => {
-    if (BOOKING_INTEGRATION_PENDING) return;
     let cancelled = false;
     bookingService
       .getBookingOptions({ programId, participantId, participants, areaId, simulateFailure })
@@ -119,28 +92,6 @@ export function BookingSelectionScreen() {
   useFlowStartHardwareBack(programId);
 
   const browse = () => router.replace('/discover');
-
-  if (BOOKING_INTEGRATION_PENDING) {
-    return (
-      <View style={styles.root}>
-        <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-          <IconButton icon="chevron-back" accessibilityLabel="Back" onPress={goBack} />
-        </View>
-        <View style={styles.pendingWrap} testID="booking-pending">
-          <EmptyFeedCard
-            title="Booking is almost here"
-            message={
-              pendingTitle !== null
-                ? `You can't book ${pendingTitle} in the app just yet. Booking is on its way — check back soon.`
-                : 'You can’t book this activity in the app just yet. Booking is on its way — check back soon.'
-            }
-            actionLabel="Back to activity"
-            onClearFilter={() => router.replace(programHref(programId))}
-          />
-        </View>
-      </View>
-    );
-  }
 
   const selectedOption = page?.options.find((option) => option.id === draft.optionId);
   const selectedSession = selectedOption?.sessions.find(
@@ -333,6 +284,35 @@ function OptionRow({
   selected: boolean;
   onSelect: () => void;
 }) {
+  if (option.purchasable === false) {
+    // S6 product boundary (owner RI-3 §23): visible, honest, NOT
+    // selectable — packages/passes never become fake capacity bookings.
+    return (
+      <View
+        accessible
+        accessibilityRole="radio"
+        accessibilityState={{ checked: false, disabled: true }}
+        aria-checked={false}
+        aria-disabled
+        accessibilityLabel={`${option.title}, ${option.priceLabel}, ${
+          option.unavailableNote ?? 'not yet available'
+        }`}
+        style={[styles.optionRow, styles.optionRowDisabled]}
+        testID={`option-unavailable-${option.id}`}
+      >
+        <View style={styles.optionText}>
+          <Text style={[styles.optionTitle, styles.optionTextDisabled]}>{option.title}</Text>
+          <Text style={[styles.optionPrice, styles.optionTextDisabled]}>{option.priceLabel}</Text>
+          {option.unavailableNote !== undefined ? (
+            <Text style={styles.optionNote}>{option.unavailableNote}</Text>
+          ) : null}
+        </View>
+        <View style={styles.comingSoonPill}>
+          <Text style={styles.comingSoonPillText}>Coming soon</Text>
+        </View>
+      </View>
+    );
+  }
   return (
     <PressableFeedback
       accessibilityRole="radio"
@@ -431,7 +411,6 @@ function SelectionSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  pendingWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: pagePadding },
   root: { flex: 1, backgroundColor: colors.background.main },
   header: {
     flexDirection: 'row',
@@ -477,6 +456,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   optionList: { gap: spacing.sm },
+  optionRowDisabled: {
+    backgroundColor: colors.background.main,
+  },
+  optionTextDisabled: {
+    color: colors.text.secondary,
+  },
+  optionNote: {
+    ...typography.caption,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  comingSoonPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radii.chip,
+    backgroundColor: colors.border.default,
+  },
+  comingSoonPillText: {
+    ...typography.caption,
+    fontFamily: fontFamily.bold,
+    color: colors.text.secondary,
+  },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',

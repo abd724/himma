@@ -218,6 +218,11 @@ export interface CustomerBookingView {
   state: string;
   participant: { id: string; firstName: string };
   program: { id: string; titleEn: string };
+  /** RI-3 (additive, owning-slice amendment): the provider/branch identity
+   *  of the customer's OWN booking — the same public display names already
+   *  served on discovery surfaces; needed by confirmation/My Bookings. */
+  provider: { id: string; displayName: string };
+  branch: { id: string; label: string } | null;
   unit: {
     kind: UnitKind;
     unitId: string;
@@ -238,6 +243,10 @@ interface BookingProjectionRow {
   first_name: string;
   program_id: string;
   title_en: string;
+  organization_id: string;
+  display_name: string;
+  branch_id: string | null;
+  branch_label: string | null;
   session_id: string | null;
   camp_week_id: string | null;
   cohort_id: string | null;
@@ -262,6 +271,11 @@ function toBookingView(row: BookingProjectionRow): CustomerBookingView {
     state: row.state,
     participant: { id: row.participant_id, firstName: row.first_name },
     program: { id: row.program_id, titleEn: row.title_en },
+    provider: { id: row.organization_id, displayName: row.display_name },
+    branch:
+      row.branch_id === null || row.branch_label === null
+        ? null
+        : { id: row.branch_id, label: row.branch_label },
     unit: {
       kind,
       unitId: (row.session_id ?? row.camp_week_id ?? row.cohort_id)!,
@@ -279,15 +293,19 @@ function toBookingView(row: BookingProjectionRow): CustomerBookingView {
 const BOOKING_PROJECTION = sql`
   b.id, b.reference_code, b.state, b.participant_id, p.first_name,
   b.program_id, pr.title_en, b.session_id, b.camp_week_id, b.cohort_id,
+  b.organization_id, opp.display_name,
+  br.id AS branch_id, br.label AS branch_label,
   s.start_at, cw.start_date, ec.effective_start,
   q.total_fils, b.created_at, b.confirmed_at
   FROM booking b
   JOIN participant p ON p.id = b.participant_id
   JOIN program pr ON pr.id = b.program_id
+  JOIN organization_public_profile opp ON opp.organization_id = b.organization_id
   JOIN price_quote q ON q.id = b.quote_id
   LEFT JOIN session s ON s.id = b.session_id
   LEFT JOIN camp_week cw ON cw.id = b.camp_week_id
-  LEFT JOIN enrolment_cohort ec ON ec.id = b.cohort_id`;
+  LEFT JOIN enrolment_cohort ec ON ec.id = b.cohort_id
+  LEFT JOIN branch br ON br.id = COALESCE(s.branch_id, cw.branch_id, ec.branch_id)`;
 
 export async function listBookings(
   deps: BookingServiceDeps,

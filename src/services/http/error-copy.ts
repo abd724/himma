@@ -23,6 +23,30 @@ const COPY: Record<string, string> = {
   staleVersion: 'This profile changed on another device. Refresh and try again.',
   validationError: 'Please check the details and try again.',
   providerUnavailable: 'Sign-in is temporarily unavailable. Please try again shortly.',
+  // RI-3 — booking/checkout outcomes (the certified vocabulary; customer-
+  // safe wording only, no internals):
+  sessionFull: 'This session just filled up. Pick another time.',
+  registrationClosed: 'Registration for this session has closed.',
+  participantIneligible: 'This participant can’t join this program.',
+  quoteExpired: 'The price check expired. We’ll refresh it for you.',
+  invalidQuote: 'Something changed with this booking. Let’s start again.',
+  holdExpired: 'Your held spot expired. Check availability to book again.',
+  holdNotActive: 'Your held spot is no longer active. Check availability to book again.',
+  holdAlreadyActive: 'You already have a spot held for this session.',
+  alreadyBooked: 'This participant is already booked for this session.',
+  alreadyConfirmed: 'This booking is already confirmed.',
+  trialAlreadyRedeemed: 'This trial has already been used for this participant.',
+  notFreeQuote: 'This booking needs payment to complete.',
+  paymentNotRequired: 'No payment is needed for this booking.',
+  // A missing provider commercial configuration is INTERNAL — customers
+  // only ever learn that payment is unavailable right now.
+  paymentUnavailable: 'Payments are temporarily unavailable. Please try again later.',
+  checkoutAlreadyActive: 'A payment for this booking is already in progress.',
+  checkoutConcluded: 'This checkout has already finished. Check your bookings.',
+  checkoutCreateFailed: 'We couldn’t start the payment. Please try again.',
+  checkoutPending: 'We’re still preparing your payment. Try again in a moment.',
+  policyUnavailable: 'Booking is temporarily unavailable. Please try again later.',
+  idempotencyConflict: 'That request was already processed. Refresh and check your bookings.',
 };
 
 export function customerErrorCopy(error: unknown): string {

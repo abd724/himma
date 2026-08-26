@@ -536,8 +536,9 @@ describe('Booking summary per program type (docs/21 §5, §8, §9; docs/09 §21.
   test('branch and policy joins resolve', () => {
     const summary = summaryFor('junior-swim-squad', 'adam')!;
     expect(summary.branch?.label).toBeDefined();
-    expect(summary.policy.summaryLines.length).toBeGreaterThan(0);
-    expect(summaryFor('beginner-calisthenics', 'me')!.policy.id).toBeDefined();
+    // Mock summaries always carry their fixture policy preset.
+    expect(summary.policy!.summaryLines.length).toBeGreaterThan(0);
+    expect(summaryFor('beginner-calisthenics', 'me')!.policy!.id).toBeDefined();
   });
 
   test('every bookable program yields an honest summary for an eligible participant', () => {

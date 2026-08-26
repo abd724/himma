@@ -27,6 +27,8 @@ import { buildApp } from '../src/app/build-app';
 import { createDb } from '../src/db/kysely';
 import { CaptureMailSender } from '../src/modules/identity/mail/mail-sender';
 import { DevPasswordIdentityProvider } from '../src/modules/identity/providers/dev/dev-password-identity';
+import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
+import { registerDevHostedCheckout } from './dev-hosted-checkout';
 import { cliConfig, fail } from './cli-env';
 
 const DEFAULT_PORT = 3101;
@@ -54,6 +56,30 @@ async function main(): Promise<void> {
   const db = createDb(pool);
 
   const devIdentity = new DevPasswordIdentityProvider();
+  // RI-3 — DEV payment composition (docs/33 §13.1; owner RI-3 §13): the
+  // certified DETERMINISTIC provider stands in for Stripe so the certified
+  // W5 customer checkout/webhook/saga machinery runs end-to-end locally.
+  // Structurally impossible in production (provider-composition refuses the
+  // deterministic provider there, and this script refuses production
+  // outright); `productionChargingPossible` remains the literal false —
+  // nothing here touches the W5 production gates.
+  const port = Number(process.env.PORT ?? DEFAULT_PORT);
+  const host = process.env.HOST ?? '127.0.0.1';
+  const paymentProvider = new DeterministicPaymentProvider({
+    // Fixed injected clock (the provider never reads system time); its
+    // webhook build/verify use the SAME instant, so signatures stay valid
+    // for the process lifetime. Cosmetic only — no customer-wire effect.
+    now: new Date(),
+    webhookSecret: process.env.DEV_PAYMENT_WEBHOOK_SECRET ?? 'dt_whsec_fictional',
+    // The hosted page is served by THIS dev server (the provider's own
+    // page stand-in) so the full browser journey runs locally.
+    hostedBaseUrl: `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}/dev/payments/hosted`,
+  });
+  const appOrigin = process.env.DEV_APP_ORIGIN ?? 'http://localhost:8081';
+  const checkoutUrls = {
+    successUrl: process.env.DEV_CHECKOUT_SUCCESS_URL ?? `${appOrigin}/bookings/return`,
+    cancelUrl: process.env.DEV_CHECKOUT_CANCEL_URL ?? `${appOrigin}/bookings/return?outcome=cancel`,
+  };
   const allowedOrigins =
     process.env.DEV_CORS_ORIGINS !== undefined && process.env.DEV_CORS_ORIGINS !== ''
       ? process.env.DEV_CORS_ORIGINS.split(',').map((origin) => origin.trim())
@@ -79,10 +105,17 @@ async function main(): Promise<void> {
       },
     },
     devIdentity: { provider: devIdentity },
+    payment: { provider: paymentProvider, checkoutUrls },
   });
 
-  const port = Number(process.env.PORT ?? DEFAULT_PORT);
-  const host = process.env.HOST ?? '127.0.0.1';
+  // The dev-only hosted-checkout stand-in (the fake provider's own pages;
+  // never part of buildApp, never composable in production).
+  registerDevHostedCheckout(app, {
+    provider: paymentProvider,
+    checkoutUrls,
+    webhookDelayMs: Number(process.env.DEV_PAYMENT_WEBHOOK_DELAY_MS ?? 900),
+  });
+
   await app.ready();
   await app.listen({ port, host });
    

@@ -16,6 +16,8 @@ import {
 import { demoImage } from '@/data/mock/images';
 import type { BookingOptionsPage, BookingSummary } from '@/services/contracts/booking';
 import { bookingService } from '@/services/composition';
+import { customerErrorCopy } from '@/services/http/error-copy';
+import { ApiError } from '@/services/http/http-client';
 import { useAreaContext } from '@/state/area-context';
 import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';
@@ -42,7 +44,7 @@ export function BookingSummaryScreen() {
 
   const { participants } = useParticipantContext();
   const { areaId, areaLabelById } = useAreaContext();
-  const { draft } = useBookingSession();
+  const { draft, setSummary: storeSummary, claimHold, hold, releaseHold } = useBookingSession();
   // Redirect decisions read the draft at response time, not render time.
   const draftRef = useRef(draft);
   useEffect(() => {
@@ -53,6 +55,11 @@ export function BookingSummaryScreen() {
   const [summary, setSummary] = useState<BookingSummary | null>(null);
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
+  // A typed backend refusal (session full, ineligible, trial used…) —
+  // mapped to customer copy with an honest recovery, never a raw code.
+  const [refusal, setRefusal] = useState<{ code: string; copy: string } | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const [retried, setRetried] = useState(false);
   const lastCheckoutAt = useRef(0);
 
@@ -96,21 +103,35 @@ export function BookingSummaryScreen() {
         }
         setPage(optionsPage);
         setSummary(summaryResult);
+        // The flow commits to THIS summary/quote (checkout re-uses it —
+        // one authoritative quote, never re-derived silently).
+        storeSummary(summaryResult);
         setMissing(false);
         setFailed(false);
+        setRefusal(null);
       },
-      () => {
-        if (!cancelled) setFailed(true);
+      (error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError) {
+          setRefusal({ code: error.code, copy: customerErrorCopy(error) });
+          setFailed(false);
+          return;
+        }
+        setFailed(true);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [programId, participants, areaId, simulateFailure, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programId, participants, areaId, simulateFailure, retried, router]);
 
   // Back returns to the participant step — the summary is only ever pushed
   // from it (docs/21 §3.2); the replace fallback covers stackless edge cases.
+  // Backing out PAST the summary abandons the checkout intent: any held
+  // spot is released explicitly (idempotent; expiry stays authoritative).
   const goBack = () => {
+    if (hold !== undefined) void releaseHold();
     if (router.canGoBack()) router.back();
     else router.replace(bookingStepHref(programId, 'participant'));
   };
@@ -148,7 +169,33 @@ export function BookingSummaryScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {!ready && !missing && !failed ? (
+        {refusal !== null ? (
+          <View style={styles.stateWrap}>
+            <EmptyFeedCard
+              title={refusal.copy}
+              message={
+                refusal.code === 'participantIneligible' || refusal.code === 'trialAlreadyRedeemed'
+                  ? 'Choose a different participant to continue.'
+                  : 'Pick another session to continue.'
+              }
+              actionLabel={
+                refusal.code === 'participantIneligible' || refusal.code === 'trialAlreadyRedeemed'
+                  ? 'Change participant'
+                  : 'Choose another session'
+              }
+              onClearFilter={() => {
+                if (
+                  refusal.code === 'participantIneligible' ||
+                  refusal.code === 'trialAlreadyRedeemed'
+                ) {
+                  router.replace(bookingStepHref(programId, 'participant'));
+                } else {
+                  router.dismissTo(bookingHref(programId));
+                }
+              }}
+            />
+          </View>
+        ) : !ready && !missing && !failed ? (
           <SummarySkeleton />
         ) : missing ? (
           <View style={styles.stateWrap}>
@@ -267,43 +314,93 @@ export function BookingSummaryScreen() {
               </View>
             </View>
 
-            {/* Cancellation summary — display-only preset (docs/09 §21.12). */}
-            <View style={styles.block}>
-              <Text style={styles.blockLabel}>Cancellation policy</Text>
-              <Text style={styles.blockTitle}>{summary.policy.title}</Text>
-              {summary.policy.summaryLines.map((line) => (
-                <Text key={line} style={styles.blockLine}>
-                  {line}
-                </Text>
-              ))}
-            </View>
+            {/* Cancellation summary — renders only when a policy genuinely
+                exists (the certified snapshot arrives at confirmation; D-8
+                content remains a launch gate). */}
+            {summary.policy !== undefined ? (
+              <View style={styles.block}>
+                <Text style={styles.blockLabel}>Cancellation policy</Text>
+                <Text style={styles.blockTitle}>{summary.policy.title}</Text>
+                {summary.policy.summaryLines.map((line) => (
+                  <Text key={line} style={styles.blockLine}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
           </View>
         )}
       </ScrollView>
 
-      {ready ? (
+      {ready && refusal === null ? (
         <View style={[styles.ctaBar, { paddingBottom: insets.bottom + spacing.md }]}>
           <View style={styles.ctaStatus} accessibilityLiveRegion="polite">
             <Text style={styles.ctaStatusText} numberOfLines={2}>
-              {summary.bookingPriceLabel}
+              {claimError ?? summary.bookingPriceLabel}
             </Text>
           </View>
-          {/* Live since the Checkout milestone (docs/09 §22.1): pushes the
-              checkout step; the double-tap guard keeps one press to one
-              route (docs/22 §3.3). */}
+          {/* RI-3: entering checkout CLAIMS the authoritative 10-minute
+              Himma hold (owner §8) — with the flow's STABLE idempotency
+              key, so a double tap or retry replays the same hold. */}
           <PressableFeedback
             accessibilityRole="button"
             accessibilityLabel={`Continue to checkout, ${spokenPrice}`}
+            accessibilityState={{ disabled: claiming }}
+            disabled={claiming}
             onPress={() => {
               const now = Date.now();
               if (now - lastCheckoutAt.current < 700) return;
               lastCheckoutAt.current = now;
-              router.push(bookingStepHref(programId, 'checkout'));
+              const quote = summary.quote;
+              const option = summary.option;
+              if (
+                quote === undefined ||
+                option.unitKind === undefined ||
+                summary.session === undefined
+              ) {
+                router.replace(bookingHref(programId));
+                return;
+              }
+              setClaiming(true);
+              setClaimError(null);
+              claimHold({
+                programId,
+                optionId: option.id,
+                unitKind: option.unitKind,
+                unitId: summary.session.id,
+                participantId: String(summary.participant.participantId),
+                quoteId: quote.quoteId,
+              }).then(
+                () => {
+                  setClaiming(false);
+                  router.push(bookingStepHref(programId, 'checkout'));
+                },
+                (error: unknown) => {
+                  setClaiming(false);
+                  if (error instanceof ApiError && error.code === 'quoteExpired') {
+                    // Server TTL authority: never continue with stale
+                    // money — re-derive and SHOW the fresh quote.
+                    setSummary(null);
+                    storeSummary(null);
+                    setRetried((value) => !value);
+                    setClaimError('The price check expired — refreshing the price…');
+                    return;
+                  }
+                  if (
+                    error instanceof ApiError &&
+                    (error.code === 'sessionFull' || error.code === 'registrationClosed')
+                  ) {
+                    setRefusal({ code: error.code, copy: customerErrorCopy(error) });
+                    return;
+                  }
+                  setClaimError(customerErrorCopy(error));
+                },
+              );
             }}
-            style={styles.ctaButton}
+            style={[styles.ctaButton, claiming && styles.ctaButtonBusy]}
           >
             <Text style={styles.ctaButtonLabel} maxFontSizeMultiplier={1.4}>
-              Continue to checkout
+              {claiming ? 'Holding your spot…' : 'Continue to checkout'}
             </Text>
           </PressableFeedback>
         </View>
@@ -495,6 +592,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  ctaButtonBusy: { opacity: 0.7 },
   ctaButtonLabel: {
     ...typography.chip,
     fontSize: 16,

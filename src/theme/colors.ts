@@ -25,6 +25,8 @@ export const colors = {
   status: {
     success: '#2DBA7F',
     error: '#DC4C5A',
+    /** Soft error surface (urgent countdown, gentle warnings). */
+    errorSoft: '#FCEBED',
   },
   overlay: {
     /** Scrim over photography so inverse text stays readable. */

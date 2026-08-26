@@ -248,12 +248,17 @@ describe('the approved customer journey over the wire', () => {
         'state',
         'participant',
         'program',
+        // RI-3 (owning-slice amendment): the booking's provider/branch
+        // display identity — public names only, no commercial internals.
+        'provider',
+        'branch',
         'unit',
         'price',
         'createdAt',
         'confirmedAt',
       ].sort(),
     );
+    expect(view.provider.displayName.length).toBeGreaterThan(0);
     expect(view.price).toEqual({ totalFils: 0, currency: 'AED' });
     // List read shows the same row, own-account only.
     const list = await inject('GET', '/customer/bookings', customer.bearer);

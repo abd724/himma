@@ -139,6 +139,10 @@ const CustomerBookingSchema = Type.Object({
   state: Type.String(),
   participant: Type.Object({ id: Uuid, firstName: Type.String() }),
   program: Type.Object({ id: Uuid, titleEn: Type.String() }),
+  // RI-3 (additive): the booking's provider/branch display identity — the
+  // same public names discovery already serves; no commercial internals.
+  provider: Type.Object({ id: Uuid, displayName: Type.String() }),
+  branch: Type.Union([Type.Object({ id: Uuid, label: Type.String() }), Type.Null()]),
   unit: Type.Object({
     kind: UnitKindLiteral,
     unitId: Uuid,

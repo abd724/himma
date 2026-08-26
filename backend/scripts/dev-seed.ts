@@ -203,6 +203,22 @@ async function main(): Promise<void> {
     // search engine reads program_search_document, maintained by the
     // service layer — the seed writes rows directly).
     const { refreshed } = await rebuildAllSearchDocuments({ db });
+    // RI-3 heal: confirmations need an ACTIVE policy template (fictional).
+    const activePolicy = await sql<{ id: string }>`
+      SELECT id FROM cancellation_policy_template WHERE state = 'active' LIMIT 1`.execute(db);
+    if (activePolicy.rows.length === 0) {
+      const policyId = newId();
+      await sql`INSERT INTO cancellation_policy_template (id, template_version, title_en, rules)
+                VALUES (${policyId}, 1, 'Flexible up to 24 hours (dev fictional)',
+                        '{"windows": []}'::jsonb)`.execute(db);
+      await sql`UPDATE cancellation_policy_template SET state = 'active'
+                WHERE id = ${policyId}`.execute(db);
+    }
+    await sql`INSERT INTO organization_commission_term (id, organization_id, rate_bps)
+              SELECT gen_random_uuid(), o.id, 1200 FROM organization o
+              WHERE o.legal_name LIKE ${`%${SEED_TAG}`}
+                AND NOT EXISTS (SELECT 1 FROM organization_commission_term t
+                                WHERE t.organization_id = o.id)`.execute(db);
     console.log(
       `dev-seed: catalogue already seeded — search documents rebuilt (${refreshed}).`,
     );
@@ -500,6 +516,25 @@ async function main(): Promise<void> {
   // The certified search engine reads the derived search documents; build
   // them exactly the way the owning service does.
   await rebuildAllSearchDocuments({ db });
+
+  // D-W5-7 dev composition: paid checkout is fail-closed without an AGREED
+  // provider commission term. Seed the recorded launch rate (1200 bps) for
+  // every fictional dev provider — operational data, never customer-visible.
+  await sql`INSERT INTO organization_commission_term (id, organization_id, rate_bps)
+            SELECT gen_random_uuid(), o.id, 1200 FROM organization o
+            WHERE o.legal_name LIKE ${`%${SEED_TAG}`}
+              AND NOT EXISTS (SELECT 1 FROM organization_commission_term t
+                              WHERE t.organization_id = o.id)`.execute(db);
+
+  // D-8 dev composition: confirmations snapshot the ACTIVE cancellation
+  // policy template. A deterministic FICTIONAL template (the certified test
+  // pattern) — production seeds nothing; the D-8 owner-content gate stands.
+  const policyId = newId();
+  await sql`INSERT INTO cancellation_policy_template (id, template_version, title_en, rules)
+            VALUES (${policyId}, 1, 'Flexible up to 24 hours (dev fictional)',
+                    '{"windows": []}'::jsonb)`.execute(db);
+  await sql`UPDATE cancellation_policy_template SET state = 'active'
+            WHERE id = ${policyId}`.execute(db);
 
   const summary = await sql<{ programs: string; sessions: string }>`
     SELECT (SELECT count(*) FROM program WHERE listing_state = 'published') AS programs,

@@ -56,14 +56,34 @@ describe('composition boundary locks', () => {
     }
   });
 
-  it('RI-2: real discovery identities cannot enter mock commerce — the RI-3 pending boundary flag exists and the booking flow consults it', () => {
+  it('RI-3: the commerce family is REAL in composition — no booking/checkout mock is bound; the S6 boundary lives in the options composition', () => {
     const composition = readFileSync(path.join(SRC, 'services', 'composition.ts'), 'utf8');
-    expect(composition).toMatch(/BOOKING_INTEGRATION_PENDING = true/);
-    const selection = readFileSync(
-      path.join(SRC, 'features', 'booking', 'booking-selection-screen.tsx'),
+    expect(composition).toMatch(/commerceApi = createCommerceApi\(httpClient\)/);
+    expect(composition).toMatch(/bookingService = createRealBookingService\(/);
+    for (const forbidden of ['mock-booking-service', 'mock-checkout-service']) {
+      expect(composition).not.toContain(forbidden);
+    }
+    // The RI-2 pending boundary is retired; the S6 product boundary is the
+    // options composition's non-purchasable rows (never a fake Session).
+    expect(composition).not.toContain('BOOKING_INTEGRATION_PENDING');
+    const realCommerce = readFileSync(
+      path.join(SRC, 'services', 'api', 'real-commerce-services.ts'),
       'utf8',
     );
-    expect(selection).toContain('BOOKING_INTEGRATION_PENDING');
+    expect(realCommerce).toMatch(/purchasable: false/);
+  });
+
+  it('RI-3: commission/economics can never enter Customer App models — and no customer payment-success authority exists', () => {
+    // No frontend service/contract file may model Himma commission,
+    // provider shares, or settlement economics (D-W5-7 privacy) — and no
+    // code path may pretend browser return implies payment success.
+    for (const dir of ['services', 'features', 'state']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = readFileSync(file, 'utf8');
+        expect(source).not.toMatch(/commissionBps|commission_bps|providerShare|provider_share|rateBps|rate_bps/);
+        expect(source).not.toMatch(/confirmPaidBooking|payment-success|paymentSucceeded/);
+      }
+    }
   });
 
   it('RI-2: fixture catalogue data never reaches discovery screens (presentation imagery excepted)', () => {

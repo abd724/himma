@@ -1,8 +1,12 @@
-import type { BookingDraft } from '@/services/contracts/booking';
+import { BookingCommerceController, type HoldIntent } from '@/features/booking/commerce-session';
+import { commerceApi } from '@/services/composition';
+import type { BookingDraft, BookingSummary } from '@/services/contracts/booking';
 import type { CheckoutIssueCode } from '@/services/contracts/checkout';
+import type { CapacityHold } from '@/services/contracts/commerce';
 import type { ParticipantId } from '@/types/domain';
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useReducer,
@@ -80,6 +84,24 @@ interface BookingSessionContextValue {
   dispatch: (action: BookingDraftAction) => void;
   /** QA-only review-state code captured at flow entry; undefined otherwise. */
   qaRevalidate: CheckoutIssueCode | undefined;
+  /**
+   * RI-3 — the flow's commerce state. ONE authoritative quote travels
+   * summary → hold → checkout (never re-derived behind the customer's
+   * back); the controller owns the stable idempotency keys and the hold
+   * lifecycle discipline.
+   */
+  commerce: BookingCommerceController;
+  /** The summary (with its server quote) the flow is committing to. */
+  summary: BookingSummary | null;
+  setSummary: (summary: BookingSummary | null) => void;
+  /** The authoritative hold, reactive for countdown/CTA rendering. */
+  hold: CapacityHold | undefined;
+  /** Claim (or idempotently reuse) the hold for the stored summary. */
+  claimHold: (intent: HoldIntent) => Promise<CapacityHold>;
+  /** Explicit, idempotent abandonment of the current hold. */
+  releaseHold: () => Promise<void>;
+  /** Forget hold state after the server consumed/expired it. */
+  forgetHold: () => void;
 }
 
 const BookingSessionContext = createContext<BookingSessionContextValue | undefined>(undefined);
@@ -99,7 +121,72 @@ export function BookingSessionProvider({
   if (qaRevalidate === undefined && qaRevalidateParam !== undefined) {
     setQaRevalidate(qaRevalidateParam);
   }
-  const value = useMemo(() => ({ draft, dispatch, qaRevalidate }), [draft, qaRevalidate]);
+
+  // RI-3 commerce state — same lifetime as the draft (flow-scoped).
+  const [commerce] = useState(() => new BookingCommerceController(commerceApi));
+  const [summary, setSummary] = useState<BookingSummary | null>(null);
+  const [hold, setHold] = useState<CapacityHold | undefined>(undefined);
+
+  const claimHold = useCallback(
+    async (intent: HoldIntent) => {
+      const claimed = await commerce.ensureHold(intent);
+      setHold(claimed);
+      return claimed;
+    },
+    [commerce],
+  );
+
+  const releaseHold = useCallback(async () => {
+    setHold(undefined);
+    await commerce.releaseCurrentHold();
+  }, [commerce]);
+
+  const forgetHold = useCallback(() => {
+    setHold(undefined);
+    commerce.forgetHold();
+  }, [commerce]);
+
+  // A MATERIAL draft change (option/session/participant) abandons the
+  // current hold explicitly IN THE EVENT HANDLER — never silently kept,
+  // never a duplicate claim on rerender (owner RI-3 §9/§10). Expiry stays
+  // authoritative if the release call is ever lost.
+  const guardedDispatch = useCallback(
+    (action: BookingDraftAction) => {
+      const signature = commerce.currentSignature;
+      if (signature !== undefined) {
+        const [, optionId, , unitId, participantId] = signature.split('|');
+        const changes =
+          (action.type === 'selectOption' && action.optionId !== optionId) ||
+          (action.type === 'selectSession' && action.sessionId !== unitId) ||
+          (action.type === 'selectParticipant' &&
+            String(action.participantId) !== participantId) ||
+          action.type === 'reset';
+        if (changes) {
+          setHold(undefined);
+          setSummary(null);
+          void commerce.releaseCurrentHold();
+        }
+      }
+      dispatch(action);
+    },
+    [commerce],
+  );
+
+  const value = useMemo(
+    () => ({
+      draft,
+      dispatch: guardedDispatch,
+      qaRevalidate,
+      commerce,
+      summary,
+      setSummary,
+      hold,
+      claimHold,
+      releaseHold,
+      forgetHold,
+    }),
+    [draft, guardedDispatch, qaRevalidate, commerce, summary, hold, claimHold, releaseHold, forgetHold],
+  );
   return (
     <BookingSessionContext.Provider value={value}>{children}</BookingSessionContext.Provider>
   );

@@ -78,6 +78,13 @@ export interface DeterministicProviderOptions {
   defaultScenario?: DeterministicScenario;
   /** Fictional endpoint secret for webhook signing (test material only). */
   webhookSecret?: string;
+  /**
+   * RI-3 (additive): base URL of the provider's hosted page. Defaults to
+   * the unreachable fictional origin the W5 suites pin; the dev-server
+   * composition points it at its local hosted-page stand-in so the full
+   * browser journey runs. Presentation only — never financial truth.
+   */
+  hostedBaseUrl?: string;
 }
 
 export class DeterministicPaymentProvider implements PaymentProviderPort {
@@ -87,6 +94,7 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
   private readonly scenarios: Record<string, DeterministicScenario>;
   private readonly defaultScenario: DeterministicScenario;
   private readonly webhookSecret: string;
+  private readonly hostedBaseUrl: string;
   private readonly checkoutsByRef = new Map<string, CheckoutRecord>();
   private readonly createResultsByKey = new Map<string, CreateHostedCheckoutResult>();
   /** Total create requests received (network-attempt assertions). */
@@ -102,6 +110,7 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
     this.scenarios = options.scenarios ?? {};
     this.defaultScenario = options.defaultScenario ?? 'succeed';
     this.webhookSecret = options.webhookSecret ?? 'dt_whsec_fictional';
+    this.hostedBaseUrl = options.hostedBaseUrl ?? 'https://deterministic.test/checkout';
   }
 
   private scenarioFor(intentId: string): DeterministicScenario {
@@ -157,7 +166,7 @@ export class DeterministicPaymentProvider implements PaymentProviderPort {
     const result: CreateHostedCheckoutResult = {
       kind: 'created',
       gatewayRef,
-      clientAction: { kind: 'redirect', url: `https://deterministic.test/checkout/${gatewayRef}` },
+      clientAction: { kind: 'redirect', url: `${this.hostedBaseUrl}/${gatewayRef}` },
       gatewayExpiresAt,
     };
     this.createResultsByKey.set(input.idempotencyKey, result);

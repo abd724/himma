@@ -17,10 +17,13 @@
  *   backend (guest-readable; no bearer on public reads). The discovery
  *   mocks remain for isolated tests ONLY.
  *
- * - DETERMINISTIC MOCKS (schedule/booking/checkout): still the approved
- *   mock-driven surfaces until RI-3 replaces each binding HERE. The
- *   BOOKING_INTEGRATION_PENDING boundary below keeps real discovery
- *   identities out of mock commerce — never mixed truth on one screen.
+ * - REAL HTTP (RI-3 — commerce): quote/hold/free-confirm/paid-initiate/
+ *   payment-status/own-bookings and the real booking-options composition.
+ *   The S6 product boundary (packages/passes) lives in the options
+ *   composition as non-purchasable rows — never mixed truth.
+ *
+ * - DETERMINISTIC MOCK (schedule): fixture layer for the dev-QA scenario
+ *   override only; Home's real schedule derives from real bookings.
  */
 import { createDevIdentityGateway, createParticipantApi, createSessionApi } from './api/identity-api';
 import { createDiscoveryApi } from './api/discovery-api';
@@ -33,33 +36,22 @@ import {
   createRealSearchService,
 } from './api/real-discovery-services';
 import { createTaxonomyCache } from './api/taxonomy-cache';
+import { createCommerceApi } from './api/commerce-api';
+import { createRealBookingService } from './api/real-commerce-services';
 import { apiBaseUrl } from './http/api-config';
 import { createHttpClient } from './http/http-client';
 import { tokenStorage } from './auth/token-storage';
 import { AuthSession } from './auth/auth-session';
 
-// Mock-backed contracts (replaced per-slice in RI-2/RI-3):
 // Mock-backed contracts remaining (replaced by their slices):
-// - schedule (RI-3/RI-5 real bookings/passes/calendar reads)
-// - booking + checkout (RI-3 quote/hold/payment) — see the RI-3 pending
-//   boundary below: real discovery identities never enter these mocks.
+// - schedule (the RI-5 unified-calendar family; Home's real upcoming
+//   schedule now derives from REAL confirmed bookings — the mock binding
+//   serves ONLY the dev-QA fixture override).
 export { scheduleService } from './mock/mock-schedule-service';
-export { bookingService } from './mock/mock-booking-service';
-export { checkoutService } from './mock/mock-checkout-service';
 // Shared presentation helper (pure derivation, not data):
 export { providerMonogram } from '../utils/monogram';
 // Dev-QA fixture resolver (account-context __DEV__ override only):
 export { resolveAccountScenario } from './mock/mock-schedule-service';
-
-/**
- * RI-3 pending boundary (owner RI-2 §18): discovery is REAL below, but the
- * booking family above is still the deterministic mock. Real canonical
- * program/session ids must NEVER cross into mock commerce — no mixed
- * commercial truth. Screens consult this flag: the booking entry preserves
- * the real selection context and states truthfully that booking is not
- * available yet, instead of fabricating a mock quote/hold/Booking.
- */
-export const BOOKING_INTEGRATION_PENDING = true;
 
 /** The current bearer — owned by AuthSession, read by the HTTP client. */
 let currentAccessToken: string | null = null;
@@ -96,6 +88,18 @@ export const detailsService = createRealDetailsService(discoveryApi);
 export const discoverFeedService = createRealDiscoverFeedService(discoveryApi, taxonomyCache);
 export const homeFeedService = createRealHomeFeedService(discoveryApi, taxonomyCache);
 export const mapService = createRealMapService(discoveryApi, taxonomyCache);
+
+// ---------------------------------------------------------------------------
+// RI-3 — REAL commerce composition (docs/34 §2; the certified W4/W5
+// customer APIs): quote/hold/free-confirm/paid-initiate/payment-status/
+// own-bookings plus the real booking-options/summary composition. The
+// RI-2 pending boundary is RETIRED for supported products; the S6 product
+// boundary now lives in the options composition itself (non-purchasable
+// package rows). The deterministic booking/checkout mocks remain for
+// isolated tests exclusively (source-locked out of this module).
+// ---------------------------------------------------------------------------
+export const commerceApi = createCommerceApi(httpClient);
+export const bookingService = createRealBookingService(discoveryApi, commerceApi);
 
 /**
  * D-RI-3 operational record: Sign in with Apple and Google sign-in reuse

@@ -7,6 +7,7 @@ import type {
   Provider,
   ProviderBranch,
 } from '@/types/domain';
+import type { CommerceUnitKind, Quote } from '@/services/contracts/commerce';
 import type { ParticipantSuitability } from '@/utils/eligibility';
 
 /**
@@ -47,6 +48,24 @@ export interface BookingOption {
   title: string;
   /** 'AED 85 per session' | 'Free' | 'AED 35' | … */
   priceLabel: string;
+  /**
+   * RI-3 — canonical backend identifiers for the certified quote:
+   * the price option this row represents, the capacity-unit kind its
+   * sessions select, and (for trials) the provider Offer applied. Real
+   * composition always sets these; fixture options may omit them.
+   */
+  priceOptionId?: string;
+  offerId?: string;
+  unitKind?: CommerceUnitKind;
+  /**
+   * S6 product boundary (owner RI-3 §23): false for catalogue products the
+   * certified Booking domain cannot legally fulfil yet (packages/passes/
+   * memberships). Rendered truthfully as unavailable — NEVER forced into a
+   * capacity Booking. Absent = purchasable.
+   */
+  purchasable?: boolean;
+  /** Customer-safe wording for a non-purchasable option ('Coming soon'). */
+  unavailableNote?: string;
   /** True when choosing this option requires picking a dated session/week. */
   requiresSession: boolean;
   /** Empty when requiresSession is false. */
@@ -116,7 +135,15 @@ export interface BookingSummary {
   bookingPriceLabel: string;
   /** Informational only, no arithmetic (docs/09 §21.10). */
   offerLine?: string;
-  policy: CancellationPolicy;
+  /** Absent in real composition until the certified confirmation snapshot
+   *  exposes policy content (D-8) — the section hides. */
+  policy?: CancellationPolicy;
+  /**
+   * RI-3 — the AUTHORITATIVE server quote this summary displays. Real
+   * composition always sets it; every price line above derives from it
+   * verbatim (fils → AED display only, no client arithmetic).
+   */
+  quote?: Quote;
 }
 
 export interface BookingOptionsInput {

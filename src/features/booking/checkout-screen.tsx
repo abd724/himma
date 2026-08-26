@@ -1,14 +1,9 @@
 import { EmptyFeedCard } from '@/components/domain/empty-feed-card';
-import { ErrorStateCard } from '@/components/domain/error-state-card';
 import { AppImage } from '@/components/ui/app-image';
 import { IconButton } from '@/components/ui/icon-button';
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
-import {
-  bookingHref,
-  bookingStepHref,
-  checkoutStepAccess,
-} from '@/features/booking/booking-navigation';
+import { bookingHref, bookingStepHref } from '@/features/booking/booking-navigation';
 import {
   checkoutReadiness,
   checkoutReducer,
@@ -16,23 +11,23 @@ import {
   initialCheckoutUiState,
   type CheckoutReadiness,
 } from '@/features/booking/checkout-state';
-import { CheckoutIssueCard } from '@/features/booking/checkout-issue-card';
-import { checkoutIssueRecovery } from '@/features/booking/checkout-revalidation';
 import { PaymentMethodRow } from '@/features/booking/payment-method-row';
+import { HoldCountdown } from '@/features/booking/hold-countdown';
 import { summaryParticipantBlock } from '@/features/booking/summary-presentation';
-import { programHref } from '@/features/details/detail-navigation';
 import { demoImage } from '@/data/mock/images';
-import type { BookingOptionsPage } from '@/services/contracts/booking';
-import type { CheckoutPage } from '@/services/contracts/checkout';
-import { bookingService, checkoutService } from '@/services/composition';
-import { useAreaContext } from '@/state/area-context';
+import { composeCheckoutPage } from '@/services/api/real-commerce-services';
+import { commerceApi } from '@/services/composition';
+import { pendingCheckoutStore } from '@/services/booking/pending-checkout';
+import { customerErrorCopy } from '@/services/http/error-copy';
+import { ApiError } from '@/services/http/http-client';
+import { notifyBookingsChanged } from '@/state/bookings-events';
 import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useReducer, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
@@ -53,122 +48,206 @@ export function CheckoutScreen() {
   const programId = typeof params.programId === 'string' ? params.programId : '';
 
   const { participants } = useParticipantContext();
-  const { areaId, areaLabelById } = useAreaContext();
-  const { draft, qaRevalidate } = useBookingSession();
-  // Redirect decisions read the draft at response time, not render time.
-  const draftRef = useRef(draft);
-  useEffect(() => {
-    draftRef.current = draft;
-  }, [draft]);
+  const {
+    summary,
+    hold,
+    commerce,
+    forgetHold,
+    releaseHold,
+  } = useBookingSession();
 
-  const [page, setPage] = useState<CheckoutPage | null>(null);
-  const [missing, setMissing] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [retried, setRetried] = useState(false);
+  // The flow's stored summary carries THE authoritative quote (one quote:
+  // summary → hold → checkout). Missing state = cold link/reload — the
+  // summary step re-derives; nothing is silently re-priced here.
+  const page = useMemo(
+    () => (summary === null ? null : (composeCheckoutPage(summary, participants) ?? null)),
+    [summary, participants],
+  );
+  // True once THIS screen owns the next navigation (confirmation/status/
+  // expiry) — the missing-state redirect below must never race it.
+  const navigationOwned = useRef(false);
+  const [holdStateForRedirect, setHoldStateForRedirect] = useState<'live' | 'checking' | 'expired'>(
+    'live',
+  );
+  useEffect(() => {
+    if (navigationOwned.current || holdStateForRedirect !== 'live') return;
+    if (summary === null || hold === undefined || page === null) {
+      navigationOwned.current = true;
+      router.replace(bookingStepHref(programId, 'summary'));
+    }
+  }, [summary, hold, page, holdStateForRedirect, programId, router]);
+
   // Checkout-local UI state (docs/22 §5/§11): the method selection only.
-  // Leaving checkout unmounts the screen and discards it structurally.
   const [uiState, dispatchUi] = useReducer(checkoutReducer, initialCheckoutUiState);
   const lastCtaPressAt = useRef(0);
-  // A 'rederive' recovery action clears the QA review state and re-derives
-  // the page from the live draft (docs/22 §7.10 — no silent repair; the
-  // re-derived page is the current truth).
-  const [reviewed, setReviewed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  const holdState = holdStateForRedirect;
+  const setHoldState = setHoldStateForRedirect;
 
-  const simulateFailure = params['qa-fail'] === '1' && !retried;
-  const simulateRevalidate = reviewed ? undefined : qaRevalidate;
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      bookingService.getBookingOptions({
-        programId,
-        // Preselection is irrelevant here; the draft already owns the choice.
-        participantId: 'everyone',
-        participants,
-        areaId,
-        simulateFailure,
-      }),
-      checkoutService.getCheckoutPage({
-        draft: draftRef.current,
-        participants,
-        areaId,
-        simulateFailure,
-        qaRevalidate: simulateRevalidate,
-      }),
-    ]).then(
-      ([optionsPage, checkoutPage]: [BookingOptionsPage | undefined, CheckoutPage | undefined]) => {
-        if (cancelled) return;
-        if (optionsPage === undefined) {
-          setMissing(true);
-          setFailed(false);
-          return;
-        }
-        // Invalid or incomplete drafts never render — each failure redirects
-        // to the step that owns the fix (docs/22 §3.3). A cold link's empty
-        // draft lands on the flow start, which re-runs the skip rule.
-        const access = checkoutStepAccess(optionsPage, draftRef.current);
-        if (access === 'redirect-selection' || checkoutPage === undefined) {
-          router.replace(bookingHref(programId));
-          return;
-        }
-        if (access === 'redirect-participant') {
-          router.replace(bookingStepHref(programId, 'participant'));
-          return;
-        }
-        // A re-derived page starts with clean checkout-local state
-        // (docs/22 §5): every derived value reflects the current order.
-        dispatchUi({ type: 'reset' });
-        setPage(checkoutPage);
-        setMissing(false);
-        setFailed(false);
-      },
-      () => {
-        if (!cancelled) setFailed(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [programId, participants, areaId, simulateFailure, simulateRevalidate, router]);
-
-  // Back returns to the Booking Summary — checkout is only ever pushed from
-  // it (docs/22 §3.3); the replace fallback covers stackless edge cases.
+  // Back returns to the Booking Summary — the hold (checkout window)
+  // survives; backing out past the summary releases it there.
   const goBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace(bookingStepHref(programId, 'summary'));
   };
-  const browse = () => router.replace('/discover');
-  // The summary owns Change participant / Change session — Edit booking just
-  // returns there (docs/22 §4.2, no duplicate edit affordances).
   const editBooking = goBack;
+
+  /**
+   * Effective hold expiry (owner §8/§18). The countdown is presentation;
+   * on zero the SERVER is asked. Stronger financial truth dominates: if a
+   * checkout was initiated, the payment projection is read FIRST — money
+   * may already be processing/confirmed/compensating.
+   */
+  const onCountdownEnd = async () => {
+    if (hold === undefined) return;
+    setHoldState('checking');
+    try {
+      const pending = await pendingCheckoutStore.load();
+      if (pending !== null && pending.holdId === hold.holdId && pending.bookingId !== undefined) {
+        try {
+          const payment = await commerceApi.paymentStatus(pending.bookingId);
+          if (payment.status !== 'awaitingPayment' && payment.status !== 'expired') {
+            navigationOwned.current = true;
+            router.replace(`/bookings/status/${pending.bookingId}` as never);
+            return;
+          }
+        } catch {
+          // Fall through to the hold read — never invent payment truth.
+        }
+      }
+      const status = await commerceApi.holdStatus(hold.holdId);
+      if (status.state === 'active') {
+        setHoldState('live');
+        return;
+      }
+    } catch {
+      // Unreachable server: do NOT claim expiry from the device clock
+      // alone — surface the check state and let the customer retry.
+    }
+    setHoldState('expired');
+    forgetHold();
+  };
+
+  const recheckAvailability = () => {
+    navigationOwned.current = true;
+    void releaseHold();
+    router.dismissTo(bookingHref(programId));
+  };
+
+  /** Free path — the certified atomic confirmation; no payment machinery. */
+  const confirmFreeBooking = async () => {
+    if (hold === undefined) return;
+    setBusy(true);
+    setCtaError(null);
+    try {
+      const booking = await commerceApi.confirmFree(
+        hold.holdId,
+        commerce.confirmKeyFor(hold.holdId),
+      );
+      navigationOwned.current = true;
+      forgetHold();
+      notifyBookingsChanged();
+      await pendingCheckoutStore.clear();
+      router.replace(`/bookings/confirmed/${booking.bookingId}` as never);
+    } catch (error) {
+      setBusy(false);
+      if (error instanceof ApiError) {
+        if (error.code === 'holdExpired' || error.code === 'holdNotActive') {
+          setHoldState('expired');
+          forgetHold();
+          return;
+        }
+        if (error.code === 'quoteExpired') {
+          // Server TTL authority: back to the summary, which re-quotes and
+          // SHOWS the fresh total before any further commitment.
+          navigationOwned.current = true;
+          void releaseHold();
+          router.replace(bookingStepHref(programId, 'summary'));
+          return;
+        }
+        if (error.code === 'alreadyConfirmed' || error.code === 'alreadyBooked') {
+          navigationOwned.current = true;
+          notifyBookingsChanged();
+          router.replace('/bookings' as never);
+          return;
+        }
+      }
+      setCtaError(customerErrorCopy(error));
+    }
+  };
+
+  /** Paid path — the certified W5-5 initiation: identifiers + the STABLE
+   *  checkout key only; the pending record is persisted BEFORE the call so
+   *  a lost response/reload recovers the SAME commercial intent. */
+  const startPayment = async () => {
+    if (hold === undefined || summary === null || summary.quote === undefined) return;
+    setBusy(true);
+    setCtaError(null);
+    const idempotencyKey = commerce.checkoutKeyFor(hold.holdId);
+    const pendingBase = {
+      programId,
+      holdId: hold.holdId,
+      quoteId: summary.quote.quoteId,
+      idempotencyKey,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      await pendingCheckoutStore.save(pendingBase);
+      const checkout = await commerceApi.initiateCheckout({
+        holdId: hold.holdId,
+        quoteId: summary.quote.quoteId,
+        idempotencyKey,
+      });
+      await pendingCheckoutStore.save({
+        ...pendingBase,
+        bookingId: checkout.bookingId,
+        holdExpiresAt: checkout.holdExpiresAt,
+      });
+      // Hosted checkout is NAVIGATION: the browser/app goes to the
+      // provider's page; truth returns only via the status read.
+      if (Platform.OS === 'web') {
+        (globalThis as { location?: { assign: (url: string) => void } }).location?.assign(
+          checkout.redirectUrl,
+        );
+      } else {
+        navigationOwned.current = true;
+        await Linking.openURL(checkout.redirectUrl);
+        router.replace(`/bookings/status/${checkout.bookingId}` as never);
+      }
+    } catch (error) {
+      setBusy(false);
+      if (error instanceof ApiError) {
+        if (error.code === 'holdExpired' || error.code === 'holdNotActive') {
+          setHoldState('expired');
+          forgetHold();
+          return;
+        }
+        if (error.code === 'quoteExpired') {
+          navigationOwned.current = true;
+          void releaseHold();
+          router.replace(bookingStepHref(programId, 'summary'));
+          return;
+        }
+        if (error.code === 'checkoutAlreadyActive' || error.code === 'checkoutConcluded') {
+          navigationOwned.current = true;
+          const pending = await pendingCheckoutStore.load();
+          if (pending?.bookingId !== undefined) {
+            router.replace(`/bookings/status/${pending.bookingId}` as never);
+            return;
+          }
+          router.replace('/bookings' as never);
+          return;
+        }
+      }
+      setCtaError(customerErrorCopy(error));
+    }
+  };
 
   const participantBlock =
     page === null ? undefined : summaryParticipantBlock(page.summary.participant, participants);
-  // The single readiness rule for the CTA (docs/22 §9): free bookings are
-  // ready; paid bookings need the contract method selected.
   const readiness: CheckoutReadiness =
     page === null ? { ready: false } : checkoutReadiness(page, uiState);
-  // One unresolved issue at a time owns the screen — docs/22 §7.10.2: every
-  // code maps to a recovery action; nothing renders that could advance.
-  const issue = page !== null && !page.validation.ok ? page.validation.issues[0] : undefined;
-  const recoverFromIssue = () => {
-    if (issue === undefined) return;
-    const recovery = checkoutIssueRecovery(issue.code);
-    switch (recovery.target) {
-      case 'rederive':
-        setReviewed(true);
-        return;
-      case 'flow-start':
-        router.replace(bookingHref(programId));
-        return;
-      case 'participant':
-        router.replace(bookingStepHref(programId, 'participant'));
-        return;
-      case 'program':
-        router.replace(programHref(programId));
-        return;
-    }
-  };
 
   return (
     <View style={styles.root}>
@@ -182,45 +261,41 @@ export function CheckoutScreen() {
       <ScrollView
         contentContainerStyle={{
           // CTA-bar clearance applies only while the bar renders (it is
-          // absent during loading, recovery, and revalidation states).
+          // absent during loading and expiry states).
           paddingBottom:
-            page !== null && issue === undefined
+            page !== null && holdState !== 'expired'
               ? 132 + insets.bottom + spacing.xl
               : insets.bottom + spacing.xl,
         }}
         showsVerticalScrollIndicator={false}
       >
-        {page === null && !missing && !failed ? (
-          <CheckoutSkeleton />
-        ) : missing ? (
-          <View style={styles.stateWrap}>
+        {holdState === 'expired' ? (
+          /* Truthful effective expiry (owner §8): the seat is no longer
+             presented as reserved, nothing re-claims silently, and the
+             customer returns to REAL availability. */
+          <View style={styles.stateWrap} testID="hold-expired">
             <EmptyFeedCard
-              title="This program is no longer offered."
-              message="It may have ended or moved. Browse current activities instead."
-              actionLabel="Browse activities"
-              onClearFilter={browse}
+              title="Your held spot expired"
+              message="The 10-minute checkout window ended, so the spot was released. Availability may have changed."
+              actionLabel="Recheck availability"
+              onClearFilter={recheckAvailability}
             />
           </View>
-        ) : failed ? (
-          <View style={styles.stateWrap}>
-            <ErrorStateCard onRetry={() => setRetried(true)} />
-          </View>
-        ) : issue !== undefined ? (
-          /* Revalidation review state — docs/22 §7.10, docs/09 §22.10:
-             typed, honest, recoverable, on the dedicated CheckoutIssueCard
-             (owner-directed redesign). The reassurance row states plainly
-             that nothing was performed; the single action re-derives the
-             page or returns to the step that owns the fix. No CTA bar and
-             no payment controls render while an issue is unresolved. */
-          <View style={styles.issueWrap}>
-            <CheckoutIssueCard
-              code={issue.code}
-              priceComparison={issue.priceComparison}
-              onRecover={recoverFromIssue}
-            />
-          </View>
-        ) : page === null || participantBlock === undefined ? null : (
+        ) : page === null || participantBlock === undefined ? (
+          <CheckoutSkeleton />
+        ) : (
           <View style={styles.content}>
+            {/* The authoritative 10-minute hold countdown (presentation
+                only — on zero the SERVER decides; owner §8/§18). */}
+            {hold !== undefined ? (
+              <HoldCountdown
+                expiresAt={hold.expiresAt}
+                checking={holdState === 'checking'}
+                onExpired={() => {
+                  void onCountdownEnd();
+                }}
+              />
+            ) : null}
             {/* Order recap — docs/22 §4.2: condensed, single edit action. */}
             <View style={styles.recapCard}>
               <View style={styles.recapProgramRow}>
@@ -243,7 +318,7 @@ export function CheckoutScreen() {
                     ) : null}
                   </View>
                   <Text style={styles.recapMeta} numberOfLines={1}>
-                    {areaLabelById.get(page.summary.program.areaId ?? '') ?? page.summary.program.areaLabel ?? ''}
+                    {page.summary.program.areaLabel ?? ''}
                     {page.summary.branch === undefined ? '' : ` · ${page.summary.branch.label}`}
                   </Text>
                 </View>
@@ -314,27 +389,22 @@ export function CheckoutScreen() {
               </View>
             </View>
 
-            {/* Cancellation policy — displayed only; no acceptance is claimed
-                and nothing is gated on legal text (docs/09 §22.7). */}
-            <View style={styles.block}>
-              <Text style={styles.blockLabel} accessibilityRole="header">
-                Cancellation policy
-              </Text>
-              <Text style={styles.blockTitle}>{page.summary.policy.title}</Text>
-              {page.summary.policy.summaryLines.map((line) => (
-                <Text key={line} style={styles.blockLine}>
-                  {line}
+            {/* Cancellation policy — renders only when a policy genuinely
+                exists (the certified snapshot arrives at confirmation; D-8
+                content remains a launch gate). */}
+            {page.summary.policy !== undefined ? (
+              <View style={styles.block}>
+                <Text style={styles.blockLabel} accessibilityRole="header">
+                  Cancellation policy
                 </Text>
-              ))}
-              {/* Inert contract row — future HMS-008 (details-page precedent). */}
-              <PressableFeedback
-                accessibilityRole="button"
-                accessibilityLabel="Full policy"
-                style={styles.inlineAction}
-              >
-                <Text style={styles.inlineActionLabel}>Full policy</Text>
-              </PressableFeedback>
-            </View>
+                <Text style={styles.blockTitle}>{page.summary.policy.title}</Text>
+                {page.summary.policy.summaryLines.map((line) => (
+                  <Text key={line} style={styles.blockLine}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
 
             {/* Payment method — paid bookings only (docs/22 §4.5, §7.5):
                 one generic selectable contract method with radio semantics;
@@ -372,7 +442,7 @@ export function CheckoutScreen() {
         )}
       </ScrollView>
 
-      {page === null || issue !== undefined ? null : (
+      {page === null || holdState === 'expired' ? null : (
         <View style={[styles.ctaBar, { paddingBottom: insets.bottom + spacing.md }]}>
           {/* The polite live region announces readiness blockers and their
               resolution (docs/22 §9/§12) — never unready without a reason. */}
@@ -382,7 +452,7 @@ export function CheckoutScreen() {
                 line keeps the established 2-line cap (full label in the
                 price block and the accessible CTA label). */}
             <Text style={styles.ctaStatusText} numberOfLines={readiness.ready ? 2 : undefined}>
-              {readiness.ready ? page.price.bookingPriceLabel : readiness.blocker}
+              {ctaError ?? (readiness.ready ? page.price.bookingPriceLabel : readiness.blocker)}
             </Text>
           </View>
           {/* Production-styled, duplicate-press-protected (700 ms guard —
@@ -397,22 +467,34 @@ export function CheckoutScreen() {
           <PressableFeedback
             accessibilityRole="button"
             accessibilityLabel={page.spokenCtaLabel}
-            accessibilityState={{ disabled: !readiness.ready }}
-            disabled={!readiness.ready}
+            accessibilityState={{ disabled: !readiness.ready || busy }}
+            disabled={!readiness.ready || busy}
+            testID="checkout-cta"
             onPress={() => {
               // Defense in depth behind the Pressable-layer block: the pure
-              // gate re-checks readiness and the duplicate-press window.
+              // gate re-checks readiness and the duplicate-press window;
+              // the STABLE idempotency keys make even a slipped-through
+              // duplicate a harmless replay (owner §10).
+              if (busy) return;
               if (!ctaPressAllowed(readiness, lastCtaPressAt.current, Date.now())) return;
               lastCtaPressAt.current = Date.now();
-              // Inert contract boundary: nothing happens past this line.
+              if (page.paymentRequired) void startPayment();
+              else void confirmFreeBooking();
             }}
-            style={[styles.ctaButton, !readiness.ready && styles.ctaButtonDisabled]}
+            style={[styles.ctaButton, (!readiness.ready || busy) && styles.ctaButtonDisabled]}
           >
             <Text
-              style={[styles.ctaButtonLabel, !readiness.ready && styles.ctaButtonLabelDisabled]}
+              style={[
+                styles.ctaButtonLabel,
+                (!readiness.ready || busy) && styles.ctaButtonLabelDisabled,
+              ]}
               maxFontSizeMultiplier={1.4}
             >
-              {page.ctaLabel}
+              {busy
+                ? page.paymentRequired
+                  ? 'Starting payment…'
+                  : 'Confirming…'
+                : page.ctaLabel}
             </Text>
           </PressableFeedback>
         </View>

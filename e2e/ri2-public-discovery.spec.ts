@@ -4,9 +4,9 @@
  * guest (NO authentication anywhere) → Home with real catalogue rails →
  * search → real results → real program detail with the D-RI-4 public
  * upcoming occurrences and availability → provider storefront → deep-link
- * reload recovers from backend truth → booking CTA hits the truthful RI-3
- * pending boundary (real ids never enter mock commerce) → a no-results
- * search and a no-upcoming-sessions listing state truthfully render.
+ * reload recovers from backend truth → the booking CTA enters the REAL
+ * RI-3 flow (real ids, no mock commerce) → a no-results search and a
+ * no-upcoming-sessions listing state truthfully render.
  */
 import { expect, test } from '@playwright/test';
 
@@ -54,12 +54,13 @@ test('guest public discovery: home → search → detail (availability) → stor
   });
   expect(page.url()).toBe(storefrontUrl);
 
-  // Booking handoff: the real program id reaches the truthful RI-3 pending
-  // boundary — never a mock quote/hold/Booking.
+  // Booking handoff (RI-3: the pending boundary is retired): the real
+  // program id enters the REAL booking flow — a guest sees the real
+  // occurrence selection (still no mock commerce anywhere).
   await page.getByText('Adult Padel Open Play').last().click();
   await page.getByLabel(/^Book: Adult Padel Open Play/).last().click();
-  await expect(page.getByTestId('booking-pending').last()).toBeVisible();
-  await expect(page.getByText(/Booking is almost here/).last()).toBeVisible();
+  await expect(page.getByText('Choose a session').last()).toBeVisible();
+  await expect(page.getByRole('radio', { name: /, \d{1,2}:\d{2} (AM|PM)/ }).last()).toBeVisible();
 
   // Truthful no-results state.
   await page.goto('/discover/results?q=zzzznotathing');
