@@ -1,6 +1,7 @@
 /**
- * S6-1 — migration `0017` backward-compatibility certification (owner item
- * 30; docs/35 §21). Real PostgreSQL, staged migration:
+ * S6 — migration backward-compatibility + fail-closed rollback
+ * certification (`0017` + `0018`; S6-1 owner item 30, S6-2 owner item 34;
+ * docs/35 §21). Real PostgreSQL, staged migration:
  *
  *   1. migrate a fresh database to the PRE-S6-1 head (`0016`);
  *   2. seed representative CERTIFIED commercial rows through the real
@@ -42,6 +43,7 @@ import { confirmFreeBooking } from '../src/modules/booking/services/booking-life
 import { claimHold } from '../src/modules/booking/services/hold-claim';
 import { requestQuote } from '../src/modules/booking/services/quote-service';
 import { confirmFreeEntitlementPurchase } from '../src/modules/entitlement/services/entitlement-acquisition';
+import { issueRedemptionCredential } from '../src/modules/entitlement/services/redemption-credential';
 import { requestEntitlementQuote } from '../src/modules/entitlement/services/entitlement-quote';
 import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
 import {
@@ -175,9 +177,12 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
            (SELECT count(*) FROM payment_intent) AS intents,
            (SELECT count(*) FROM payment_intent_economics) AS economics`.execute(db);
 
-  // ---- 2. Apply 0017 on the LIVE data. Any violating row would abort it.
+  // ---- 2. Apply 0017 + 0018 on the LIVE data. Any violating row aborts.
   const applied = await runMigrationsUp(config, { quiet: true });
-  expect(applied.applied).toEqual(['0017_commercial_target_and_entitlement_foundation']);
+  expect(applied.applied).toEqual([
+    '0017_commercial_target_and_entitlement_foundation',
+    '0018_redemption_attendance_reservation',
+  ]);
   const verified = await verifyMigrations(config);
   expect(verified.problems).toEqual([]);
   expect(verified.pending).toEqual([]);
@@ -210,13 +215,15 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
   });
   expect(postConfirm.outcome.kind).toBe('bookingConfirmed');
 
-  // ---- 5. DOWN restores the exact legacy schema; certified rows survive.
-  await runMigrationsDown(config, { count: 1, quiet: true });
+  // ---- 5. DOWN (both S6 migrations — no S6-native data exists, so both
+  // preflights pass) restores the exact legacy schema; rows survive.
+  await runMigrationsDown(config, { count: 2, quiet: true });
   const legacyTables = await sql<{ table_name: string }>`
     SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public'
       AND table_name IN ('package_entitlement', 'entitlement_purchase', 'entitlement',
-                         'price_option_fulfillment_revision')`.execute(db);
+                         'price_option_fulfillment_revision', 'redemption_credential',
+                         'attendance_record', 'entitlement_reservation')`.execute(db);
   expect(legacyTables.rows.map((row) => row.table_name)).toEqual(['package_entitlement']);
   const survivors = await sql<{ n: string; state: string }>`
     SELECT count(*) AS n, min(state) AS state FROM booking
@@ -227,9 +234,12 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
     WHERE table_name = 'payment_intent' AND column_name = 'booking_id'`.execute(db);
   expect(legacyNotNull.rows[0]!.is_nullable).toBe('NO');
 
-  // ---- 6. UP re-applies cleanly.
+  // ---- 6. UP re-applies both cleanly.
   const reapplied = await runMigrationsUp(config, { quiet: true });
-  expect(reapplied.applied).toEqual(['0017_commercial_target_and_entitlement_foundation']);
+  expect(reapplied.applied).toEqual([
+    '0017_commercial_target_and_entitlement_foundation',
+    '0018_redemption_attendance_reservation',
+  ]);
   expect((await verifyMigrations(config)).problems).toEqual([]);
 });
 
@@ -297,17 +307,22 @@ it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails close
            (SELECT count(*) FROM booking) AS bookings,
            (SELECT count(*) FROM payment_intent) AS intents`.execute(db);
 
-  // ---- The downgrade is REFUSED by the explicit preflight — the FIRST
-  // statement of the down migration, not an accidental later FK failure.
-  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+  // ---- The downgrade is REFUSED by the explicit 0017 preflight — the
+  // FIRST statement of that down migration, not an accidental later FK
+  // failure. (0018, holding no S6-2-native data, legally reverts first;
+  // its structure is restored below.)
+  await expect(runMigrationsDown(config, { count: 2, quiet: true })).rejects.toThrow(
     /Downgrade of 0017 refused: S6-1-native data exists/,
   );
 
-  // ---- NOTHING was destroyed or partially modified: the schema remains
-  // at 0017 (verify reports zero pending, zero problems)…
+  // ---- NOTHING commercial was destroyed or partially modified: the
+  // schema rests at 0017 (only the empty 0018 structure reverted; verify
+  // reports exactly that one pending migration and zero problems)…
   const verified = await verifyMigrations(config);
-  expect(verified.pending).toEqual([]);
+  expect(verified.pending).toEqual(['0018_redemption_attendance_reservation']);
   expect(verified.problems).toEqual([]);
+  // Restore head for the suite's remaining proofs.
+  await runMigrationsUp(config, { quiet: true });
   // …every S6-1 table/column is intact…
   const snapshotAfter = await sql<Record<string, string>>`
     SELECT (SELECT count(*) FROM entitlement_purchase) AS purchases,
@@ -327,4 +342,50 @@ it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails close
     JOIN entitlement e ON e.purchase_id = p.id
     WHERE p.id = ${purchaseId} AND e.id = ${entitlementId}`.execute(db);
   expect(survivors.rows[0]).toEqual({ p_state: 'confirmed', e_uses: 3, intent_state: 'in_progress' });
+});
+
+it('S6-2-native downgrade REFUSAL: once credential/attendance state exists, 0018 down fails closed with NOTHING destroyed', async () => {
+  // Genuine S6-2 state through the REAL domain path: confirmed free
+  // entitlement → live walk-in redemption credential.
+  const f = await createBookingFixture(db);
+  await publishProgram(f);
+  const freePack = await createPriceOption(f, { kind: 'package', amountFils: 0, sessionsCount: 4 });
+  await createFulfillmentRevision(f, freePack, {
+    usageKind: 'finite',
+    validityKind: 'daysFromConfirmation',
+    validityDays: 30,
+  });
+  const customer = await createCustomer(db);
+  const quote = await requestEntitlementQuote({ db }, { accountId: customer.accountId }, {
+    programId: f.programId,
+    priceOptionId: freePack,
+    participantId: customer.participantId,
+  });
+  if (quote.kind !== 'quoteIssued') throw new Error(quote.kind);
+  const confirmed = await confirmFreeEntitlementPurchase({ db }, { accountId: customer.accountId }, {
+    quoteId: quote.quote.quoteId,
+    idempotencyKey: `compat-s62-${quote.quote.quoteId}`,
+  });
+  if (confirmed.outcome.kind !== 'purchaseConfirmed') throw new Error(confirmed.outcome.kind);
+  const entitlementId = confirmed.outcome.purchase.entitlement!.entitlementId;
+  const issued = await issueRedemptionCredential({ db }, { accountId: customer.accountId }, {
+    target: { kind: 'entitlement', entitlementId },
+    idempotencyKey: `compat-s62-cred-${entitlementId}`,
+  });
+  if (issued.outcome.kind !== 'credentialIssued') throw new Error(issued.outcome.kind);
+  const credentialId = issued.outcome.credential.credentialId;
+
+  // The 0018 preflight refuses as the FIRST down statement.
+  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+    /Downgrade of 0018 refused: S6-2-native data exists/,
+  );
+  // Schema rests at head; nothing partially destroyed; the credential and
+  // its entitlement remain queryable and unchanged.
+  const verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual([]);
+  expect(verified.problems).toEqual([]);
+  const survivor = await sql<{ state: string; entitlement_id: string }>`
+    SELECT state, entitlement_id FROM redemption_credential
+    WHERE id = ${credentialId}`.execute(db);
+  expect(survivor.rows[0]).toEqual({ state: 'live', entitlement_id: entitlementId });
 });

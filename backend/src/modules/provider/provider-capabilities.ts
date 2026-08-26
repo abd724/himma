@@ -81,6 +81,13 @@ export const ACTIVE_PROVIDER_CAPABILITIES = [
    *  “booking lookup minimal PII”). Coach roster.view stays RESERVED until
    *  assigned-session scoping exists (attendance slice). */
   'bookings.view',
+  // -- S6-2 attendance activation (docs/35 §14; owner S6-2 item 13) -------
+  /** Check-in preview + atomic redemption — owner, org_manager,
+   *  branch_manager (branch-scoped), front_desk (branch-scoped), and coach
+   *  ONLY for session-bound check-ins where `session.instructor_staff_id`
+   *  proves assignment (service-enforced; a coach never redeems walk-in
+   *  entitlements or unassigned sessions). `roster.view` stays RESERVED. */
+  'attendance.manage',
 ] as const;
 
 export type ProviderCapability = (typeof ACTIVE_PROVIDER_CAPABILITIES)[number];
@@ -94,7 +101,6 @@ export const RESERVED_PROVIDER_CAPABILITIES = [
   'offers.manage',
   'bulk_import.run',
   'reports.view',
-  'attendance.manage',
   'roster.view',
   'statements.view',
   'payouts.view',
@@ -129,6 +135,7 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'schedules.manage',
     'capacity.manage',
     'bookings.view',
+    'attendance.manage',
   ],
   org_manager: [
     'org.read',
@@ -144,6 +151,7 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'schedules.manage',
     'capacity.manage',
     'bookings.view',
+    'attendance.manage',
   ],
   branch_manager: [
     'org.read',
@@ -155,6 +163,7 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'schedules.manage',
     'capacity.manage',
     'bookings.view',
+    'attendance.manage',
   ],
   listings_editor: [
     'org.read',
@@ -164,8 +173,8 @@ export const PROVIDER_ROLE_CAPABILITIES: Record<ProviderRole, readonly ProviderC
     'media.manage',
     'schedules.manage',
   ],
-  coach: ['org.read'],
-  front_desk: ['org.read', 'org.legal.view', 'bookings.view'],
+  coach: ['org.read', 'attendance.manage'],
+  front_desk: ['org.read', 'org.legal.view', 'bookings.view', 'attendance.manage'],
   finance: ['org.read', 'org.legal.view'],
 };
 
@@ -188,8 +197,8 @@ export const PROVIDER_ROLE_RESERVED_CAPABILITIES: Record<
   ],
   branch_manager: ['sessions.manage', 'offers.manage', 'reports.view'],
   listings_editor: ['bulk_import.run'],
-  coach: ['roster.view', 'attendance.manage'],
-  front_desk: ['sessions.manage', 'attendance.manage'],
+  coach: ['roster.view'],
+  front_desk: ['sessions.manage'],
   finance: ['statements.view', 'payouts.view', 'refund_reports.view'],
 };
 

@@ -72,7 +72,10 @@ describe('S4-2 catalogue capability activation', () => {
       'offers.manage',
       'bulk_import.run',
       'reports.view',
-      'attendance.manage',
+      // S6-2 owning-slice amendment (docs/35 §14): attendance.manage is now
+      // ACTIVE (owner/org_manager/branch_manager/front_desk scoped; coach
+      // assigned-session only — locked in redemption-attendance tests).
+      // roster.view stays RESERVED.
       'roster.view',
       'statements.view',
       'payouts.view',

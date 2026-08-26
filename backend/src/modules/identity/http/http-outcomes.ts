@@ -316,6 +316,46 @@ export const HTTP_OUTCOMES = {
     code: 'fulfillmentUnavailable',
     message: 'This product cannot be purchased right now. Nothing was charged.',
   },
+  checkInUnavailable: {
+    statusCode: 422,
+    code: 'checkInUnavailable',
+    message: 'Check-in is not available for this booking in the app yet.',
+  },
+  outsideCheckInWindow: {
+    statusCode: 409,
+    code: 'outsideCheckInWindow',
+    message: 'Check-in opens shortly before the session starts.',
+  },
+  alreadyCheckedIn: {
+    statusCode: 409,
+    code: 'alreadyCheckedIn',
+    message: 'This booking has already been checked in.',
+  },
+  reservationRequired: {
+    statusCode: 409,
+    code: 'reservationRequired',
+    message: 'This pass requires a reserved session before check-in.',
+  },
+  entitlementNotActive: {
+    statusCode: 409,
+    code: 'entitlementNotActive',
+    message: 'This pass is not currently active.',
+  },
+  entitlementExhausted: {
+    statusCode: 409,
+    code: 'entitlementExhausted',
+    message: 'This pass has no remaining sessions.',
+  },
+  credentialExpired: {
+    statusCode: 409,
+    code: 'credentialExpired',
+    message: 'This check-in code has expired. A new code can be generated.',
+  },
+  credentialAlreadyUsed: {
+    statusCode: 409,
+    code: 'credentialAlreadyUsed',
+    message: 'This check-in code has already been used.',
+  },
   invalidCursor: {
     statusCode: 422,
     code: 'invalidCursor',

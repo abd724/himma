@@ -32,6 +32,10 @@ import {
   getEntitlementPurchase,
 } from '../services/entitlement-acquisition';
 import { requestEntitlementQuote } from '../services/entitlement-quote';
+import {
+  getRedemptionCredentialStatus,
+  issueRedemptionCredential,
+} from '../services/redemption-credential';
 
 const BODY_LIMIT = 16_384;
 const Uuid = Type.String({ format: 'uuid' });
@@ -137,7 +141,11 @@ export function registerEntitlementCustomerRoutes(
       kind === 'priceOptionNotFound' ||
       kind === 'participantNotFound' ||
       kind === 'quoteNotFound' ||
-      kind === 'purchaseNotFound'
+      kind === 'purchaseNotFound' ||
+      kind === 'bookingNotFound' ||
+      kind === 'bookingNotConfirmed' ||
+      kind === 'entitlementNotFound' ||
+      kind === 'credentialNotFound'
         ? 'notFound'
         : kind === 'participantIneligible'
           ? 'participantIneligible'
@@ -168,7 +176,19 @@ export function registerEntitlementCustomerRoutes(
                                   ? 'checkoutPending'
                                   : kind === 'idempotencyConflict'
                                     ? 'idempotencyConflict'
-                                    : 'internalError';
+                                    : kind === 'occurrenceUnsupported'
+                                      ? 'checkInUnavailable'
+                                      : kind === 'outsideCheckInWindow'
+                                        ? 'outsideCheckInWindow'
+                                        : kind === 'alreadyCheckedIn'
+                                          ? 'alreadyCheckedIn'
+                                          : kind === 'walkInNotAllowed'
+                                            ? 'reservationRequired'
+                                            : kind === 'entitlementNotActive'
+                                              ? 'entitlementNotActive'
+                                              : kind === 'entitlementExhausted'
+                                                ? 'entitlementExhausted'
+                                                : 'internalError';
     return sendOutcome(reply, name);
   }
 
@@ -329,6 +349,120 @@ export function registerEntitlementCustomerRoutes(
       );
       if (result.kind !== 'paymentStatus') return failure(reply, result.kind);
       return reply.status(200).send({ payment: result.payment });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // S6-2 — redemption credentials: issue/regenerate + observe (docs/35 §9;
+  // owner items 11–12, 29). The path names the target authority explicitly;
+  // no client-supplied arbitrary target type exists. The display code and
+  // the opaque QR-ready token appear ONLY on the executing issuance — a
+  // same-key replay returns metadata without secrets (regenerate to get a
+  // fresh code). Issuing consumes nothing.
+  // -------------------------------------------------------------------------
+
+  const IssuedCredentialSchema = Type.Object({
+    credentialId: Uuid,
+    state: Type.Literal('live'),
+    expiresAt: Type.String(),
+    /** Executing issuance only — absent on same-key replays. */
+    displayCode: Type.Optional(Type.String()),
+    /** The opaque canonical (QR-ready) credential authority — treat as a
+     *  secret; executing issuance only. */
+    token: Type.Optional(Type.String()),
+    replayed: Type.Boolean(),
+  });
+
+  app.post(
+    '/customer/bookings/:bookingId/credential',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      bodyLimit: BODY_LIMIT,
+      schema: {
+        params: Type.Object({ bookingId: Uuid }),
+        body: Type.Object(
+          { idempotencyKey: IdempotencyKey },
+          { additionalProperties: false },
+        ),
+        response: { 201: Type.Object({ credential: IssuedCredentialSchema }), ...ERRORS },
+      },
+    },
+    async (request, reply) => {
+      const accountId = accountOf(request);
+      if (accountId === undefined) return sendOutcome(reply, 'notFound');
+      const run = await issueRedemptionCredential(serviceDeps, { accountId }, {
+        target: { kind: 'booking', bookingId: request.params.bookingId },
+        idempotencyKey: request.body.idempotencyKey,
+      });
+      if (run.outcome.kind !== 'credentialIssued') return failure(reply, run.outcome.kind);
+      const { target, ...credential } = run.outcome.credential;
+      void target;
+      return reply.status(201).send({ credential });
+    },
+  );
+
+  app.post(
+    '/customer/entitlements/:entitlementId/credential',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      bodyLimit: BODY_LIMIT,
+      schema: {
+        params: Type.Object({ entitlementId: Uuid }),
+        body: Type.Object(
+          { idempotencyKey: IdempotencyKey },
+          { additionalProperties: false },
+        ),
+        response: { 201: Type.Object({ credential: IssuedCredentialSchema }), ...ERRORS },
+      },
+    },
+    async (request, reply) => {
+      const accountId = accountOf(request);
+      if (accountId === undefined) return sendOutcome(reply, 'notFound');
+      const run = await issueRedemptionCredential(serviceDeps, { accountId }, {
+        target: { kind: 'entitlement', entitlementId: request.params.entitlementId },
+        idempotencyKey: request.body.idempotencyKey,
+      });
+      if (run.outcome.kind !== 'credentialIssued') return failure(reply, run.outcome.kind);
+      const { target, ...credential } = run.outcome.credential;
+      void target;
+      return reply.status(201).send({ credential });
+    },
+  );
+
+  app.get(
+    '/customer/credentials/:credentialId',
+    {
+      config: { authPolicy: 'authenticatedCustomer' },
+      schema: {
+        params: Type.Object({ credentialId: Uuid }),
+        response: {
+          200: Type.Object({
+            credential: Type.Object({
+              credentialId: Uuid,
+              state: Type.Union([
+                Type.Literal('live'),
+                Type.Literal('used'),
+                Type.Literal('superseded'),
+                Type.Literal('expired'),
+              ]),
+              expiresAt: Type.String(),
+              redeemedAt: Type.Optional(Type.String()),
+            }),
+          }),
+          ...ERRORS,
+        },
+      },
+    },
+    async (request, reply) => {
+      const accountId = accountOf(request);
+      if (accountId === undefined) return sendOutcome(reply, 'notFound');
+      const result = await getRedemptionCredentialStatus(serviceDeps, { accountId }, {
+        credentialId: request.params.credentialId,
+      });
+      if (result.kind !== 'credentialStatus') return failure(reply, result.kind);
+      const { target, ...credential } = result.credential;
+      void target;
+      return reply.status(200).send({ credential });
     },
   );
 

@@ -40,6 +40,13 @@ export const SANCTIONED_VERIFIER_COLUMNS: ReadonlySet<string> = new Set([
   'mfa_recovery_code.code_hash',
   // Slice 3 (S3-2) — the staff-invitation one-time-token digest (docs/27 §9).
   'staff_invitation.token_digest',
+  // S6-2 (docs/35 §9) — the redemption-credential DIGESTS (the raw opaque
+  // token and numeric alias exist only in the issuance response; the
+  // database stores sha256 digests), and the attendance→credential ROW
+  // reference (an FK to the credential record, not secret material).
+  'redemption_credential.token_digest',
+  'redemption_credential.alias_digest',
+  'attendance_record.credential_id',
 ]);
 
 /** B2-6A structural pattern: no TOTP secrets, raw codes, tokens, QR

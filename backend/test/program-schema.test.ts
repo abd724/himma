@@ -535,11 +535,17 @@ describe('structural boundaries (docs/28 §1 exclusions; task §6/§22)', () => 
     // slices. NOTE: package REDEMPTION remains owner-open —
     // trial_redemption is the D-10 freeTrial entitlement, not a
     // package/coupon engine.
+    // S6-2 owning-slice amendment (docs/35 §10; migration 0018):
+    // attendance_record and redemption_credential now exist because their
+    // owning slice shipped them; every other later-slice name stays
+    // forbidden until its owner arrives.
     const forbiddenExact =
-      /^(refund|payout|payout_statement|credit_ledger_entry|reconciliation_event|attendance_record|instructor|waitlist)$/;
+      /^(refund|payout|payout_statement|credit_ledger_entry|reconciliation_event|instructor|waitlist)$/;
     const forbiddenAnywhere = /(rating|waitlist)/i;
     const forbiddenRedemption = names.filter(
-      (n) => /redemption/i.test(n) && n !== 'trial_redemption',
+      (n) =>
+        /redemption/i.test(n) &&
+        !['trial_redemption', 'redemption_credential', 'redemption_lookup_attempt'].includes(n),
     );
     expect(forbiddenRedemption).toEqual([]);
     expect(names.filter((n) => forbiddenExact.test(n) || forbiddenAnywhere.test(n))).toEqual([]);

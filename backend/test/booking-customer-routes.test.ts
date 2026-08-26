@@ -146,9 +146,10 @@ describe('structural locks', () => {
       'GET /customer/bookings/:bookingId → authenticatedCustomer',
       // W5-5 (owning-slice amendment): the converged payment-status read.
       'GET /customer/bookings/:bookingId/payment → authenticatedCustomer',
-      // S6-1 (owning-slice amendment, docs/35 §13): the bounded entitlement
-      // ACQUISITION surface only — reservation, credential, attendance, and
-      // entitlement-list routes stay ABSENT until S6-2/S6-3.
+      // S6-1/S6-2 (owning-slice amendments, docs/35 §9/§13): acquisition +
+      // credential surfaces — reservation and entitlement-list routes stay
+      // ABSENT until S6-3.
+      'GET /customer/credentials/:credentialId → authenticatedCustomer',
       'GET /customer/entitlement-purchases/:purchaseId → authenticatedCustomer',
       'GET /customer/entitlement-purchases/:purchaseId/payment → authenticatedCustomer',
       'GET /customer/holds/:holdId → authenticatedCustomer',
@@ -156,11 +157,15 @@ describe('structural locks', () => {
       'GET /customer/participants → authenticatedCustomer',
       'GET /customer/programs/:programId/availability → authenticatedCustomer',
       'PATCH /customer/participants/:participantId → authenticatedCustomer',
+      'POST /customer/bookings/:bookingId/credential → authenticatedCustomer',
       'POST /customer/bookings/confirm-free → authenticatedCustomer',
       'POST /customer/bookings/initiate → authenticatedCustomer',
       'POST /customer/entitlement-purchases/confirm-free → authenticatedCustomer',
       'POST /customer/entitlement-purchases/initiate → authenticatedCustomer',
       'POST /customer/entitlement-purchases/quote → authenticatedCustomer',
+      // S6-2 (owning-slice amendment, docs/35 §9/§13): credential issuance +
+      // observation. NO reservation route exists (S6-3).
+      'POST /customer/entitlements/:entitlementId/credential → authenticatedCustomer',
       'POST /customer/holds → authenticatedCustomer',
       'POST /customer/holds/:holdId/release → authenticatedCustomer',
       'POST /customer/participants → authenticatedCustomer',

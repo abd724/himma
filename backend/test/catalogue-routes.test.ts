@@ -153,7 +153,11 @@ describe('route inventory and structural deny-by-default', () => {
       (route) =>
         route.policy !== 'admin' &&
         route.policy !== 'adminStepUp' &&
-        /revision|review|approve|moderat/i.test(route.url),
+        /revision|review|approve|moderat/i.test(route.url) &&
+        // S6-2 owning-slice amendment: "/check-in/preview" incidentally
+        // contains "review" as a substring; it is the provider CHECK-IN
+        // preview (docs/35 §14), not a moderation/decision surface.
+        !route.url.endsWith('/check-in/preview'),
     );
     expect(decisionish).toEqual([]);
   });

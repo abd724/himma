@@ -656,13 +656,15 @@ describe('supersession and early-capability locks', () => {
     expect(tables.rows).toHaveLength(0);
   });
 
-  it('S6-2/S6-3 tables stay ABSENT: no credential/attendance/reservation table exists yet', async () => {
+  it('S6-2 owning-slice amendment: credential/attendance/reservation tables now exist (0018)', async () => {
     const tables = await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public'
         AND table_name IN ('redemption_credential', 'attendance_record',
-                           'entitlement_reservation')`.execute(testDb.db);
-    expect(tables.rows).toHaveLength(0);
+                           'entitlement_reservation', 'redemption_lookup_attempt')`.execute(
+      testDb.db,
+    );
+    expect(tables.rows).toHaveLength(4);
   });
 
   it("no S6-1 service/http source can produce an 'entitlementReservation' quote (S6-3 owns it)", () => {

@@ -91,6 +91,22 @@ export interface Area {
   version: Generated<number>;
 }
 
+export interface AttendanceRecord {
+  account_id: string;
+  booking_id: string | null;
+  branch_id: string | null;
+  created_at: Generated<Timestamp>;
+  credential_id: string;
+  entitlement_id: string | null;
+  id: string;
+  occurred_at: Generated<Timestamp>;
+  organization_id: string;
+  participant_id: string;
+  session_id: string | null;
+  source: Generated<string>;
+  validated_by_staff_membership_id: string;
+}
+
 export interface AuditEvent {
   action: string;
   actor_id: string | null;
@@ -353,6 +369,16 @@ export interface EntitlementPurchase {
   state: Generated<string>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface EntitlementReservation {
+  account_id: string;
+  booking_id: string;
+  created_at: Generated<Timestamp>;
+  entitlement_id: string;
+  organization_id: string;
+  participant_id: string;
+  program_id: string;
 }
 
 export interface GatewayEvent {
@@ -833,6 +859,34 @@ export interface RecurringSchedule {
   weekdays: number[];
 }
 
+export interface RedemptionCredential {
+  account_id: string;
+  alias_digest: string;
+  booking_id: string | null;
+  branch_id: string | null;
+  created_at: Generated<Timestamp>;
+  entitlement_id: string | null;
+  expires_at: Timestamp;
+  id: string;
+  issued_at: Generated<Timestamp>;
+  organization_id: string;
+  participant_id: string;
+  redeemed_by_staff_membership_id: string | null;
+  session_id: string | null;
+  state: Generated<string>;
+  token_digest: string;
+  updated_at: Generated<Timestamp>;
+  used_at: Timestamp | null;
+  version: Generated<number>;
+}
+
+export interface RedemptionLookupAttempt {
+  failures: Generated<number>;
+  organization_id: string;
+  principal_ref: string;
+  window_start: Timestamp;
+}
+
 export interface Session {
   booked_count: Generated<number>;
   branch_id: string;
@@ -997,6 +1051,7 @@ export interface DB {
   admin_role_assignment: AdminRoleAssignment;
   app_user: AppUser;
   area: Area;
+  attendance_record: AttendanceRecord;
   audit_event: AuditEvent;
   auth_challenge: AuthChallenge;
   auth_identity: AuthIdentity;
@@ -1014,6 +1069,7 @@ export interface DB {
   enrolment_cohort_schedule: EnrolmentCohortSchedule;
   entitlement: Entitlement;
   entitlement_purchase: EntitlementPurchase;
+  entitlement_reservation: EntitlementReservation;
   gateway_event: GatewayEvent;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
@@ -1044,6 +1100,8 @@ export interface DB {
   program_revision: ProgramRevision;
   program_search_document: ProgramSearchDocument;
   recurring_schedule: RecurringSchedule;
+  redemption_credential: RedemptionCredential;
+  redemption_lookup_attempt: RedemptionLookupAttempt;
   session: Session;
   staff_invitation: StaffInvitation;
   staff_membership: StaffMembership;

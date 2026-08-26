@@ -324,6 +324,20 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_entitlement_purchase_transition' },
     { kind: 'function', name: 'enforce_entitlement_creation' },
   ],
+  '0018_redemption_attendance_reservation': [
+    { kind: 'table', name: 'entitlement_reservation' },
+    { kind: 'table', name: 'redemption_credential' },
+    { kind: 'table', name: 'attendance_record' },
+    { kind: 'table', name: 'redemption_lookup_attempt' },
+    { kind: 'constraint', name: 'uq_attendance_record_credential' },
+    { kind: 'constraint', name: 'ck_redemption_credential_one_target' },
+    { kind: 'constraint', name: 'uq_booking_id_account_participant' },
+    { kind: 'constraint', name: 'uq_entitlement_id_account_participant' },
+    { kind: 'function', name: 'enforce_entitlement_reservation_shape' },
+    { kind: 'function', name: 'enforce_redemption_credential_shape' },
+    { kind: 'function', name: 'enforce_redemption_credential_transition' },
+    { kind: 'function', name: 'enforce_attendance_record_shape' },
+  ],
 };
 
 export interface VerificationReport {
