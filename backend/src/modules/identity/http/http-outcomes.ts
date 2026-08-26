@@ -311,6 +311,11 @@ export const HTTP_OUTCOMES = {
     code: 'policyUnavailable',
     message: 'Booking confirmation is temporarily unavailable. Nothing was booked.',
   },
+  fulfillmentUnavailable: {
+    statusCode: 503,
+    code: 'fulfillmentUnavailable',
+    message: 'This product cannot be purchased right now. Nothing was charged.',
+  },
   invalidCursor: {
     statusCode: 422,
     code: 'invalidCursor',

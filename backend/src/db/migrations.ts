@@ -305,6 +305,25 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_commission_term_transition' },
     { kind: 'function', name: 'enforce_economics_org_binding' },
   ],
+  '0017_commercial_target_and_entitlement_foundation': [
+    { kind: 'table', name: 'price_option_fulfillment_revision' },
+    { kind: 'table', name: 'price_option_fulfillment_schedule_term' },
+    { kind: 'table', name: 'entitlement_purchase' },
+    { kind: 'table', name: 'entitlement' },
+    { kind: 'constraint', name: 'ck_price_quote_shape' },
+    { kind: 'constraint', name: 'ck_payment_intent_one_target' },
+    { kind: 'constraint', name: 'ck_payment_intent_target_shape' },
+    { kind: 'constraint', name: 'uq_entitlement_purchase_quote' },
+    { kind: 'constraint', name: 'uq_entitlement_purchase_grant_identity' },
+    { kind: 'constraint', name: 'uq_entitlement_reservation_lineage' },
+    { kind: 'constraint', name: 'fk_price_quote_entitlement' },
+    { kind: 'constraint', name: 'fk_capacity_hold_quote_session' },
+    { kind: 'function', name: 'enforce_fulfillment_revision_shape' },
+    { kind: 'function', name: 'enforce_fulfillment_revision_immutability' },
+    { kind: 'function', name: 'enforce_entitlement_purchase_shape' },
+    { kind: 'function', name: 'enforce_entitlement_purchase_transition' },
+    { kind: 'function', name: 'enforce_entitlement_creation' },
+  ],
 };
 
 export interface VerificationReport {

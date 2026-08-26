@@ -128,6 +128,38 @@ export async function createOffer(
   return id;
 }
 
+/** S6-1: an ACTIVE immutable fulfillment revision for an entitlement-
+ *  producing option (docs/35 §3) — tests create revisions through this
+ *  fixture boundary; no provider route exists until W2-13. */
+export async function createFulfillmentRevision(
+  f: BookingFixture,
+  priceOptionId: string,
+  terms: {
+    usageKind: 'finite' | 'unlimited';
+    usesTotal?: number | null;
+    validityKind?: 'daysFromConfirmation' | 'fixedEndDate' | 'none';
+    validityDays?: number | null;
+    validityEndDate?: string | null;
+    reservationRequired?: boolean;
+    walkInAllowed?: boolean;
+    branchId?: string | null;
+    revisionNo?: number;
+  },
+): Promise<string> {
+  const id = newId();
+  await sql`
+    INSERT INTO price_option_fulfillment_revision
+      (id, price_option_id, program_id, organization_id, revision_no, usage_kind,
+       uses_total, validity_kind, validity_days, validity_end_date,
+       reservation_required, walk_in_allowed, branch_id)
+    VALUES (${id}, ${priceOptionId}, ${f.programId}, ${f.org.orgId},
+            ${terms.revisionNo ?? 1}, ${terms.usageKind}, ${terms.usesTotal ?? null},
+            ${terms.validityKind ?? 'none'}, ${terms.validityDays ?? null},
+            ${terms.validityEndDate ?? null}, ${terms.reservationRequired ?? false},
+            ${terms.walkInAllowed ?? true}, ${terms.branchId ?? null})`.execute(f.db);
+  return id;
+}
+
 /** D-8 test composition: a deterministic FICTIONAL template (draft → active)
  *  proving the snapshot mechanics — production seeds nothing. */
 /** D-W5-7: the provider's ACTIVE agreed commission term (bps; no default

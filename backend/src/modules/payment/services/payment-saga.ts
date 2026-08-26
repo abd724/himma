@@ -72,6 +72,7 @@ import type { Db } from '../../../db/kysely';
 import type { Trx } from '../../../db/transaction';
 import { appendOutboxEvent } from '../../../outbox/outbox';
 import { confirmPaidBooking } from '../../booking/services/booking-lifecycle';
+import { confirmPaidEntitlementPurchase } from '../../entitlement/services/entitlement-acquisition';
 import type { PaymentProviderPort } from '../provider-port';
 
 export interface PaymentSagaDeps {
@@ -217,35 +218,60 @@ export async function runPaymentResultSaga(
   const attemptTerminallyFailed = ATTEMPT_FAILED_TERMINALS.includes(context.attemptState);
 
   if (!attemptTerminallyFailed) {
-    // T-CONFIRM — the §7.4b single transaction via the FROZEN seam.
-    const run = await confirmPaidBooking(
-      {
-        db: deps.db,
-        paidSettlement: async (trx) => {
-          deps.failpoint?.('inSettlement');
-          await postCaptureOnce(trx, context, gatewayTransactionId);
-          await casAttemptCaptured(trx, context.attemptId);
-          await settleIntentSucceeded(trx, context.intentId);
+    // T-CONFIRM — target dispatch OUTSIDE the target-specific seams
+    // (docs/35 §5.3): the Booking trail invokes the FROZEN
+    // `confirmPaidBooking` unchanged; the purchase trail invokes the S6-1
+    // `confirmPaidEntitlementPurchase`. Both join the payment settlement
+    // INSIDE their single §7.4b-shape transaction.
+    const paidSettlement = async (trx: Trx): Promise<void> => {
+      deps.failpoint?.('inSettlement');
+      await postCaptureOnce(trx, context, gatewayTransactionId);
+      await casAttemptCaptured(trx, context.attemptId);
+      await settleIntentSucceeded(trx, context.intentId);
+    };
+    if (context.bookingId !== null) {
+      const run = await confirmPaidBooking(
+        { db: deps.db, paidSettlement },
+        {
+          bookingId: context.bookingId,
+          holdId: context.holdId!,
+          idempotencyKey: `saga:${context.intentId}`,
         },
-      },
-      {
-        bookingId: context.bookingId,
-        holdId: context.holdId,
-        idempotencyKey: `saga:${context.intentId}`,
-      },
-    );
-    const outcome = run.outcome;
-    if (outcome.kind === 'bookingConfirmed' || outcome.kind === 'alreadyConfirmed') {
-      deps.failpoint?.('beforeCompletion');
-      await completeWorkItem(deps, event.id);
-      return 'confirmed';
+      );
+      const outcome = run.outcome;
+      if (outcome.kind === 'bookingConfirmed' || outcome.kind === 'alreadyConfirmed') {
+        deps.failpoint?.('beforeCompletion');
+        await completeWorkItem(deps, event.id);
+        return 'confirmed';
+      }
+      if (outcome.kind === 'idempotencyConflict' || outcome.kind === 'staleVersion') {
+        return 'deferred';
+      }
+      // holdExpired · holdNotActive · policyUnavailable · reciprocalMismatch ·
+      // invalidBookingState · bookingNotFound · notPaidQuote → the certified
+      // machine says this Booking cannot legally confirm → compensation.
+    } else {
+      const run = await confirmPaidEntitlementPurchase(
+        { db: deps.db, paidSettlement },
+        {
+          purchaseId: context.purchaseId!,
+          intentId: context.intentId,
+          idempotencyKey: `saga:${context.intentId}`,
+        },
+      );
+      const outcome = run.outcome;
+      if (outcome.kind === 'purchaseConfirmed' || outcome.kind === 'alreadyConfirmed') {
+        deps.failpoint?.('beforeCompletion');
+        await completeWorkItem(deps, event.id);
+        return 'confirmed';
+      }
+      if (outcome.kind === 'idempotencyConflict') return 'deferred';
+      // purchaseTerminal · participantInvalid · fulfillmentLapsed ·
+      // reciprocalMismatch · purchaseNotFound · notPaidQuote → the
+      // entitlement domain says this acquisition cannot legally complete —
+      // payment success never grants permission to violate an
+      // entitlement-domain invariant (docs/35 §5.4) → compensation.
     }
-    if (outcome.kind === 'idempotencyConflict' || outcome.kind === 'staleVersion') {
-      return 'deferred';
-    }
-    // holdExpired · holdNotActive · policyUnavailable · reciprocalMismatch ·
-    // invalidBookingState · bookingNotFound · notPaidQuote → the certified
-    // machine says this Booking cannot legally confirm → compensation.
   }
 
   // COMPENSATION (docs/24 §8.6; D-W5-4/D-W5-5): money is real, inventory
@@ -320,6 +346,32 @@ export async function runPaymentResultSaga(
         },
       });
     }
+    // Purchase trail (docs/35 §5.1): the reversal posting IS the moment the
+    // purchase reaches its explicit `compensated` terminal — CAS from the
+    // non-terminal states only (a swept `expired` purchase keeps its state;
+    // the ledger shape remains the customer-status authority either way).
+    if (context.purchaseId !== null) {
+      const movedPurchase = await trx
+        .updateTable('entitlement_purchase')
+        .set({ state: 'compensated' })
+        .where('id', '=', context.purchaseId)
+        .where('state', 'in', ['pending_payment', 'payment_failed'])
+        .executeTakeFirst();
+      if ((movedPurchase.numUpdatedRows ?? 0n) > 0n) {
+        await appendAuditEvent(trx, {
+          actorType: 'system',
+          action: 'entitlement.purchase.compensated',
+          entityType: 'entitlement_purchase',
+          entityId: context.purchaseId,
+        });
+        await appendOutboxEvent(trx, {
+          aggregateType: 'entitlement_purchase',
+          aggregateId: context.purchaseId,
+          eventType: 'entitlement.purchase.compensated',
+          payload: { purchaseId: context.purchaseId, state: 'compensated' },
+        });
+      }
+    }
   });
   await completeWorkItem(deps, event.id);
   return 'compensated';
@@ -332,8 +384,10 @@ interface SagaContext {
   intentId: string;
   intentState: string;
   amountFils: number;
-  bookingId: string;
-  holdId: string;
+  /** Exactly one commercial target (ck_payment_intent_one_target). */
+  bookingId: string | null;
+  holdId: string | null;
+  purchaseId: string | null;
 }
 
 async function loadContext(db: Db, attemptId: string): Promise<SagaContext | undefined> {
@@ -349,6 +403,7 @@ async function loadContext(db: Db, attemptId: string): Promise<SagaContext | und
       'i.amount_fils as amountFils',
       'i.booking_id as bookingId',
       'i.hold_id as holdId',
+      'i.purchase_id as purchaseId',
     ])
     .where('a.id', '=', attemptId)
     .executeTakeFirst();

@@ -146,6 +146,11 @@ describe('structural locks', () => {
       'GET /customer/bookings/:bookingId → authenticatedCustomer',
       // W5-5 (owning-slice amendment): the converged payment-status read.
       'GET /customer/bookings/:bookingId/payment → authenticatedCustomer',
+      // S6-1 (owning-slice amendment, docs/35 §13): the bounded entitlement
+      // ACQUISITION surface only — reservation, credential, attendance, and
+      // entitlement-list routes stay ABSENT until S6-2/S6-3.
+      'GET /customer/entitlement-purchases/:purchaseId → authenticatedCustomer',
+      'GET /customer/entitlement-purchases/:purchaseId/payment → authenticatedCustomer',
       'GET /customer/holds/:holdId → authenticatedCustomer',
       // RI-1 (owning-slice amendment): customer participant management.
       'GET /customer/participants → authenticatedCustomer',
@@ -153,6 +158,9 @@ describe('structural locks', () => {
       'PATCH /customer/participants/:participantId → authenticatedCustomer',
       'POST /customer/bookings/confirm-free → authenticatedCustomer',
       'POST /customer/bookings/initiate → authenticatedCustomer',
+      'POST /customer/entitlement-purchases/confirm-free → authenticatedCustomer',
+      'POST /customer/entitlement-purchases/initiate → authenticatedCustomer',
+      'POST /customer/entitlement-purchases/quote → authenticatedCustomer',
       'POST /customer/holds → authenticatedCustomer',
       'POST /customer/holds/:holdId/release → authenticatedCustomer',
       'POST /customer/participants → authenticatedCustomer',
@@ -169,11 +177,15 @@ describe('structural locks', () => {
       // W5-3 added the payment webhook ingress — scanned too: the trusted
       // seam stays out of EVERY http module, the new one included.
       path.join(__dirname, '..', 'src', 'modules', 'payment', 'http'),
+      // S6-1 added the entitlement acquisition surface — scanned too: BOTH
+      // trusted seams (Booking and EntitlementPurchase) stay route-less.
+      path.join(__dirname, '..', 'src', 'modules', 'entitlement', 'http'),
     ];
     for (const dir of httpDirs) {
       for (const file of readdirSync(dir)) {
         const source = readFileSync(path.join(dir, file), 'utf8');
         expect(source).not.toContain('confirmPaidBooking');
+        expect(source).not.toContain('confirmPaidEntitlementPurchase');
       }
     }
     // And no route URL even hints at a paid confirmation or payment

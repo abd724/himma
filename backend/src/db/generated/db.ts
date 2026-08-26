@@ -317,6 +317,44 @@ export interface EnrolmentCohortSchedule {
   version: Generated<number>;
 }
 
+export interface Entitlement {
+  account_id: string;
+  branch_id: string | null;
+  created_at: Generated<Timestamp>;
+  fulfillment_revision_id: string;
+  id: string;
+  organization_id: string;
+  participant_id: string;
+  price_option_id: string;
+  program_id: string;
+  purchase_id: string;
+  reservation_required: boolean;
+  usage_kind: string;
+  uses_total: number | null;
+  valid_from: Timestamp;
+  valid_until: Timestamp | null;
+  walk_in_allowed: boolean;
+}
+
+export interface EntitlementPurchase {
+  account_id: string;
+  confirmed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  fulfillment_revision_id: string;
+  id: string;
+  offer_id: string | null;
+  organization_id: string;
+  participant_id: string;
+  price_option_id: string;
+  program_id: string;
+  quote_id: string;
+  reference_code: string | null;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface GatewayEvent {
   attempt_id: string | null;
   created_at: Generated<Timestamp>;
@@ -511,14 +549,6 @@ export interface OutboxEvent {
   sequence_no: Int8;
 }
 
-export interface PackageEntitlement {
-  booking_id: string;
-  created_at: Generated<Timestamp>;
-  expiry_policy: string | null;
-  sessions_total: number;
-  sessions_used: Generated<number>;
-}
-
 export interface Participant {
   account_id: string;
   created_at: Generated<Timestamp>;
@@ -548,13 +578,14 @@ export interface PaymentAttempt {
 export interface PaymentIntent {
   account_id: string;
   amount_fils: Int8;
-  booking_id: string;
+  booking_id: string | null;
   created_at: Generated<Timestamp>;
   currency: Generated<string>;
   expires_at: Timestamp;
-  hold_id: string;
+  hold_id: string | null;
   id: string;
   idempotency_key: string;
+  purchase_id: string | null;
   quote_id: string;
   state: Generated<string>;
   updated_at: Generated<Timestamp>;
@@ -583,13 +614,45 @@ export interface PaymentTransaction {
   posted_at: Generated<Timestamp>;
 }
 
+export interface PriceOptionFulfillmentRevision {
+  branch_id: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  organization_id: string;
+  price_option_id: string;
+  program_id: string;
+  reservation_required: boolean;
+  revision_no: number;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  usage_kind: string;
+  uses_total: number | null;
+  validity_days: number | null;
+  validity_end_date: Timestamp | null;
+  validity_kind: string;
+  version: Generated<number>;
+  walk_in_allowed: boolean;
+}
+
+export interface PriceOptionFulfillmentScheduleTerm {
+  created_at: Generated<Timestamp>;
+  end_time: string;
+  id: string;
+  revision_id: string;
+  start_time: string;
+  weekday: number;
+}
+
 export interface PriceQuote {
   account_id: string;
   camp_week_id: string | null;
   cohort_id: string | null;
+  commercial_shape: Generated<string>;
   created_at: Generated<Timestamp>;
   currency: Generated<string>;
+  entitlement_id: string | null;
   expires_at: Timestamp;
+  fulfillment_revision_id: string | null;
   id: string;
   offer_id: string | null;
   option_kind: string;
@@ -949,6 +1012,8 @@ export interface DB {
   enrolment: Enrolment;
   enrolment_cohort: EnrolmentCohort;
   enrolment_cohort_schedule: EnrolmentCohortSchedule;
+  entitlement: Entitlement;
+  entitlement_purchase: EntitlementPurchase;
   gateway_event: GatewayEvent;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
@@ -963,12 +1028,13 @@ export interface DB {
   organization_commission_term: OrganizationCommissionTerm;
   organization_public_profile: OrganizationPublicProfile;
   outbox_event: OutboxEvent;
-  package_entitlement: PackageEntitlement;
   participant: Participant;
   payment_attempt: PaymentAttempt;
   payment_intent: PaymentIntent;
   payment_intent_economics: PaymentIntentEconomics;
   payment_transaction: PaymentTransaction;
+  price_option_fulfillment_revision: PriceOptionFulfillmentRevision;
+  price_option_fulfillment_schedule_term: PriceOptionFulfillmentScheduleTerm;
   price_quote: PriceQuote;
   price_quote_line: PriceQuoteLine;
   program: Program;

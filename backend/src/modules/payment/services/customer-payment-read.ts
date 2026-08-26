@@ -157,3 +157,112 @@ export async function customerPaymentStatus(
     return { kind: 'paymentStatus' as const, payment: { status: 'expired' as const } };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Entitlement-purchase status — the SAME converged projection over the
+// purchase commercial target (S6-1, docs/35 §5.3/§13): identical machine
+// vocabulary, never a fake Booking id, never economics/gateway internals.
+// `purchaseExpiresAt` is the abandonment window (commercial metadata only —
+// a Purchase owns no inventory).
+// ---------------------------------------------------------------------------
+
+export interface CustomerPurchasePaymentStatusView {
+  status: CustomerPaymentStatusName;
+  /** Present ONLY for `awaitingPayment` — the purchase abandonment window. */
+  purchaseExpiresAt?: string;
+  /** Present ONLY for `confirmed`. */
+  referenceCode?: string;
+}
+
+export type CustomerPurchasePaymentStatusResult =
+  | { kind: 'paymentStatus'; payment: CustomerPurchasePaymentStatusView }
+  | { kind: 'purchaseNotFound' };
+
+export async function customerEntitlementPurchasePaymentStatus(
+  deps: CustomerPaymentReadDeps,
+  actor: { accountId: string },
+  input: { purchaseId: string },
+): Promise<CustomerPurchasePaymentStatusResult> {
+  return withTransaction(deps.db, async (trx) => {
+    const purchase = await trx
+      .selectFrom('entitlement_purchase')
+      .select(({ eb }) => [
+        'id',
+        'state',
+        'reference_code',
+        'expires_at',
+        eb.fn<Date>('now', []).as('db_now'),
+      ])
+      .where('id', '=', input.purchaseId)
+      .where('account_id', '=', actor.accountId)
+      .executeTakeFirst();
+    if (purchase === undefined) return { kind: 'purchaseNotFound' as const };
+
+    if (purchase.state === 'confirmed') {
+      return {
+        kind: 'paymentStatus' as const,
+        payment: { status: 'confirmed' as const, referenceCode: purchase.reference_code! },
+      };
+    }
+
+    const intent = await trx
+      .selectFrom('payment_intent')
+      .select(['id', 'state'])
+      .where('purchase_id', '=', purchase.id)
+      .orderBy('created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+
+    if (intent !== undefined) {
+      // Ledger shape first: a capture on an unconfirmed Purchase IS the
+      // compensation obligation; its reversal completes it.
+      const postings = await trx
+        .selectFrom('payment_transaction as t')
+        .innerJoin('payment_attempt as a', 'a.id', 't.attempt_id')
+        .select(['t.kind'])
+        .where('a.intent_id', '=', intent.id)
+        .execute();
+      const captured = postings.some((posting) => posting.kind === 'capture');
+      if (captured) {
+        const reversed = postings.some((posting) => posting.kind === 'reversal');
+        return {
+          kind: 'paymentStatus' as const,
+          payment: {
+            status: reversed ? ('compensated' as const) : ('compensationPending' as const),
+          },
+        };
+      }
+
+      const evidence = await trx
+        .selectFrom('gateway_event as e')
+        .innerJoin('payment_attempt as a', 'a.id', 'e.attempt_id')
+        .select(['e.id'])
+        .where('a.intent_id', '=', intent.id)
+        .where('e.event_type', 'in', SUCCESS_EVENT_TYPES)
+        .where('e.processing_state', 'in', ['received', 'verified'])
+        .limit(1)
+        .executeTakeFirst();
+      if (evidence !== undefined) {
+        return { kind: 'paymentStatus' as const, payment: { status: 'processing' as const } };
+      }
+
+      if (intent.state !== 'created' && intent.state !== 'in_progress') {
+        return { kind: 'paymentStatus' as const, payment: { status: 'expired' as const } };
+      }
+    }
+
+    if (purchase.state === 'compensated') {
+      return { kind: 'paymentStatus' as const, payment: { status: 'compensated' as const } };
+    }
+    if (purchase.state === 'pending_payment' && purchase.expires_at > purchase.db_now) {
+      return {
+        kind: 'paymentStatus' as const,
+        payment: {
+          status: 'awaitingPayment' as const,
+          purchaseExpiresAt: purchase.expires_at.toISOString(),
+        },
+      };
+    }
+    return { kind: 'paymentStatus' as const, payment: { status: 'expired' as const } };
+  });
+}

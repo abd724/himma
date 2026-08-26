@@ -151,6 +151,10 @@ export interface StuckPaymentStates {
   /** Live intents on effectively dead holds — the D-W5-5 wind-down runner
    *  is missing or behind (the sweep would end these). */
   liveIntentsOnDeadHolds: Array<{ intentId: string; holdId: string }>;
+  /** S6-1: live PURCHASE-target intents whose purchase window lapsed or
+   *  whose purchase left pending_payment, with no capture — the purchase
+   *  branch of the wind-down sweep would end these. */
+  liveIntentsOnConcludedPurchases: Array<{ intentId: string; purchaseId: string }>;
   /** Captured money with neither a confirmed outcome nor a reversal — the
    *  outstanding W5-4 compensation obligation (docs/24 §8.6 ledger shape). */
   outstandingCompensations: Array<{ attemptId: string; intentId: string }>;
@@ -197,6 +201,17 @@ export async function findStuckPaymentStates(
                       WHERE r.attempt_id = t.attempt_id AND r.kind = 'reversal')
     ORDER BY t.created_at ASC LIMIT ${limit}`.execute(deps.db);
 
+  const purchaseIntents = await sql<{ intent_id: string; purchase_id: string }>`
+    SELECT i.id AS intent_id, i.purchase_id FROM payment_intent i
+    JOIN entitlement_purchase p ON p.id = i.purchase_id
+    WHERE i.state IN ('created', 'in_progress')
+      AND (p.expires_at <= now() OR p.state NOT IN ('pending_payment', 'payment_failed'))
+      AND NOT EXISTS (SELECT 1 FROM payment_transaction t
+                      JOIN payment_attempt a ON a.id = t.attempt_id
+                      WHERE a.intent_id = i.id AND t.kind = 'capture')
+      AND i.updated_at <= now() - make_interval(secs => ${age})
+    ORDER BY i.created_at ASC LIMIT ${limit}`.execute(deps.db);
+
   const refless = await sql<{ attempt_id: string; intent_id: string }>`
     SELECT a.id AS attempt_id, a.intent_id FROM payment_attempt a
     WHERE a.state = 'started' AND a.gateway_ref IS NULL
@@ -212,6 +227,10 @@ export async function findStuckPaymentStates(
     liveIntentsOnDeadHolds: intents.rows.map((row) => ({
       intentId: row.intent_id,
       holdId: row.hold_id,
+    })),
+    liveIntentsOnConcludedPurchases: purchaseIntents.rows.map((row) => ({
+      intentId: row.intent_id,
+      purchaseId: row.purchase_id,
     })),
     outstandingCompensations: compensations.rows.map((row) => ({
       attemptId: row.attempt_id,

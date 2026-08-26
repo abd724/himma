@@ -131,9 +131,21 @@ describe('money rules (integer fils; docs/24 §6.1)', () => {
     await makeOption(program, { kind: 'dropIn', amountFils: 10000 });
     await makeOption(program, { kind: 'camp', amountFils: 90000 });
     await makeOption(program, { kind: 'free', amountFils: null });
-    for (const kind of ['membership', 'weekly', 'freeTrial', 'private']) {
+    // S6-1 owning-slice amendment (docs/35 §3; D-S6-3): `membership` joined
+    // the COMMERCIAL vocabulary — commercial only; fulfillment semantics
+    // live in price_option_fulfillment_revision, never in this enum.
+    await makeOption(program, { kind: 'membership', amountFils: 10000 });
+    for (const kind of ['weekly', 'freeTrial', 'private']) {
       await expect(makeOption(program, { kind, amountFils: 10000 })).rejects.toThrow();
     }
+  });
+
+  it('S6-1: entitlement kinds may carry a genuine ZERO amount; capacity kinds still cannot', async () => {
+    const program = await makeProgram('Zero-price entitlement products');
+    await makeOption(program, { kind: 'membership', amountFils: 0 });
+    await makeOption(program, { kind: 'package', amountFils: 0, sessionsCount: 3 });
+    await expect(makeOption(program, { kind: 'dropIn', amountFils: 0 })).rejects.toThrow();
+    await expect(makeOption(program, { kind: 'camp', amountFils: 0 })).rejects.toThrow();
   });
 
   it('ties amount to kind: paid kinds require positive fils, free requires NULL', async () => {

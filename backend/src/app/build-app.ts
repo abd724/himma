@@ -30,6 +30,7 @@ import { registerAdminModerationRoutes } from '../modules/catalogue/http/admin-m
 import { registerAdminTaxonomyRoutes } from '../modules/catalogue/http/admin-taxonomy-routes';
 import { registerBookingAdminRoutes } from '../modules/booking/http/booking-admin-routes';
 import { registerBookingCustomerRoutes } from '../modules/booking/http/booking-customer-routes';
+import { registerEntitlementCustomerRoutes } from '../modules/entitlement/http/entitlement-customer-routes';
 import { registerBookingPublicRoutes } from '../modules/booking/http/booking-public-routes';
 import { registerBookingProviderRoutes } from '../modules/booking/http/booking-provider-routes';
 import { registerPaymentWebhookRoutes } from '../modules/payment/http/payment-webhook-routes';
@@ -510,6 +511,27 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // over the certified participant schema. Registers with the identity
     // surface (the customer session policy is its whole gate).
     registerParticipantRoutes(app, { db: identity.db });
+
+    // Customer entitlement acquisition (S6-1, docs/35 §13): the unit-less
+    // acquisition quote, the zero-price non-payment boundary, the paid
+    // initiation over the SAME generalized W5 orchestration (fail-closed
+    // without a composed provider + server-authored URLs), the converged
+    // purchase payment-status read, and the own-purchase read. Reservation,
+    // credential, attendance, and entitlement-list surfaces do NOT exist
+    // until their owning slices (S6-2/S6-3).
+    registerEntitlementCustomerRoutes(app, {
+      db: identity.db,
+      ...(options.payment !== undefined
+        ? {
+            payment: {
+              resolution: { kind: 'configured' as const, provider: options.payment.provider },
+              ...(options.payment.checkoutUrls !== undefined
+                ? { checkoutUrls: options.payment.checkoutUrls }
+                : {}),
+            },
+          }
+        : {}),
+    });
 
     // DEV-ONLY identity token acquisition (RI-1, D-RI-3): a Cognito client
     // stand-in, structurally impossible in production.

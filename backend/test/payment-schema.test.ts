@@ -578,6 +578,9 @@ describe('schema objects, grants, and the security sweep', () => {
     expect(byTable.get('payment_intent')).toEqual([
       'id', 'booking_id', 'account_id', 'quote_id', 'hold_id', 'amount_fils', 'currency',
       'state', 'idempotency_key', 'expires_at', 'created_at', 'updated_at', 'version',
+      // S6-1 owning-slice amendment (docs/35 §5.2): the exactly-one
+      // commercial-target column — Booking columns retained verbatim.
+      'purchase_id',
     ]);
     expect(byTable.get('payment_attempt')).toEqual([
       'id', 'intent_id', 'sequence_no', 'method', 'gateway_ref', 'state', 'failure_code',

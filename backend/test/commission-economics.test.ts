@@ -603,7 +603,9 @@ describe('0016 database invariants', () => {
           VALUES (${d.intentId!}, ${orgB.orgId}, ${orgBTerm.rows[0]!.id}, 5000, 1200, 600, 4400)`.execute(
         testDb.db,
       ),
-    ).rejects.toThrow(/organization must be the booking/i);
+    // S6-1 owning-slice amendment (docs/35 §5.3): the binding is now
+    // TARGET-neutral — the message names the commercial target.
+    ).rejects.toThrow(/organization must be the commercial target/i);
   });
 
   it('no payout/Connect/transfer surface exists: the payment module ships no such code and the HTTP dir is still exactly the webhook ingress', () => {

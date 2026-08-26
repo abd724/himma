@@ -758,6 +758,10 @@ describe('price_quote — the immutable commercial snapshot', () => {
 
 describe('schema objects, grants, and append-only surfaces', () => {
   it('all S5-1 tables, the expiry index, and the live-uniqueness indexes exist', async () => {
+    // S6-1 owning-slice amendment (docs/35 §11, D-S6-2): package_entitlement
+    // was SUPERSEDED and dropped in 0017 (never authoritative, provably
+    // empty, no write path ever existed) — 11 S5-1 tables remain, and the
+    // supersession is asserted below.
     const tables = await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_name IN
@@ -766,7 +770,8 @@ describe('schema objects, grants, and append-only surfaces', () => {
          'price_quote_line', 'capacity_hold', 'booking', 'enrolment', 'package_entitlement')`.execute(
       testDb.db,
     );
-    expect(tables.rows).toHaveLength(12);
+    expect(tables.rows).toHaveLength(11);
+    expect(tables.rows.map((row) => row.table_name)).not.toContain('package_entitlement');
     const indexes = await sql<{ indexname: string }>`
       SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
         ('ix_capacity_hold_active_expiry', 'uq_capacity_hold_live_session',
@@ -782,11 +787,11 @@ describe('schema objects, grants, and append-only surfaces', () => {
       WHERE grantee = 'himma_app' AND table_name IN
         ('recurring_schedule', 'session', 'camp_week', 'enrolment_cohort',
          'enrolment_cohort_schedule', 'cancellation_policy_template', 'price_quote',
-         'price_quote_line', 'capacity_hold', 'booking', 'enrolment', 'package_entitlement')`.execute(
+         'price_quote_line', 'capacity_hold', 'booking', 'enrolment')`.execute(
       testDb.db,
     );
     expect(grants.rows.some((row) => row.privilege_type === 'DELETE')).toBe(false);
-    const appendOnly = ['price_quote', 'price_quote_line', 'enrolment', 'package_entitlement'];
+    const appendOnly = ['price_quote', 'price_quote_line', 'enrolment'];
     expect(
       grants.rows.some(
         (row) => appendOnly.includes(row.table_name) && row.privilege_type === 'UPDATE',
