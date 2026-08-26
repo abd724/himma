@@ -154,10 +154,12 @@ async function issue(
   target: Parameters<typeof issueRedemptionCredential>[2]['target'],
   key = newId(),
   overrideDeps: RedemptionDeps = deps,
+  regenerateCredentialId?: string,
 ): Promise<{ credentialId: string; displayCode: string; token: string; expiresAt: string }> {
   const run = await issueRedemptionCredential(overrideDeps, { accountId: customer.accountId }, {
     target,
     idempotencyKey: key,
+    ...(regenerateCredentialId !== undefined ? { regenerateCredentialId } : {}),
   });
   if (run.outcome.kind !== 'credentialIssued') throw new Error(run.outcome.kind);
   const credential = run.outcome.credential;
@@ -267,8 +269,24 @@ describe('credential issuance', () => {
     expect(replay.outcome.credential.replayed).toBe(true);
     expect(replay.outcome.credential.displayCode).toBeUndefined();
     expect(replay.outcome.credential.token).toBeUndefined();
-    // Regeneration (NEW key): supersedes, exactly one live credential.
-    const regen = await issue(customer, { kind: 'booking', bookingId });
+    // A plain DIFFERENT-key issuance while a credential is effectively
+    // live: NOTHING superseded, NOTHING minted, NO secrets (rule A).
+    const plain = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
+      target: { kind: 'booking', bookingId },
+      idempotencyKey: newId(),
+    });
+    if (plain.outcome.kind !== 'credentialAlreadyLive') throw new Error(plain.outcome.kind);
+    expect(plain.outcome.credential.credentialId).toBe(first.outcome.credential.credentialId);
+    expect('displayCode' in plain.outcome.credential).toBe(false);
+    // EXPLICIT regeneration (rule B): names the current credential,
+    // supersedes it, exactly one live replacement.
+    const regen = await issue(
+      customer,
+      { kind: 'booking', bookingId },
+      newId(),
+      deps,
+      first.outcome.credential.credentialId,
+    );
     expect(regen.credentialId).not.toBe(first.outcome.credential.credentialId);
     const states = await sql<{ id: string; state: string }>`
       SELECT id, state FROM redemption_credential WHERE booking_id = ${bookingId}
@@ -338,6 +356,70 @@ describe('credential issuance', () => {
       idempotencyKey: newId(),
     });
     expect(lapsed.outcome.kind).toBe('entitlementNotActive');
+  });
+
+  it('stale/foreign regeneration ids change NOTHING; lost-response recovery = replay metadata → explicit regeneration (rules B/E/H)', async () => {
+    const customer = await createCustomer(testDb.db);
+    const entitlementId = await makeEntitlement(customer, pack3Option);
+    const key = newId();
+    const c1 = await issue(customer, { kind: 'entitlement', entitlementId }, key);
+    // Explicit regeneration replaces C1 with C2.
+    const c2 = await issue(
+      customer,
+      { kind: 'entitlement', entitlementId },
+      newId(),
+      deps,
+      c1.credentialId,
+    );
+    // The STALE C1 id can never supersede its replacement.
+    const stale = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
+      target: { kind: 'entitlement', entitlementId },
+      idempotencyKey: newId(),
+      regenerateCredentialId: c1.credentialId,
+    });
+    expect(stale.outcome.kind).toBe('credentialNotCurrent');
+    const liveNow = await sql<{ id: string }>`
+      SELECT id FROM redemption_credential
+      WHERE entitlement_id = ${entitlementId} AND state = 'live'`.execute(testDb.db);
+    expect(liveNow.rows.map((row) => row.id)).toEqual([c2.credentialId]);
+    // Foreign-account credential id: not-found-shaped, nothing changed.
+    const stranger = await createCustomer(testDb.db);
+    const strangerEntitlement = await makeEntitlement(stranger, pack3Option);
+    const foreign = await issueRedemptionCredential(deps, { accountId: stranger.accountId }, {
+      target: { kind: 'entitlement', entitlementId: strangerEntitlement },
+      idempotencyKey: newId(),
+      regenerateCredentialId: c2.credentialId,
+    });
+    expect(foreign.outcome.kind).toBe('credentialNotFound');
+    // Lost-response recovery (rule E): the ORIGINAL key replays C1's
+    // metadata without secrets…
+    const replay = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
+      target: { kind: 'entitlement', entitlementId },
+      idempotencyKey: key,
+    });
+    if (replay.outcome.kind !== 'credentialIssued') throw new Error(replay.outcome.kind);
+    expect(replay.outcome.credential.replayed).toBe(true);
+    expect(replay.outcome.credential.displayCode).toBeUndefined();
+    // …and a plain issuance reports the CURRENT live credential id, which
+    // an explicit regeneration then replaces with ONE new usable credential.
+    const current = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
+      target: { kind: 'entitlement', entitlementId },
+      idempotencyKey: newId(),
+    });
+    if (current.outcome.kind !== 'credentialAlreadyLive') throw new Error(current.outcome.kind);
+    expect(current.outcome.credential.credentialId).toBe(c2.credentialId);
+    const c3 = await issue(
+      customer,
+      { kind: 'entitlement', entitlementId },
+      newId(),
+      deps,
+      current.outcome.credential.credentialId,
+    );
+    expect(c3.displayCode).toMatch(/^\d{8}$/);
+    const finalLive = await sql<{ id: string }>`
+      SELECT id FROM redemption_credential
+      WHERE entitlement_id = ${entitlementId} AND state = 'live'`.execute(testDb.db);
+    expect(finalLive.rows.map((row) => row.id)).toEqual([c3.credentialId]);
   });
 
   it('alias collision retries deterministically and fails typed after the bounded limit', async () => {
@@ -874,6 +956,7 @@ describe('concurrency proofs', () => {
           issueRedemptionCredential({ db: pool.db }, { accountId: customer.accountId }, {
             target: { kind: 'entitlement', entitlementId },
             idempotencyKey: newId(),
+            regenerateCredentialId: issued.credentialId,
           }),
       ]);
     } finally {
@@ -941,12 +1024,13 @@ describe('concurrency proofs', () => {
     expect(await attendanceCount({ entitlementId })).toBe(1);
   });
 
-  it('two concurrent DIFFERENT-key first issuances → exactly one live credential; each response carries only its own secrets', async () => {
+  it('two concurrent DIFFERENT-key INITIAL issuances → ONE credential; only its creator receives secrets; the loser supersedes nothing (rules A/D)', async () => {
     const customer = await createCustomer(testDb.db);
     const entitlementId = await makeEntitlement(customer, pack3Option);
     const pool = await createRacePool(testDb.config, 4);
+    let results: Awaited<ReturnType<typeof issueRedemptionCredential>>[];
     try {
-      const results = await race([
+      results = await race([
         () =>
           issueRedemptionCredential({ db: pool.db }, { accountId: customer.accountId }, {
             target: { kind: 'entitlement', entitlementId },
@@ -958,16 +1042,59 @@ describe('concurrency proofs', () => {
             idempotencyKey: newId(),
           }),
       ]);
-      for (const run of results) {
-        expect(run.outcome.kind).toBe('credentialIssued');
-      }
     } finally {
       await pool.destroy();
     }
-    const live = await sql<{ n: string }>`
-      SELECT count(*) AS n FROM redemption_credential
-      WHERE entitlement_id = ${entitlementId} AND state = 'live'`.execute(testDb.db);
-    expect(Number(live.rows[0]!.n)).toBe(1);
+    const kinds = results.map((run) => run.outcome.kind).sort();
+    expect(kinds).toEqual(['credentialAlreadyLive', 'credentialIssued']);
+    const winner = results.find((run) => run.outcome.kind === 'credentialIssued')!;
+    const loser = results.find((run) => run.outcome.kind === 'credentialAlreadyLive')!;
+    if (winner.outcome.kind !== 'credentialIssued') throw new Error('unreachable');
+    if (loser.outcome.kind !== 'credentialAlreadyLive') throw new Error('unreachable');
+    // Only the creator holds secrets; the loser got safe recovery metadata
+    // for the SAME (still-live) credential — nothing was superseded.
+    expect(winner.outcome.credential.displayCode).toMatch(/^\d{8}$/);
+    expect(loser.outcome.credential.credentialId).toBe(winner.outcome.credential.credentialId);
+    expect('displayCode' in loser.outcome.credential).toBe(false);
+    const rows = await sql<{ state: string; n: string }>`
+      SELECT state, count(*) AS n FROM redemption_credential
+      WHERE entitlement_id = ${entitlementId} GROUP BY state`.execute(testDb.db);
+    expect(rows.rows).toEqual([{ state: 'live', n: '1' }]);
+  });
+
+  it('two concurrent EXPLICIT regenerations of C1 → one C2, no C3; the loser changes nothing (rule C)', async () => {
+    const customer = await createCustomer(testDb.db);
+    const entitlementId = await makeEntitlement(customer, pack3Option);
+    const c1 = await issue(customer, { kind: 'entitlement', entitlementId });
+    const pool = await createRacePool(testDb.config, 4);
+    let results: Awaited<ReturnType<typeof issueRedemptionCredential>>[];
+    try {
+      results = await race([
+        () =>
+          issueRedemptionCredential({ db: pool.db }, { accountId: customer.accountId }, {
+            target: { kind: 'entitlement', entitlementId },
+            idempotencyKey: newId(),
+            regenerateCredentialId: c1.credentialId,
+          }),
+        () =>
+          issueRedemptionCredential({ db: pool.db }, { accountId: customer.accountId }, {
+            target: { kind: 'entitlement', entitlementId },
+            idempotencyKey: newId(),
+            regenerateCredentialId: c1.credentialId,
+          }),
+      ]);
+    } finally {
+      await pool.destroy();
+    }
+    const kinds = results.map((run) => run.outcome.kind).sort();
+    expect(kinds).toEqual(['credentialIssued', 'credentialNotCurrent']);
+    const rows = await sql<{ state: string; n: string }>`
+      SELECT state, count(*) AS n FROM redemption_credential
+      WHERE entitlement_id = ${entitlementId} GROUP BY state ORDER BY state`.execute(testDb.db);
+    expect(rows.rows).toEqual([
+      { state: 'live', n: '1' },
+      { state: 'superseded', n: '1' },
+    ]);
   });
 });
 

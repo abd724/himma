@@ -188,7 +188,9 @@ export function registerEntitlementCustomerRoutes(
                                               ? 'entitlementNotActive'
                                               : kind === 'entitlementExhausted'
                                                 ? 'entitlementExhausted'
-                                                : 'internalError';
+                                                : kind === 'credentialNotCurrent'
+                                                  ? 'staleVersion'
+                                                  : 'internalError';
     return sendOutcome(reply, name);
   }
 
@@ -373,6 +375,16 @@ export function registerEntitlementCustomerRoutes(
     replayed: Type.Boolean(),
   });
 
+  /** Rule A: a plain issuance that found an effectively-live credential —
+   *  nothing minted, nothing superseded, NO secrets; the client explicitly
+   *  regenerates with the returned id if it lost the code. */
+  const AlreadyLiveSchema = Type.Object({
+    credentialId: Uuid,
+    state: Type.Literal('live'),
+    expiresAt: Type.String(),
+    alreadyLive: Type.Literal(true),
+  });
+
   app.post(
     '/customer/bookings/:bookingId/credential',
     {
@@ -381,10 +393,18 @@ export function registerEntitlementCustomerRoutes(
       schema: {
         params: Type.Object({ bookingId: Uuid }),
         body: Type.Object(
-          { idempotencyKey: IdempotencyKey },
+          {
+            idempotencyKey: IdempotencyKey,
+            /** EXPLICIT regeneration: the current credential to replace. */
+            regenerateCredentialId: Type.Optional(Uuid),
+          },
           { additionalProperties: false },
         ),
-        response: { 201: Type.Object({ credential: IssuedCredentialSchema }), ...ERRORS },
+        response: {
+          200: Type.Object({ credential: AlreadyLiveSchema }),
+          201: Type.Object({ credential: IssuedCredentialSchema }),
+          ...ERRORS,
+        },
       },
     },
     async (request, reply) => {
@@ -393,7 +413,15 @@ export function registerEntitlementCustomerRoutes(
       const run = await issueRedemptionCredential(serviceDeps, { accountId }, {
         target: { kind: 'booking', bookingId: request.params.bookingId },
         idempotencyKey: request.body.idempotencyKey,
+        ...(request.body.regenerateCredentialId !== undefined
+          ? { regenerateCredentialId: request.body.regenerateCredentialId }
+          : {}),
       });
+      if (run.outcome.kind === 'credentialAlreadyLive') {
+        return reply.status(200).send({
+          credential: { ...run.outcome.credential, state: 'live', alreadyLive: true },
+        });
+      }
       if (run.outcome.kind !== 'credentialIssued') return failure(reply, run.outcome.kind);
       const { target, ...credential } = run.outcome.credential;
       void target;
@@ -409,10 +437,18 @@ export function registerEntitlementCustomerRoutes(
       schema: {
         params: Type.Object({ entitlementId: Uuid }),
         body: Type.Object(
-          { idempotencyKey: IdempotencyKey },
+          {
+            idempotencyKey: IdempotencyKey,
+            /** EXPLICIT regeneration: the current credential to replace. */
+            regenerateCredentialId: Type.Optional(Uuid),
+          },
           { additionalProperties: false },
         ),
-        response: { 201: Type.Object({ credential: IssuedCredentialSchema }), ...ERRORS },
+        response: {
+          200: Type.Object({ credential: AlreadyLiveSchema }),
+          201: Type.Object({ credential: IssuedCredentialSchema }),
+          ...ERRORS,
+        },
       },
     },
     async (request, reply) => {
@@ -421,7 +457,15 @@ export function registerEntitlementCustomerRoutes(
       const run = await issueRedemptionCredential(serviceDeps, { accountId }, {
         target: { kind: 'entitlement', entitlementId: request.params.entitlementId },
         idempotencyKey: request.body.idempotencyKey,
+        ...(request.body.regenerateCredentialId !== undefined
+          ? { regenerateCredentialId: request.body.regenerateCredentialId }
+          : {}),
       });
+      if (run.outcome.kind === 'credentialAlreadyLive') {
+        return reply.status(200).send({
+          credential: { ...run.outcome.credential, state: 'live', alreadyLive: true },
+        });
+      }
       if (run.outcome.kind !== 'credentialIssued') return failure(reply, run.outcome.kind);
       const { target, ...credential } = run.outcome.credential;
       void target;

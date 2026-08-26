@@ -102,6 +102,16 @@ export interface IssuedCredentialView {
 
 export type IssueCredentialResult =
   | { kind: 'credentialIssued'; credential: IssuedCredentialView }
+  /** Initial issuance found an effectively-live credential — nothing was
+   *  superseded or minted; the caller may explicitly regenerate by id. */
+  | {
+      kind: 'credentialAlreadyLive';
+      credential: { credentialId: string; expiresAt: string };
+    }
+  /** Regeneration named a credential that is no longer the current live
+   *  one (used/superseded/expired or replaced) — nothing changed. */
+  | { kind: 'credentialNotCurrent' }
+  | { kind: 'credentialNotFound' }
   | { kind: 'bookingNotFound' }
   | { kind: 'bookingNotConfirmed' }
   /** CampWeek/Cohort bookings have no canonical occurrence identity yet —
@@ -126,14 +136,32 @@ interface MintedSecrets {
   token: string;
 }
 
+export interface IssueCredentialInput {
+  target: CredentialTarget;
+  idempotencyKey: string;
+  /**
+   * EXPLICIT regeneration (owner S6-2 correction, rule B): names the
+   * current live credential this request intends to replace. Absent →
+   * INITIAL issuance semantics (rule A): an effectively-live credential is
+   * NEVER superseded — the request returns `credentialAlreadyLive` without
+   * secrets. Present → the named credential is locked, proven to be the
+   * caller's CURRENT live credential for this exact target, superseded,
+   * and replaced; a stale/foreign id changes nothing
+   * (`credentialNotCurrent` / not-found shaping).
+   */
+  regenerateCredentialId?: string;
+}
+
 export async function issueRedemptionCredential(
   deps: CredentialServiceDeps,
   actor: CustomerActor,
-  input: { target: CredentialTarget; idempotencyKey: string },
+  input: IssueCredentialInput,
 ): Promise<IssueCredentialRun> {
-  // One bounded retry: two concurrent DIFFERENT-key first-issuances race on
-  // the one-live-per-target partial unique; the loser's transaction aborts
-  // (key unpoisoned) and the retry supersedes the winner under its row lock.
+  // One bounded retry: two concurrent DIFFERENT-key INITIAL issuances race
+  // on the one-live-per-target partial unique; the loser's transaction
+  // aborts (key unpoisoned) and its retry finds the winner's live
+  // credential → `credentialAlreadyLive` WITHOUT secrets — the winner's
+  // displayed credential is never superseded by a race (rule A/D).
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await issueOnce(deps, actor, input);
@@ -155,29 +183,88 @@ export async function issueRedemptionCredential(
 async function issueOnce(
   deps: CredentialServiceDeps,
   actor: CustomerActor,
-  input: { target: CredentialTarget; idempotencyKey: string },
+  input: IssueCredentialInput,
 ): Promise<IssueCredentialRun> {
   const ttlSeconds = deps.credentialTtlSeconds ?? DEFAULT_CREDENTIAL_TTL_SECONDS;
   const ctx = {
     principalRef: `customer:${actor.accountId}`,
     endpointScope: ISSUE_SCOPE,
     idempotencyKey: input.idempotencyKey,
-    requestDigest: requestDigest({ target: input.target }),
+    requestDigest: requestDigest({
+      target: input.target,
+      regenerateCredentialId: input.regenerateCredentialId ?? null,
+    }),
   };
   // The out-of-band secret channel: populated ONLY by the executing run.
   let secrets: MintedSecrets | undefined;
 
   const run = await runIdempotent<IssueCredentialResult>(deps.db, ctx, async (trx) => {
-    // 1. Any existing LIVE credential for this target is locked FIRST
-    //    (credential precedes entitlement in the canonical order) — this
-    //    serializes regeneration against a concurrent redemption.
     const targetColumn = input.target.kind === 'booking' ? 'booking_id' : 'entitlement_id';
     const targetId =
       input.target.kind === 'booking' ? input.target.bookingId : input.target.entitlementId;
-    const existing = await sql<{ id: string }>`
-      SELECT id FROM redemption_credential
-      WHERE ${sql.id(targetColumn)} = ${targetId} AND state = 'live'
-      FOR UPDATE`.execute(trx);
+
+    // 1. Credential-lock phase (credential precedes entitlement in the
+    //    canonical order — this also serializes against redemption).
+    let supersedeIds: string[] = [];
+    if (input.regenerateCredentialId !== undefined) {
+      // EXPLICIT REGENERATION (rule B): lock the NAMED credential and prove
+      // it is the caller's CURRENT live credential for this exact target.
+      const named = await sql<{
+        id: string;
+        state: string;
+        account_id: string;
+        entitlement_id: string | null;
+        booking_id: string | null;
+      }>`
+        SELECT id, state, account_id, entitlement_id, booking_id
+        FROM redemption_credential WHERE id = ${input.regenerateCredentialId}
+        FOR UPDATE`.execute(trx);
+      const row = named.rows[0];
+      if (row === undefined || row.account_id !== actor.accountId) {
+        return { kind: 'credentialNotFound' };
+      }
+      const namedTargetId = row.booking_id ?? row.entitlement_id;
+      if (namedTargetId !== targetId) return { kind: 'credentialNotFound' };
+      // A stale/superseded/used id can never supersede its replacement —
+      // the row's CURRENT state decides, under its lock (rule B/C/H).
+      if (row.state !== 'live') return { kind: 'credentialNotCurrent' };
+      supersedeIds = [row.id];
+    } else {
+      // INITIAL ISSUANCE (rule A): lock any live-state rows for the target.
+      // FOR UPDATE re-evaluates under READ COMMITTED, so a row superseded
+      // while we waited is excluded — what remains is the CURRENT truth.
+      const existing = await sql<{ id: string; lapsed: boolean }>`
+        SELECT id, (expires_at <= now()) AS lapsed FROM redemption_credential
+        WHERE ${sql.id(targetColumn)} = ${targetId} AND state = 'live'
+        FOR UPDATE`.execute(trx);
+      const effectivelyLive = existing.rows.find((row) => !row.lapsed);
+      if (effectivelyLive !== undefined) {
+        // NEVER superseded by a plain issuance — the customer displaying it
+        // keeps a valid credential; recovery is metadata + explicit
+        // regeneration (rules A/E).
+        const meta = await sql<{ expires_at: Date }>`
+          SELECT expires_at FROM redemption_credential
+          WHERE id = ${effectivelyLive.id}`.execute(trx);
+        return {
+          kind: 'credentialAlreadyLive',
+          credential: {
+            credentialId: effectivelyLive.id,
+            expiresAt: meta.rows[0]!.expires_at.toISOString(),
+          },
+        };
+      }
+      // Effectively-EXPIRED stale live rows (rule F): terminalize truthfully
+      // under their lock and issue fresh — sweeper-free, and serialized
+      // against provider redemption at the expiry boundary by the same lock.
+      for (const stale of existing.rows) {
+        await trx
+          .updateTable('redemption_credential')
+          .set({ state: 'expired' })
+          .where('id', '=', stale.id)
+          .where('state', '=', 'live')
+          .execute();
+      }
+    }
 
     // 2. Target resolution + eligibility (all server-clock authority).
     let organizationId: string;
@@ -258,28 +345,31 @@ async function issueOnce(
       participantId = row.participant_id;
     }
 
-    // 3. Supersede-and-mint (regeneration IS issuance): the previous live
-    //    credential — locked above — becomes permanently unusable.
-    for (const previous of existing.rows) {
-      await trx
+    // 3. Explicit regeneration only: the NAMED current credential — locked
+    //    and verified in step 1 — becomes permanently unusable.
+    for (const previousId of supersedeIds) {
+      const moved = await trx
         .updateTable('redemption_credential')
         .set({ state: 'superseded' })
-        .where('id', '=', previous.id)
+        .where('id', '=', previousId)
         .where('state', '=', 'live')
-        .execute();
+        .executeTakeFirst();
+      if ((moved.numUpdatedRows ?? 0n) !== 1n) {
+        throw new Error(`credential ${previousId} supersede CAS lost under lock — impossible`);
+      }
       await appendAuditEvent(trx, {
         actorType: 'user',
         actorId: actor.accountId,
         principalContext: 'customer',
         action: 'credential.superseded',
         entityType: 'redemption_credential',
-        entityId: previous.id,
+        entityId: previousId,
       });
       await appendOutboxEvent(trx, {
         aggregateType: 'redemption_credential',
-        aggregateId: previous.id,
+        aggregateId: previousId,
         eventType: 'credential.superseded',
-        payload: { credentialId: previous.id, organizationId },
+        payload: { credentialId: previousId, organizationId },
       });
     }
 
