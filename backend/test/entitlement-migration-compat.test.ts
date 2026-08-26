@@ -41,13 +41,19 @@ import { assertSafeTestDatabase, TEST_DATABASE_PREFIX } from '../src/db/safety';
 import { confirmFreeBooking } from '../src/modules/booking/services/booking-lifecycle';
 import { claimHold } from '../src/modules/booking/services/hold-claim';
 import { requestQuote } from '../src/modules/booking/services/quote-service';
+import { confirmFreeEntitlementPurchase } from '../src/modules/entitlement/services/entitlement-acquisition';
+import { requestEntitlementQuote } from '../src/modules/entitlement/services/entitlement-quote';
 import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
-import { startPaidCheckout } from '../src/modules/payment/services/checkout-orchestration';
+import {
+  startPaidCheckout,
+  startPaidEntitlementCheckout,
+} from '../src/modules/payment/services/checkout-orchestration';
 import {
   createActivePolicyTemplate,
   createBookingFixture,
   createCommissionTerm,
   createCustomer,
+  createFulfillmentRevision,
   createPriceOption,
   createSession,
   publishProgram,
@@ -225,4 +231,100 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
   const reapplied = await runMigrationsUp(config, { quiet: true });
   expect(reapplied.applied).toEqual(['0017_commercial_target_and_entitlement_foundation']);
   expect((await verifyMigrations(config)).problems).toEqual([]);
+});
+
+it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails closed with NOTHING destroyed', async () => {
+  // Genuine S6-native durable state through the REAL domain path: an
+  // active fulfillment revision → acquisition quote → confirmed free
+  // Purchase + Entitlement; plus a purchase-target PaymentIntent from a
+  // real paid initiation.
+  const f = await createBookingFixture(db);
+  await publishProgram(f);
+  const freePack = await createPriceOption(f, { kind: 'package', amountFils: 0, sessionsCount: 3 });
+  await createFulfillmentRevision(f, freePack, {
+    usageKind: 'finite',
+    validityKind: 'daysFromConfirmation',
+    validityDays: 30,
+  });
+  const paidPack = await createPriceOption(f, { kind: 'package', amountFils: 50000, sessionsCount: 5 });
+  await createFulfillmentRevision(f, paidPack, {
+    usageKind: 'finite',
+    validityKind: 'daysFromConfirmation',
+    validityDays: 60,
+  });
+  await createCommissionTerm(db, f.org.orgId, 1200);
+
+  const customer = await createCustomer(db);
+  const freeQuote = await requestEntitlementQuote({ db }, { accountId: customer.accountId }, {
+    programId: f.programId,
+    priceOptionId: freePack,
+    participantId: customer.participantId,
+  });
+  if (freeQuote.kind !== 'quoteIssued') throw new Error(freeQuote.kind);
+  const confirmed = await confirmFreeEntitlementPurchase({ db }, { accountId: customer.accountId }, {
+    quoteId: freeQuote.quote.quoteId,
+    idempotencyKey: `compat-refusal-free-${freeQuote.quote.quoteId}`,
+  });
+  if (confirmed.outcome.kind !== 'purchaseConfirmed') throw new Error(confirmed.outcome.kind);
+  const purchaseId = confirmed.outcome.purchase.purchaseId;
+  const entitlementId = confirmed.outcome.purchase.entitlement!.entitlementId;
+
+  const paidQuote = await requestEntitlementQuote({ db }, { accountId: customer.accountId }, {
+    programId: f.programId,
+    priceOptionId: paidPack,
+    participantId: customer.participantId,
+  });
+  if (paidQuote.kind !== 'quoteIssued') throw new Error(paidQuote.kind);
+  const provider = new DeterministicPaymentProvider({ now: NOW });
+  const initiated = await startPaidEntitlementCheckout(
+    { db, provider: { kind: 'configured', provider } },
+    { accountId: customer.accountId },
+    {
+      quoteId: paidQuote.quote.quoteId,
+      idempotencyKey: `compat-refusal-paid-${paidQuote.quote.quoteId}`,
+      returnUrl: 'https://himma.test/return',
+      cancelUrl: 'https://himma.test/cancel',
+    },
+  );
+  if (initiated.kind !== 'checkoutStarted') throw new Error(initiated.kind);
+
+  const snapshotBefore = await sql<Record<string, string>>`
+    SELECT (SELECT count(*) FROM entitlement_purchase) AS purchases,
+           (SELECT count(*) FROM entitlement) AS grants,
+           (SELECT count(*) FROM payment_intent WHERE purchase_id IS NOT NULL) AS purchase_intents,
+           (SELECT count(*) FROM price_quote WHERE commercial_shape <> 'capacityPurchase') AS shaped_quotes,
+           (SELECT count(*) FROM price_option_fulfillment_revision) AS revisions,
+           (SELECT count(*) FROM booking) AS bookings,
+           (SELECT count(*) FROM payment_intent) AS intents`.execute(db);
+
+  // ---- The downgrade is REFUSED by the explicit preflight — the FIRST
+  // statement of the down migration, not an accidental later FK failure.
+  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+    /Downgrade of 0017 refused: S6-1-native data exists/,
+  );
+
+  // ---- NOTHING was destroyed or partially modified: the schema remains
+  // at 0017 (verify reports zero pending, zero problems)…
+  const verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual([]);
+  expect(verified.problems).toEqual([]);
+  // …every S6-1 table/column is intact…
+  const snapshotAfter = await sql<Record<string, string>>`
+    SELECT (SELECT count(*) FROM entitlement_purchase) AS purchases,
+           (SELECT count(*) FROM entitlement) AS grants,
+           (SELECT count(*) FROM payment_intent WHERE purchase_id IS NOT NULL) AS purchase_intents,
+           (SELECT count(*) FROM price_quote WHERE commercial_shape <> 'capacityPurchase') AS shaped_quotes,
+           (SELECT count(*) FROM price_option_fulfillment_revision) AS revisions,
+           (SELECT count(*) FROM booking) AS bookings,
+           (SELECT count(*) FROM payment_intent) AS intents`.execute(db);
+  expect(snapshotAfter.rows[0]).toEqual(snapshotBefore.rows[0]);
+  // …and the Purchase + Entitlement remain queryable and unchanged, beside
+  // the surviving certified Booking/W5 rows.
+  const survivors = await sql<{ p_state: string; e_uses: number; intent_state: string }>`
+    SELECT p.state AS p_state, e.uses_total AS e_uses,
+           (SELECT state FROM payment_intent WHERE id = ${initiated.intentId}) AS intent_state
+    FROM entitlement_purchase p
+    JOIN entitlement e ON e.purchase_id = p.id
+    WHERE p.id = ${purchaseId} AND e.id = ${entitlementId}`.execute(db);
+  expect(survivors.rows[0]).toEqual({ p_state: 'confirmed', e_uses: 3, intent_state: 'in_progress' });
 });

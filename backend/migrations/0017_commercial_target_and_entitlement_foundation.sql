@@ -613,10 +613,47 @@ GRANT SELECT, INSERT ON entitlement TO himma_app;
 
 -- Down Migration
 -- Reviewed rollback (development/test only — docs/25 §9 forbids production
--- down migrations). Restores the exact pre-S6-1 schema. SAFE-BY-REFUSAL:
--- if S6-1 commercial rows exist (purchases, entitlements, acquisition
--- quotes, purchase-target intents), the FK/CHECK restorations below fail
--- loudly instead of silently destroying commercial history.
+-- down migrations). Restores the exact pre-S6-1 schema.
+--
+-- FAIL-CLOSED PREFLIGHT (S6-1 owner correction): the downgrade may proceed
+-- ONLY when the database is fully representable by the legacy 0016 schema.
+-- If ANY S6-1-native durable commercial state exists — entitlement
+-- purchases, entitlements, purchase-target payment intents, non-capacity
+-- quote shapes, fulfillment revisions/schedule snapshots, or price options
+-- the 0016 CHECKs cannot represent (membership kind; zero-amount
+-- entitlement pricing) — the downgrade is REFUSED as the FIRST statement,
+-- before any destructive DDL. Safety never depends on a later NOT NULL/FK
+-- restoration accidentally failing: node-pg-migrate runs each migration in
+-- ONE transaction, and this explicit guard aborts it with nothing touched.
+-- Production commercial data is never deleted or transformed automatically.
+
+DO $$
+DECLARE
+  purchases        bigint;
+  grants           bigint;
+  purchase_intents bigint;
+  shaped_quotes    bigint;
+  revisions        bigint;
+  schedule_terms   bigint;
+  new_options      bigint;
+BEGIN
+  SELECT count(*) INTO purchases FROM entitlement_purchase;
+  SELECT count(*) INTO grants FROM entitlement;
+  SELECT count(*) INTO purchase_intents FROM payment_intent WHERE purchase_id IS NOT NULL;
+  SELECT count(*) INTO shaped_quotes FROM price_quote
+    WHERE commercial_shape <> 'capacityPurchase';
+  SELECT count(*) INTO revisions FROM price_option_fulfillment_revision;
+  SELECT count(*) INTO schedule_terms FROM price_option_fulfillment_schedule_term;
+  SELECT count(*) INTO new_options FROM program_price_option
+    WHERE kind = 'membership' OR (kind = 'package' AND amount_fils = 0);
+  IF purchases > 0 OR grants > 0 OR purchase_intents > 0 OR shaped_quotes > 0
+     OR revisions > 0 OR schedule_terms > 0 OR new_options > 0 THEN
+    RAISE EXCEPTION USING MESSAGE = format(
+      'Downgrade of 0017 refused: S6-1-native data exists and the legacy 0016 schema cannot represent it (entitlement_purchase=%s, entitlement=%s, purchase-target payment_intents=%s, non-capacityPurchase quotes=%s, fulfillment revisions=%s, schedule terms=%s, 0016-incompatible price options=%s). Commercial state is never silently destroyed — roll forward instead (docs/25 §9; docs/35 §21).',
+      purchases, grants, purchase_intents, shaped_quotes, revisions, schedule_terms,
+      new_options);
+  END IF;
+END $$;
 
 ALTER TABLE payment_intent DROP CONSTRAINT ck_payment_intent_target_shape;
 ALTER TABLE payment_intent DROP CONSTRAINT ck_payment_intent_one_target;
