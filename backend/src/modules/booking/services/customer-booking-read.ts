@@ -231,6 +231,12 @@ export interface CustomerBookingView {
     effectiveStart: string | null;
   };
   price: { totalFils: number; currency: 'AED' };
+  /** S6-3 (owner item 26): TRUE when this Booking's AED 0 quote is covered
+   *  by an Entitlement reservation — the customer paid via their pass, so
+   *  the projection must never read as a provider's free product. */
+  coveredByEntitlement: boolean;
+  /** The covering Entitlement, for customer navigation (never internals). */
+  entitlementId: string | null;
   createdAt: string;
   confirmedAt: string | null;
 }
@@ -254,6 +260,7 @@ interface BookingProjectionRow {
   start_date: Date | null;
   effective_start: Date | null;
   total_fils: string | number;
+  reserved_entitlement_id: string | null;
   created_at: Date;
   confirmed_at: Date | null;
 }
@@ -285,6 +292,8 @@ function toBookingView(row: BookingProjectionRow): CustomerBookingView {
         row.effective_start === null ? null : row.effective_start.toISOString().slice(0, 10),
     },
     price: { totalFils: Number(row.total_fils), currency: 'AED' },
+    coveredByEntitlement: row.reserved_entitlement_id !== null,
+    entitlementId: row.reserved_entitlement_id,
     createdAt: row.created_at.toISOString(),
     confirmedAt: row.confirmed_at === null ? null : row.confirmed_at.toISOString(),
   };
@@ -296,7 +305,8 @@ const BOOKING_PROJECTION = sql`
   b.organization_id, opp.display_name,
   br.id AS branch_id, br.label AS branch_label,
   s.start_at, cw.start_date, ec.effective_start,
-  q.total_fils, b.created_at, b.confirmed_at
+  q.total_fils, er.entitlement_id AS reserved_entitlement_id,
+  b.created_at, b.confirmed_at
   FROM booking b
   JOIN participant p ON p.id = b.participant_id
   JOIN program pr ON pr.id = b.program_id
@@ -305,7 +315,8 @@ const BOOKING_PROJECTION = sql`
   LEFT JOIN session s ON s.id = b.session_id
   LEFT JOIN camp_week cw ON cw.id = b.camp_week_id
   LEFT JOIN enrolment_cohort ec ON ec.id = b.cohort_id
-  LEFT JOIN branch br ON br.id = COALESCE(s.branch_id, cw.branch_id, ec.branch_id)`;
+  LEFT JOIN branch br ON br.id = COALESCE(s.branch_id, cw.branch_id, ec.branch_id)
+  LEFT JOIN entitlement_reservation er ON er.booking_id = b.id`;
 
 export async function listBookings(
   deps: BookingServiceDeps,

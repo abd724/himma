@@ -356,6 +356,32 @@ export const HTTP_OUTCOMES = {
     code: 'credentialAlreadyUsed',
     message: 'This check-in code has already been used.',
   },
+  // S6-3 — entitlement reservation vocabulary.
+  entitlementFullyCommitted: {
+    statusCode: 409,
+    code: 'entitlementFullyCommitted',
+    message: 'Every remaining session on this pass is already reserved.',
+  },
+  membershipReservationUnavailable: {
+    statusCode: 409,
+    code: 'membershipReservationUnavailable',
+    message: 'Reservations for membership passes are not available yet.',
+  },
+  reservationNotPermitted: {
+    statusCode: 422,
+    code: 'reservationNotPermitted',
+    message: 'This pass does not use reservations.',
+  },
+  occurrenceNotEligible: {
+    statusCode: 422,
+    code: 'occurrenceNotEligible',
+    message: 'This session is not available for this pass.',
+  },
+  invalidRange: {
+    statusCode: 400,
+    code: 'invalidRange',
+    message: 'Provide a bounded date range.',
+  },
   invalidFulfillmentConfig: {
     statusCode: 422,
     code: 'invalidFulfillmentConfig',

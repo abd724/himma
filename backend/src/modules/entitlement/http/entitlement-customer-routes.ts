@@ -10,12 +10,11 @@
  * read. Every route is `authenticatedCustomer`; cross-account ids are
  * not-found-shaped by the services.
  *
- * Deliberately ABSENT (structurally locked by the route-inventory test):
- * reservation quote creation, `confirmEntitlementReservation`, entitlement
- * list/detail ("My Passes & Memberships" — S6-3), credential generation,
- * redemption, attendance (S6-2), and any customer payment-success
- * authority (BOTH trusted paid-confirmation seams stay route-less — the
- * source-level lock scans this directory too).
+ * The S6-2 credential surfaces live here beside acquisition; the S6-3
+ * reservation/Passes/attendance/calendar surfaces live in the sibling
+ * reservation-customer-routes.ts. Deliberately ABSENT everywhere: any
+ * customer payment-success authority (BOTH trusted paid-confirmation seams
+ * stay route-less — the source-level lock scans this directory too).
  */
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance, FastifyReply } from 'fastify';

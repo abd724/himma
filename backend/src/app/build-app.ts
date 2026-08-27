@@ -33,6 +33,7 @@ import { registerBookingCustomerRoutes } from '../modules/booking/http/booking-c
 import { registerAttendanceProviderRoutes } from '../modules/entitlement/http/attendance-provider-routes';
 import { registerFulfillmentProviderRoutes } from '../modules/entitlement/http/fulfillment-provider-routes';
 import { registerEntitlementCustomerRoutes } from '../modules/entitlement/http/entitlement-customer-routes';
+import { registerReservationCustomerRoutes } from '../modules/entitlement/http/reservation-customer-routes';
 import { registerBookingPublicRoutes } from '../modules/booking/http/booking-public-routes';
 import { registerBookingProviderRoutes } from '../modules/booking/http/booking-provider-routes';
 import { registerPaymentWebhookRoutes } from '../modules/payment/http/payment-webhook-routes';
@@ -534,6 +535,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           }
         : {}),
     });
+
+    // S6-3: entitlement reservations + Passes/attendance/reservable reads +
+    // the derived customer calendar (docs/35 §7/§8/§12/§13).
+    registerReservationCustomerRoutes(app, { db: identity.db });
 
     // DEV-ONLY identity token acquisition (RI-1, D-RI-3): a Cognito client
     // stand-in, structurally impossible in production.

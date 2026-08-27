@@ -364,6 +364,12 @@ export type RedeemCredentialResult =
   | { kind: 'forbiddenScope' }
   | { kind: 'entitlementNotActive' }
   | { kind: 'entitlementExhausted' }
+  /** S6-3 invariant (docs/35 §7: used + active commitments ≤ uses_total):
+   *  every unconsumed finite use is committed to upcoming reservations, so
+   *  a WALK-IN cannot claim one — the reserved uses belong to their
+   *  occurrences. Redeeming a reserved use itself is unaffected (its own
+   *  commitment covers it). */
+  | { kind: 'entitlementFullyCommitted' }
   | { kind: 'tooManyAttempts' }
   | { kind: 'idempotencyConflict' };
 
@@ -441,6 +447,25 @@ export async function redeemCredential(
           WHERE entitlement_id = ${context.consumingEntitlementId}`.execute(trx);
         const used = Number(consumed.rows[0]!.n);
         if (used >= row.uses_total) return { kind: 'entitlementExhausted' };
+        // S6-3 (docs/35 §7): a WALK-IN consumes only an UNCOMMITTED use —
+        // active reservation commitments hold their credits for their own
+        // occurrences. This FRESH statement runs under the entitlement
+        // lock (the serialization point); a reserved-use redemption is
+        // covered by its own commitment and skips this gate.
+        if (context.targetKind === 'walkIn') {
+          const committed = await sql<{ n: string }>`
+            SELECT count(*) AS n FROM entitlement_reservation er
+              JOIN booking b ON b.id = er.booking_id
+              JOIN session s ON s.id = b.session_id
+            WHERE er.entitlement_id = ${context.consumingEntitlementId}
+              AND b.state = 'confirmed'
+              AND s.end_at > now()
+              AND NOT EXISTS (SELECT 1 FROM attendance_record ar
+                               WHERE ar.booking_id = er.booking_id)`.execute(trx);
+          if (used + Number(committed.rows[0]!.n) >= row.uses_total) {
+            return { kind: 'entitlementFullyCommitted' };
+          }
+        }
         remaining = row.uses_total - used - 1;
         exhaustedNow = remaining === 0;
       }

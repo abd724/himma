@@ -67,7 +67,7 @@ import {
 // Shared row shapes
 // ---------------------------------------------------------------------------
 
-interface BookingRow {
+export interface BookingRow {
   id: string;
   account_id: string;
   participant_id: string;
@@ -283,7 +283,7 @@ export async function initiateBooking(
 // Confirmation core — §7.3 / §7.4b shape
 // ---------------------------------------------------------------------------
 
-type ConfirmCoreResult =
+export type ConfirmCoreResult =
   | { kind: 'bookingConfirmed'; booking: ConfirmedBookingView }
   | { kind: 'alreadyConfirmed' }
   | { kind: 'invalidBookingState'; state: string }
@@ -296,8 +296,11 @@ type ConfirmCoreResult =
  * The atomic consumption+confirmation core, run under the caller's already-
  * open idempotent transaction. Precondition: NOTHING is locked yet — this
  * function acquires unit → hold → booking in the certified order.
+ * Exported for exactly two owners: the free/paid confirmations here and
+ * the S6-3 `confirmEntitlementReservation` authority (docs/35 §7), which
+ * reuses THIS core — never a second capacity system.
  */
-async function confirmCore(
+export async function confirmCore(
   deps: BookingServiceDeps,
   trx: Trx,
   booking: BookingRow,
@@ -451,7 +454,7 @@ async function confirmCore(
   };
 }
 
-async function readBooking(trx: Trx, bookingId: string): Promise<BookingRow | undefined> {
+export async function readBooking(trx: Trx, bookingId: string): Promise<BookingRow | undefined> {
   return trx
     .selectFrom('booking')
     .select(BOOKING_COLUMNS)
@@ -526,6 +529,26 @@ export async function confirmFreeBooking(
       .where('id', '=', preread.quote_id)
       .executeTakeFirstOrThrow();
     if (Number(quoteRow.total_fils) !== 0) return { kind: 'notFreeQuote' };
+    // S6-3 shape guard (docs/35 §7 Correction A4): this boundary confirms
+    // ordinary capacity purchases ONLY. A zero-total reservation quote is
+    // entitlement commitment authority and must go through
+    // `confirmEntitlementReservation` — never around it. The vocabulary
+    // column exists from 0017 onward; the staged migration-compat suite
+    // legitimately exercises this certified path on the PRE-0017 schema,
+    // where the column's absence is itself the proof that every quote IS a
+    // capacity purchase — so the guard applies exactly where shapes exist.
+    const shapeVocabulary = await sql<{ present: boolean }>`
+      SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'price_quote'
+                        AND column_name = 'commercial_shape') AS present`.execute(trx);
+    if (shapeVocabulary.rows[0]!.present) {
+      const shape = await sql<{ commercial_shape: string }>`
+        SELECT commercial_shape FROM price_quote
+        WHERE id = ${preread.quote_id}`.execute(trx);
+      if (shape.rows[0]!.commercial_shape !== 'capacityPurchase') {
+        return { kind: 'notFreeQuote' };
+      }
+    }
     // D-10 applies exactly to freeTrial-Offer quotes (a plain `free` price
     // option is not a trial; paidTrial is explicitly outside the ruling).
     let freeTrialOfferId: string | null = null;

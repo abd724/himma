@@ -151,6 +151,10 @@ const CustomerBookingSchema = Type.Object({
     effectiveStart: NullableString,
   }),
   price: Type.Object({ totalFils: Type.Integer(), currency: Type.Literal('AED') }),
+  // S6-3 (owner item 26): included-with-pass truth — an entitlement-covered
+  // AED 0 booking must never present as a provider's free product.
+  coveredByEntitlement: Type.Boolean(),
+  entitlementId: Type.Union([Uuid, Type.Null()]),
   createdAt: Type.String(),
   confirmedAt: NullableString,
 });

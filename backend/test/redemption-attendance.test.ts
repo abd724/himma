@@ -1017,7 +1017,15 @@ describe('concurrency proofs', () => {
       ]);
       const kinds = results.map((run) => run.outcome.kind).sort();
       expect(kinds.filter((kind) => kind === 'attendanceRecorded')).toHaveLength(1);
-      expect(kinds).toContain('entitlementExhausted');
+      // S6-3 owning-slice amendment (docs/35 §7; owner item 32): a live
+      // reservation COMMITMENT now holds its credit — the walk-in refuses
+      // `entitlementFullyCommitted` when it locks first, or
+      // `entitlementExhausted` when the reserved redemption already
+      // converted the commitment to consumption. Either way exactly one
+      // attendance exists and it is the RESERVED one.
+      expect(
+        kinds.includes('entitlementExhausted') || kinds.includes('entitlementFullyCommitted'),
+      ).toBe(true);
     } finally {
       await pool.destroy();
     }

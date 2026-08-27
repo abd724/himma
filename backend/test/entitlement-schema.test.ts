@@ -667,10 +667,18 @@ describe('supersession and early-capability locks', () => {
     expect(tables.rows).toHaveLength(4);
   });
 
-  it("no S6-1 service/http source can produce an 'entitlementReservation' quote (S6-3 owns it)", () => {
+  it("the 'entitlementReservation' quote shape is produced ONLY by the S6-3 reservation authority (owning-slice amendment)", () => {
+    // S6-3 (docs/35 §7): the literal may appear ONLY in the entitlement
+    // module's reservation service (creation + confirmation shape checks).
+    // Booking/payment/catalogue/identity code still cannot mint or accept
+    // the shape — confirmFreeBooking guards by requiring 'capacityPurchase'
+    // without ever naming the reservation shape.
     const roots = [
       path.resolve(__dirname, '..', 'src', 'modules'),
       path.resolve(__dirname, '..', 'src', 'app'),
+    ];
+    const allowed = [
+      path.join('modules', 'entitlement', 'services', 'entitlement-reservation.ts'),
     ];
     const offenders: string[] = [];
     const walk = (dir: string): void => {
@@ -679,7 +687,12 @@ describe('supersession and early-capability locks', () => {
         if (statSync(full).isDirectory()) walk(full);
         else if (full.endsWith('.ts')) {
           const source = readFileSync(full, 'utf8');
-          if (source.includes("'entitlementReservation'")) offenders.push(full);
+          if (
+            source.includes("'entitlementReservation'") &&
+            !allowed.some((suffix) => full.endsWith(suffix))
+          ) {
+            offenders.push(full);
+          }
         }
       }
     };

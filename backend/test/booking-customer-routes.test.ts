@@ -147,11 +147,17 @@ describe('structural locks', () => {
       // W5-5 (owning-slice amendment): the converged payment-status read.
       'GET /customer/bookings/:bookingId/payment → authenticatedCustomer',
       // S6-1/S6-2 (owning-slice amendments, docs/35 §9/§13): acquisition +
-      // credential surfaces — reservation and entitlement-list routes stay
-      // ABSENT until S6-3.
+      // credential surfaces. S6-3 (owning-slice amendment, docs/35 §13):
+      // the derived calendar, the Passes/attendance/reservable reads, and
+      // the reservation quote/confirm authority.
+      'GET /customer/calendar → authenticatedCustomer',
       'GET /customer/credentials/:credentialId → authenticatedCustomer',
       'GET /customer/entitlement-purchases/:purchaseId → authenticatedCustomer',
       'GET /customer/entitlement-purchases/:purchaseId/payment → authenticatedCustomer',
+      'GET /customer/entitlements → authenticatedCustomer',
+      'GET /customer/entitlements/:entitlementId → authenticatedCustomer',
+      'GET /customer/entitlements/:entitlementId/attendance → authenticatedCustomer',
+      'GET /customer/entitlements/:entitlementId/reservable-sessions → authenticatedCustomer',
       'GET /customer/holds/:holdId → authenticatedCustomer',
       // RI-1 (owning-slice amendment): customer participant management.
       'GET /customer/participants → authenticatedCustomer',
@@ -163,9 +169,14 @@ describe('structural locks', () => {
       'POST /customer/entitlement-purchases/confirm-free → authenticatedCustomer',
       'POST /customer/entitlement-purchases/initiate → authenticatedCustomer',
       'POST /customer/entitlement-purchases/quote → authenticatedCustomer',
+      // S6-3 (owning-slice amendment): the dedicated reservation
+      // confirmation authority — the ONLY route that reaches
+      // `confirmEntitlementReservation`.
+      'POST /customer/entitlement-reservations/confirm → authenticatedCustomer',
       // S6-2 (owning-slice amendment, docs/35 §9/§13): credential issuance +
-      // observation. NO reservation route exists (S6-3).
+      // observation.
       'POST /customer/entitlements/:entitlementId/credential → authenticatedCustomer',
+      'POST /customer/entitlements/:entitlementId/reservation-quote → authenticatedCustomer',
       'POST /customer/holds → authenticatedCustomer',
       'POST /customer/holds/:holdId/release → authenticatedCustomer',
       'POST /customer/participants → authenticatedCustomer',
@@ -271,6 +282,12 @@ describe('the approved customer journey over the wire', () => {
         'branch',
         'unit',
         'price',
+        // S6-3 (owning-slice amendment, owner item 26): included-with-pass
+        // truth — an entitlement-covered AED 0 booking is distinguishable
+        // from a provider's genuinely free product. Ordinary bookings carry
+        // false/null.
+        'coveredByEntitlement',
+        'entitlementId',
         'createdAt',
         'confirmedAt',
       ].sort(),
