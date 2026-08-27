@@ -107,16 +107,9 @@ export async function addPriceOption(
     const mode = editModeOf(program.listing_state);
     if (mode === 'locked') return { kind: 'lifecycleConflict' as const };
     if (!optionShapeValid(input.option)) return { kind: 'invalidPriceOption' as const };
-
-    // W2-13 recorded gap (STOP-before-migration honored): the 0008
-    // program_revision store's ck_program_revision_option_kind predates the
-    // `membership` kind, so a review-gated membership option change cannot
-    // be represented until the owner approves the one-line additive
-    // widening migration. Refuse typed — membership options are created on
-    // draft/changes_requested listings (the normal new-product path).
-    if (mode === 'reviewGated' && input.option.kind === 'membership') {
-      return { kind: 'lifecycleConflict' as const };
-    }
+    // Membership traverses the ordinary revision path since 0019 widened
+    // ck_program_revision_option_kind (the W2-13 typed refusal that stood
+    // in for the pre-0019 CHECK is gone) — no kind is special-cased here.
 
     if (mode === 'reviewGated') {
       const revision = await createSensitiveRevision(trx, scope, actor, input.programId, {
@@ -229,11 +222,6 @@ export async function updatePriceOption(
         input.patch.sessionsCount !== undefined ? input.patch.sessionsCount : option.sessions_count,
     };
     if (!optionShapeValid(merged)) return { kind: 'invalidPriceOption' as const };
-    // W2-13 recorded gap: see addPriceOption — review-gated membership-kind
-    // changes await the owner-approved program_revision widening.
-    if (mode === 'reviewGated' && input.patch.kind === 'membership') {
-      return { kind: 'lifecycleConflict' as const };
-    }
 
     if (mode === 'reviewGated') {
       const revision = await createSensitiveRevision(trx, scope, actor, input.programId, {

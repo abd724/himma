@@ -326,6 +326,71 @@ describe('fulfillment configuration (live port, real backend)', () => {
     ).toEqual({ kind: 'invalidFulfillmentConfig' });
   });
 
+  test('membership traverses the ORDINARY review-gated revision lifecycle (0019) while the immutable fulfillment truth stays untouched', async () => {
+    const user = await provisionUser();
+    const org = await createProviderOrg(harness.testDb.db, { branches: 1 });
+    await addMembership(harness.testDb.db, user.userId, org.orgId, 'owner');
+    const session = await signedIn(user);
+    const created = await session.editor.createProgram(org.orgId, {
+      titleEn: 'Membership revision listing',
+      activityTypeId,
+      setting: 'indoor',
+      genderEligibility: 'mixed',
+    });
+    if (created.kind !== 'programCreated') throw new Error(created.kind);
+    const programId = created.program.id;
+    const first = await session.editor.addPriceOption(org.orgId, programId, {
+      kind: 'membership',
+      amountFils: 0,
+      sessionsCount: null,
+      labelEn: 'Founders pass',
+    });
+    if (first.kind !== 'optionAdded') throw new Error(first.kind);
+    const f1 = await session.fulfillment.setFulfillment(org.orgId, programId, first.option.id, {
+      usageKind: 'finite',
+      usesTotal: 3,
+      validityKind: 'daysFromConfirmation',
+      validityDays: 30,
+      reservationRequired: false,
+      walkInAllowed: true,
+    });
+    if (f1.kind !== 'revisionCreated') throw new Error(f1.kind);
+
+    // Place the listing into the review-gated state (legal stepwise SQL
+    // placement per the W2-12C2 precedent; the moderated approval truth
+    // itself is certified in the backend membership-revision suite over
+    // the real admin routes).
+    for (const step of ['submitted', 'in_review', 'approved'] as const) {
+      await sql`UPDATE program SET listing_state = ${step}
+                WHERE id = ${programId}`.execute(harness.testDb.db);
+    }
+    await sql`UPDATE program SET listing_state = 'published', published_at = now()
+              WHERE id = ${programId}`.execute(harness.testDb.db);
+
+    // The live editor takes a review-gated membership ADD as an ORDINARY
+    // revision — the pre-0019 false limitation (typed lifecycleConflict
+    // standing in for the old CHECK) is gone.
+    const gated = await session.editor.addPriceOption(org.orgId, programId, {
+      kind: 'membership',
+      amountFils: 45_000,
+      sessionsCount: null,
+      labelEn: 'Club membership',
+    });
+    expect(gated.kind).toBe('revisionSubmitted');
+    const revision = await sql<{ option_kind: string | null; state: string }>`
+      SELECT option_kind, state FROM program_revision
+      WHERE program_id = ${programId}`.execute(harness.testDb.db);
+    expect(revision.rows).toEqual([{ option_kind: 'membership', state: 'submitted' }]);
+
+    // The IMMUTABLE fulfillment truth is untouched by the listing revision
+    // lifecycle: F1 remains the active revision the editor loads.
+    const loaded = await session.fulfillment.loadFulfillment(org.orgId, programId, first.option.id);
+    if (loaded.kind !== 'fulfillment') throw new Error(loaded.kind);
+    expect(loaded.active?.revisionId).toBe(f1.revision.revisionId);
+    expect(loaded.active?.usesTotal).toBe(3);
+    expect(loaded.active?.state).toBe('active');
+  });
+
   test('AUTHORIZATION: attendance.manage grants NOTHING on the fulfillment editor — front desk and coach are refused', async () => {
     const owner = await provisionUser();
     const org = await createProviderOrg(harness.testDb.db, { branches: 1 });

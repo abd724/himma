@@ -297,7 +297,7 @@ describe('fulfillment configuration editor (immutable revisions)', () => {
     expect(foreign.statusCode).toBe(422);
   });
 
-  it('membership price options are creatable on draft listings (incl. genuinely FREE ones); the review-gated revision path refuses typed pending the owner-approved widening', async () => {
+  it('membership price options are creatable on draft listings (incl. genuinely FREE ones); the review-gated path routes through the ORDINARY revision lifecycle', async () => {
     // Draft listing: direct edit — membership (and a zero-price package)
     // create through the certified editor path.
     const draft = await createBookingFixture(testDb.db); // stays draft
@@ -318,16 +318,22 @@ describe('fulfillment configuration editor (immutable revisions)', () => {
     );
     expect(freeMembership.statusCode).toBe(200);
     expect(freeMembership.json().option.amountFils).toBe(0);
-    // Published (review-gated) listing: the 0008 program_revision kind CHECK
-    // predates `membership` — the RECORDED W2-13 gap refuses typed (409)
-    // instead of representing the unrepresentable (migration awaits owner).
+    // Published (review-gated) listing: since 0019 widened the 0008
+    // program_revision kind CHECK, a membership option change is
+    // REPRESENTED through the ordinary certified revision path — the
+    // W2-13 temporary typed refusal is gone.
     const gated = await inject(
       'POST',
       `${BASE()}/listings/${f.programId}/price-options`,
       ownerBearer,
       { kind: 'membership', amountFils: 45000 },
     );
-    expect(gated.statusCode).toBe(409);
+    expect(gated.statusCode).toBe(200);
+    expect(gated.json().status).toBe('revisionSubmitted');
+    const revision = await sql<{ option_kind: string | null; state: string }>`
+      SELECT option_kind, state FROM program_revision
+      WHERE program_id = ${f.programId} AND option_kind = 'membership'`.execute(testDb.db);
+    expect(revision.rows[0]).toEqual({ option_kind: 'membership', state: 'submitted' });
   });
 });
 

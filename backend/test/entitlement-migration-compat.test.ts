@@ -42,6 +42,8 @@ import { assertSafeTestDatabase, TEST_DATABASE_PREFIX } from '../src/db/safety';
 import { confirmFreeBooking } from '../src/modules/booking/services/booking-lifecycle';
 import { claimHold } from '../src/modules/booking/services/hold-claim';
 import { requestQuote } from '../src/modules/booking/services/quote-service';
+import { addPriceOption } from '../src/modules/catalogue/services/price-option-management';
+import { capabilitiesForRole } from '../src/modules/provider/provider-capabilities';
 import { confirmFreeEntitlementPurchase } from '../src/modules/entitlement/services/entitlement-acquisition';
 import { issueRedemptionCredential } from '../src/modules/entitlement/services/redemption-credential';
 import { requestEntitlementQuote } from '../src/modules/entitlement/services/entitlement-quote';
@@ -182,6 +184,7 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
   expect(applied.applied).toEqual([
     '0017_commercial_target_and_entitlement_foundation',
     '0018_redemption_attendance_reservation',
+    '0019_membership_program_revision_kind',
   ]);
   const verified = await verifyMigrations(config);
   expect(verified.problems).toEqual([]);
@@ -215,9 +218,10 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
   });
   expect(postConfirm.outcome.kind).toBe('bookingConfirmed');
 
-  // ---- 5. DOWN (both S6 migrations — no S6-native data exists, so both
-  // preflights pass) restores the exact legacy schema; rows survive.
-  await runMigrationsDown(config, { count: 2, quiet: true });
+  // ---- 5. DOWN (all three S6/W2-13 migrations — no S6-native data and no
+  // membership revisions exist, so every preflight passes) restores the
+  // exact legacy schema; rows survive.
+  await runMigrationsDown(config, { count: 3, quiet: true });
   const legacyTables = await sql<{ table_name: string }>`
     SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public'
@@ -239,6 +243,7 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
   expect(reapplied.applied).toEqual([
     '0017_commercial_target_and_entitlement_foundation',
     '0018_redemption_attendance_reservation',
+    '0019_membership_program_revision_kind',
   ]);
   expect((await verifyMigrations(config)).problems).toEqual([]);
 });
@@ -309,17 +314,21 @@ it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails close
 
   // ---- The downgrade is REFUSED by the explicit 0017 preflight — the
   // FIRST statement of that down migration, not an accidental later FK
-  // failure. (0018, holding no S6-2-native data, legally reverts first;
-  // its structure is restored below.)
-  await expect(runMigrationsDown(config, { count: 2, quiet: true })).rejects.toThrow(
+  // failure. (0019 with no membership revisions and 0018 with no
+  // S6-2-native data legally revert first; their structure is restored
+  // below.)
+  await expect(runMigrationsDown(config, { count: 3, quiet: true })).rejects.toThrow(
     /Downgrade of 0017 refused: S6-1-native data exists/,
   );
 
   // ---- NOTHING commercial was destroyed or partially modified: the
-  // schema rests at 0017 (only the empty 0018 structure reverted; verify
-  // reports exactly that one pending migration and zero problems)…
+  // schema rests at 0017 (only the empty 0018/0019 structure reverted;
+  // verify reports exactly those pending migrations and zero problems)…
   const verified = await verifyMigrations(config);
-  expect(verified.pending).toEqual(['0018_redemption_attendance_reservation']);
+  expect(verified.pending).toEqual([
+    '0018_redemption_attendance_reservation',
+    '0019_membership_program_revision_kind',
+  ]);
   expect(verified.problems).toEqual([]);
   // Restore head for the suite's remaining proofs.
   await runMigrationsUp(config, { quiet: true });
@@ -375,17 +384,68 @@ it('S6-2-native downgrade REFUSAL: once credential/attendance state exists, 0018
   if (issued.outcome.kind !== 'credentialIssued') throw new Error(issued.outcome.kind);
   const credentialId = issued.outcome.credential.credentialId;
 
-  // The 0018 preflight refuses as the FIRST down statement.
-  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+  // The 0018 preflight refuses as the FIRST down statement (0019, with no
+  // membership revisions, legally reverts first and is restored below).
+  await expect(runMigrationsDown(config, { count: 2, quiet: true })).rejects.toThrow(
     /Downgrade of 0018 refused: S6-2-native data exists/,
   );
-  // Schema rests at head; nothing partially destroyed; the credential and
-  // its entitlement remain queryable and unchanged.
+  // Nothing partially destroyed: only the 0019 constraint widening
+  // reverted; the credential and its entitlement remain queryable and
+  // unchanged. Restore head for the remaining proofs.
   const verified = await verifyMigrations(config);
-  expect(verified.pending).toEqual([]);
+  expect(verified.pending).toEqual(['0019_membership_program_revision_kind']);
   expect(verified.problems).toEqual([]);
+  await runMigrationsUp(config, { quiet: true });
   const survivor = await sql<{ state: string; entitlement_id: string }>`
     SELECT state, entitlement_id FROM redemption_credential
     WHERE id = ${credentialId}`.execute(db);
   expect(survivor.rows[0]).toEqual({ state: 'live', entitlement_id: entitlementId });
+});
+
+it('0019 SAFE downgrade with no membership revision state; REFUSAL once a genuine membership ProgramRevision exists', async () => {
+  // ---- Safe downgrade: no program_revision row carries `membership`, so
+  // the 0019 down restores the exact pre-correction constraint cleanly.
+  await runMigrationsDown(config, { count: 1, quiet: true });
+  let verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual(['0019_membership_program_revision_kind']);
+  expect(verified.problems).toEqual([]);
+  // The restored legacy CHECK genuinely refuses membership again.
+  const f = await createBookingFixture(db);
+  await publishProgram(f);
+  await expect(
+    sql`INSERT INTO program_revision (id, program_id, organization_id, option_kind, option_amount_fils, submitted_by)
+        VALUES (gen_random_uuid(), ${f.programId}, ${f.org.orgId}, 'membership', 45000, gen_random_uuid())`.execute(
+      db,
+    ),
+  ).rejects.toThrow(/ck_program_revision_option_kind/);
+  await runMigrationsUp(config, { quiet: true });
+
+  // ---- Genuine membership ProgramRevision through the REAL provider
+  // path: a review-gated (published) listing takes a membership option
+  // ADD as an ordinary revision — the W2-13 typed refusal is gone.
+  const scope = {
+    organizationId: f.org.orgId,
+    membershipId: '00000000-0000-7000-8000-000000000019',
+    role: 'owner' as const,
+    capabilities: capabilitiesForRole('owner'),
+    branchScope: 'all' as const,
+    organizationState: 'live' as const,
+  };
+  const added = await addPriceOption({ db }, scope, { userId: '00000000-0000-7000-8000-000000000020' }, {
+    programId: f.programId,
+    option: { kind: 'membership', amountFils: 45000 },
+  });
+  if (added.kind !== 'revisionSubmitted') throw new Error(added.kind);
+
+  // ---- The 0019 preflight refuses as the FIRST down statement — the
+  // membership review history is never deleted, rewritten, or discarded.
+  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+    /Downgrade of 0019 refused: .*membership/,
+  );
+  verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual([]);
+  expect(verified.problems).toEqual([]);
+  const survivor = await sql<{ option_kind: string | null; state: string }>`
+    SELECT option_kind, state FROM program_revision WHERE id = ${added.revisionId}`.execute(db);
+  expect(survivor.rows[0]).toEqual({ option_kind: 'membership', state: 'submitted' });
 });

@@ -338,6 +338,13 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'function', name: 'enforce_redemption_credential_transition' },
     { kind: 'function', name: 'enforce_attendance_record_shape' },
   ],
+  // 0019 redefines ck_program_revision_option_kind in place (the 0017
+  // widening convention keeps the canonical constraint name); presence is
+  // asserted, and the vocabulary itself is proven by the membership
+  // revision suite.
+  '0019_membership_program_revision_kind': [
+    { kind: 'constraint', name: 'ck_program_revision_option_kind' },
+  ],
 };
 
 export interface VerificationReport {
