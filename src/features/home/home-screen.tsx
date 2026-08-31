@@ -89,18 +89,32 @@ export function HomeScreen() {
           />
         );
       }
-      case 'upcoming':
+      case 'upcoming': {
+        // RI-5: EXPLICIT server identifiers only — a Booking-backed entry
+        // opens Booking detail, an Entitlement-owned occurrence opens the
+        // Pass; fixture entries (neither id) stay inert.
+        const entry = section.entry;
+        const openEntry =
+          entry.bookingId !== undefined
+            ? () => router.push(`/bookings/${entry.bookingId}` as never)
+            : entry.entitlementId !== undefined
+              ? () => router.push(`/passes/${entry.entitlementId}` as never)
+              : undefined;
         return (
           <View key="upcoming">
             <SectionHeader title={SECTION_TITLES.upcoming} />
-            <UpcomingActivityCard entry={section.entry} />
+            <UpcomingActivityCard entry={entry} onPress={openEntry} />
           </View>
         );
+      }
       case 'week':
         return (
           <View key="week">
             <SectionHeader title={SECTION_TITLES.week} />
-            <WeekStrip days={section.days} />
+            <WeekStrip
+              days={section.days}
+              onPress={() => router.push('/bookings?view=calendar' as never)}
+            />
           </View>
         );
       case 'plans':
@@ -108,7 +122,15 @@ export function HomeScreen() {
           <View key="plans" style={styles.planList}>
             <SectionHeader title={SECTION_TITLES.plans} />
             {section.plans.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} />
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                onPress={
+                  plan.entitlementId === undefined
+                    ? undefined
+                    : () => router.push(`/passes/${plan.entitlementId}` as never)
+                }
+              />
             ))}
           </View>
         );

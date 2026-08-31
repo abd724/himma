@@ -6,16 +6,23 @@ import { StyleSheet, Text, View } from 'react-native';
 /**
  * Compact 7-day schedule preview — docs/18 §4.4. Only days with booked
  * sessions render; rows grow with Dynamic Type rather than truncating.
- * Opens the Bookings tab once HMA-006 ships; inert until then.
+ * RI-5: opens the unified Calendar (the same backend authority these rows
+ * derive from); fixture-only usage may stay inert.
  */
-export function WeekStrip({ days }: { days: WeekDay[] }) {
+export function WeekStrip({ days, onPress }: { days: WeekDay[]; onPress?: () => void }) {
   return (
     <View style={styles.wrap}>
       {/* accessible={false}: the strip is a list — each session announces
-          itself; a merged parent label would hide every row from VoiceOver.
-          No navigation promise in the label while the card is inert (audit
-          defect A2) — restore a destination hint when Bookings ships. */}
-      <PressableFeedback accessible={false} accessibilityLabel="Your week" style={styles.card}>
+          itself (with the calendar destination as its hint); a merged
+          parent label would hide every row from VoiceOver. Tapping
+          anywhere on the card opens the Calendar (audit defect A2
+          resolved now that the Calendar destination ships). */}
+      <PressableFeedback
+        accessible={false}
+        accessibilityLabel="Your week"
+        onPress={onPress}
+        style={styles.card}
+      >
         {days.map((day, index) => (
           <View
             key={day.dayOffset}
@@ -31,6 +38,7 @@ export function WeekStrip({ days }: { days: WeekDay[] }) {
                   style={styles.session}
                   accessible
                   accessibilityLabel={`${day.dayLabel}, ${entry.timeLabel}: ${entry.programTitle} for ${entry.participantLabel === 'You' ? 'you' : entry.participantLabel}`}
+                  accessibilityHint={onPress === undefined ? undefined : 'Opens your calendar'}
                 >
                   <Text style={styles.sessionTitle} numberOfLines={2}>
                     {entry.programTitle}

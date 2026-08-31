@@ -29,6 +29,7 @@ import { CaptureMailSender } from '../src/modules/identity/mail/mail-sender';
 import { DevPasswordIdentityProvider } from '../src/modules/identity/providers/dev/dev-password-identity';
 import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
 import { registerDevCheckinActor } from './dev-checkin-actor';
+import { registerDevFulfillmentActor } from './dev-fulfillment-actor';
 import { registerDevHostedCheckout } from './dev-hosted-checkout';
 import { cliConfig, fail } from './cli-env';
 
@@ -119,6 +120,10 @@ async function main(): Promise<void> {
   // RI-4 — the dev-only provider check-in ACTOR (real S6-2 services under
   // a real front-desk membership; Playwright's stand-in for the desk).
   registerDevCheckinActor(app, { db });
+  // RI-5 — the dev-only fulfillment-revision ACTOR (the real W2-13
+  // supersede-and-insert service under a real owner membership; the
+  // Playwright schedule-change journey's stand-in for the provider).
+  registerDevFulfillmentActor(app, { db });
 
   await app.ready();
   await app.listen({ port, host });

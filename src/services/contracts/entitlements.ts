@@ -3,7 +3,8 @@
  * backend (docs/35 §8/§9/§13; docs/24 Amendments A4–A6): entitlement
  * acquisition (free + paid W5), the Passes projections, entitlement
  * reservation over the certified S5 hold, redemption credentials, and the
- * bounded occurrence read used ONLY for camp/cohort check-in selection.
+ * bounded unified Calendar read (RI-5: the customer's cross-provider
+ * schedule surface; also camp/cohort check-in occurrence selection).
  *
  * Truth rules (binding):
  * - Every number here is SERVER-derived. The app never computes `used`,
@@ -211,27 +212,52 @@ export interface CredentialStatus {
 }
 
 // ---------------------------------------------------------------------------
-// Bounded occurrence read (RI-4 scope: check-in selection ONLY — the
-// unified Calendar UI is RI-5; this contract types the read because the
-// canonical camp/cohort occurrence identity is exactly this server
-// projection, docs/35 §28/§30).
+// The bounded unified Calendar read (S6-3 §12; RI-5) — the ONE aggregation
+// authority for the customer's cross-provider schedule. The server derives
+// every event (confirmed Session Bookings, camp daily occurrences, cohort
+// recurring occurrences minus exceptions, immutable membership schedule
+// occurrences); the app renders the list verbatim and NEVER merges
+// Bookings/Passes/recurring rules into a competing calendar client-side.
+// RI-4 additionally uses it for camp/cohort check-in occurrence selection.
 // ---------------------------------------------------------------------------
+
+export type CalendarSourceType =
+  | 'sessionBooking'
+  | 'campWeekOccurrence'
+  | 'cohortOccurrence'
+  | 'membershipOccurrence';
+
+/** Customer-facing meaning: an ordinarily booked activity, a session
+ *  included with a Pass (`reservedWithPass` — ONE event, never a Booking
+ *  event plus a Pass event), or a purchased membership schedule occurrence
+ *  (`includedSchedule`). */
+export type CalendarEventContext = 'booked' | 'reservedWithPass' | 'includedSchedule';
 
 export interface CalendarOccurrence {
   /** OPAQUE server identity — usable as a React key / for deduplication
    *  ONLY. The app never parses its components; the canonical occurrence
-   *  authority arrives in the explicit `occurrence` field below. */
+   *  authority arrives in the explicit `occurrence` field below and
+   *  navigation uses the explicit `bookingId`/`entitlementId`. */
   eventKey: string;
-  sourceType: string;
+  sourceType: CalendarSourceType;
+  context: CalendarEventContext;
+  participant: { id: string; firstName: string };
+  program: { id: string; titleEn: string };
+  provider: { id: string; displayName: string };
+  branch: { id: string; label: string } | null;
   startAt: string;
   endAt: string;
-  bookingId?: string;
-  entitlementId?: string;
+  /** CampWeek presentation metadata: the overall span each daily
+   *  occurrence belongs to — never a replacement for occurrence truth and
+   *  never a source to generate dates from. */
+  span?: { startDate: string; endDate: string; dailyStartTime: string; dailyEndTime: string };
   /** The EXPLICIT canonical occurrence pair (camp/cohort Booking
    *  occurrences) — authored by the backend occurrence authority and
    *  passed back to credential issuance VERBATIM: no parsing, no timezone
    *  arithmetic, no reconstruction. */
   occurrence?: OccurrenceSelection;
+  bookingId?: string;
+  entitlementId?: string;
 }
 
 export interface EntitlementsApi {
@@ -275,6 +301,7 @@ export interface EntitlementsApi {
   ): Promise<IssueCredentialOutcome>;
   credentialStatus(credentialId: string): Promise<CredentialStatus | undefined>;
 
-  /** Bounded server occurrence read (check-in selection only in RI-4). */
+  /** The bounded unified Calendar read — max 62 days per request; the
+   *  server is the one aggregation/deduplication authority. */
   listOccurrences(input: { from: string; to: string }): Promise<CalendarOccurrence[]>;
 }

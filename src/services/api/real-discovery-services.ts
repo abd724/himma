@@ -56,7 +56,9 @@ import type {
   HomeFeedBuildInput,
   HomeFeedService,
   HomeSection,
+  WeekDay,
 } from '@/services/contracts/home-feed';
+import type { ScheduleEntry } from '@/services/contracts/schedule';
 import type { MapService, MapView } from '@/services/contracts/map';
 import type {
   PreSearchContent,
@@ -685,6 +687,24 @@ export function createRealDiscoverFeedService(
 // Home feed
 // ---------------------------------------------------------------------------
 
+/** RI-5 — the 7-day "Your week" preview from the REAL schedule entries
+ *  (already derived from the unified Calendar read): non-empty days with
+ *  offsets 0–6, in order. Pure grouping — nothing fabricated. */
+export function buildScheduleWeek(entries: ScheduleEntry[]): WeekDay[] {
+  const days = new Map<number, WeekDay>();
+  for (const entry of entries) {
+    if (entry.dayOffset < 0 || entry.dayOffset > 6) continue;
+    const day = days.get(entry.dayOffset) ?? {
+      dayOffset: entry.dayOffset,
+      dayLabel: entry.dayLabel,
+      entries: [],
+    };
+    day.entries.push(entry);
+    days.set(entry.dayOffset, day);
+  }
+  return [...days.values()].sort((a, b) => a.dayOffset - b.dayOffset);
+}
+
 export function createRealHomeFeedService(
   api: DiscoveryApi,
   taxonomy: TaxonomyCache,
@@ -713,10 +733,13 @@ export function createRealHomeFeedService(
       }
 
       // Real schedule surfaces (upcoming/week/plans) render only from real
-      // account truth — empty until RI-3/RI-5 wire bookings/passes.
+      // account truth (RI-5: entries derive from the unified Calendar read
+      // and plans from the real Entitlement family) — never fabricated.
       if (input.scheduleEntries.length > 0) {
         const first = input.scheduleEntries[0]!;
         sections.push({ kind: 'upcoming', entry: first });
+        const days = buildScheduleWeek(input.scheduleEntries);
+        if (days.length > 0) sections.push({ kind: 'week', days });
       }
       if (input.activePlans.length > 0) {
         sections.push({ kind: 'plans', plans: input.activePlans });

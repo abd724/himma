@@ -1,11 +1,13 @@
 /**
- * RI-3/RI-4 — My Bookings (HMA-006; owner RI-3 §20) over the certified
- * own-booking list, now paired with the REAL Passes & Memberships area
- * (RI-4): one screen, two segments — Bookings = scheduled activities,
- * Passes = purchased reusable access. Truthful sections only: pending
- * payments needing a status check, upcoming confirmed, past, and quiet
- * not-completed history. No cancellation/refund UI (no such customer
- * domain exists).
+ * RI-3/RI-4/RI-5 — My Bookings (HMA-006; owner RI-3 §20) over the
+ * certified own-booking list, paired with the REAL Passes & Memberships
+ * area (RI-4) and the unified Himma Calendar (RI-5): one screen, the
+ * three approved views — Bookings = scheduled activities, Passes =
+ * purchased reusable access, Calendar = the cross-provider activity
+ * schedule (HMA-006 "Calendar or agenda"). Truthful sections only:
+ * pending payments needing a status check, upcoming confirmed, past, and
+ * quiet not-completed history. No cancellation/refund UI (no such
+ * customer domain exists).
  */
 import { EmptyFeedCard } from '@/components/domain/empty-feed-card';
 import { ErrorStateCard } from '@/components/domain/error-state-card';
@@ -20,6 +22,7 @@ import { commerceApi } from '@/services/composition';
 import type { CustomerBooking } from '@/services/contracts/commerce';
 import { useAuth } from '@/state/auth-context';
 import { subscribeBookingsChanged } from '@/state/bookings-events';
+import { CalendarView } from '@/features/calendar/calendar-view';
 import { PassesList } from '@/features/passes/passes-list';
 import { colors, dockTokens, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,21 +31,24 @@ import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+type Segment = 'bookings' | 'passes' | 'calendar';
+
 export function MyBookingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const auth = useAuth();
-  const params = useLocalSearchParams<{ view?: string }>();
+  const params = useLocalSearchParams<{ view?: string; date?: string }>();
 
   const [bookings, setBookings] = useState<CustomerBooking[] | null>(null);
   const [failed, setFailed] = useState(false);
   // The segment derives from the route param unless the customer tapped a
   // tab SINCE that param value arrived — no state-sync effect needed
   // (react-hooks v6: setState never runs inside an effect here).
-  const paramSegment: 'bookings' | 'passes' = params.view === 'passes' ? 'passes' : 'bookings';
+  const paramSegment: Segment =
+    params.view === 'passes' ? 'passes' : params.view === 'calendar' ? 'calendar' : 'bookings';
   const [selection, setSelection] = useState<{
     forParam: string | undefined;
-    segment: 'bookings' | 'passes';
+    segment: Segment;
   } | null>(null);
   const segment =
     selection !== null && selection.forParam === params.view ? selection.segment : paramSegment;
@@ -89,7 +95,7 @@ export function MyBookingsScreen() {
     <View style={styles.root}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <Text style={styles.heading} accessibilityRole="header">
-          {segment === 'passes' ? 'Passes & Memberships' : 'Bookings'}
+          {segment === 'passes' ? 'Passes & Memberships' : segment === 'calendar' ? 'Calendar' : 'Bookings'}
         </Text>
         {auth.status === 'authenticated' ? (
           <View style={styles.segments} accessibilityRole="tablist">
@@ -97,6 +103,7 @@ export function MyBookingsScreen() {
               [
                 { id: 'bookings' as const, label: 'Bookings' },
                 { id: 'passes' as const, label: 'Passes' },
+                { id: 'calendar' as const, label: 'Calendar' },
               ]
             ).map((entry) => (
               <PressableFeedback
@@ -126,6 +133,10 @@ export function MyBookingsScreen() {
             <BookingsSkeleton />
           ) : auth.status === 'authenticated' && segment === 'passes' ? (
             <PassesList />
+          ) : auth.status === 'authenticated' && segment === 'calendar' ? (
+            <CalendarView
+              initialDate={typeof params.date === 'string' ? params.date : undefined}
+            />
           ) : auth.status !== 'authenticated' ? (
             <View style={styles.guestCard} testID="bookings-guest">
               <View style={styles.guestIcon}>

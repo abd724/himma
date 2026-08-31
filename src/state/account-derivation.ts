@@ -5,19 +5,25 @@
  *
  * - guest → the empty guest account (no participants, no schedule);
  * - authenticated → real participants mapped into the domain shape.
- *   RI-3: `scheduleEntries` now derive from REAL confirmed bookings (the
- *   certified own-booking read) — upcoming only, never fabricated. Active
- *   plans stay truthfully EMPTY until S6/RI-4 (docs/18 §10 no-history).
+ *   RI-5: `scheduleEntries` derive from the SAME bounded unified Calendar
+ *   read the Calendar surface consumes (the one backend aggregation
+ *   authority — sessions, reserved sessions, camp daily occurrences,
+ *   cohort occurrences, membership schedule occurrences), and
+ *   `activePlans` derive from the REAL Entitlement family (RI-4). Nothing
+ *   is fabricated: a flexible pass with no reservation contributes no
+ *   schedule dates, and a plan carries a next-session line only when the
+ *   server reports one.
  *
  * `participantsReady` lets participant-dependent screens hold their
  * loading state until the real list arrived, instead of flashing a wrong
  * empty/ineligible state.
  */
-import { bookingStart, categorizeBooking } from '@/features/bookings/booking-presentation';
+import { eventDay, eventTimeLabel, civilDate } from '@/features/calendar/calendar-presentation';
+import { finiteHeadline } from '@/features/passes/passes-presentation';
 import { presentationImageKey } from '@/services/api/discovery-mapping';
-import type { CustomerBooking } from '@/services/contracts/commerce';
+import type { CalendarOccurrence, CustomerEntitlement } from '@/services/contracts/entitlements';
 import type { ParticipantProfile } from '@/services/contracts/identity';
-import type { ResolvedAccount, ScheduleEntry } from '@/services/contracts/schedule';
+import type { ActivePlan, ResolvedAccount, ScheduleEntry } from '@/services/contracts/schedule';
 import type { Participant } from '@/types/domain';
 
 export const GUEST_ACCOUNT: ResolvedAccount = {
@@ -40,58 +46,111 @@ export function toDomainParticipant(profile: ParticipantProfile): Participant {
   };
 }
 
-/** RI-3: a confirmed upcoming booking → the Home schedule entry shape. */
+function dayOffsetOf(day: string, today: string): number {
+  const [y1, m1, d1] = today.split('-').map(Number);
+  const [y2, m2, d2] = day.split('-').map(Number);
+  return Math.round(
+    (new Date(y2!, m2! - 1, d2!).getTime() - new Date(y1!, m1! - 1, d1!).getTime()) / 86_400_000,
+  );
+}
+
+/**
+ * RI-5: unified Calendar events → the Home schedule entry shape. The
+ * server list renders verbatim (already deduplicated and expanded);
+ * upcoming/ongoing events only, keyed by the OPAQUE event key.
+ */
 export function toScheduleEntries(
-  bookings: CustomerBooking[],
+  events: CalendarOccurrence[],
   selfParticipantId: string | undefined,
   now: Date = new Date(),
 ): ScheduleEntry[] {
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
+  const today = civilDate(now);
   const entries: ScheduleEntry[] = [];
-  for (const booking of bookings) {
-    if (categorizeBooking(booking, now) !== 'upcoming') continue;
-    const start = bookingStart(booking);
-    if (start === null) continue;
-    const dayOffset = Math.round(
-      (new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime() -
-        startOfToday.getTime()) /
-        86_400_000,
-    );
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (seen.has(event.eventKey)) continue;
+    seen.add(event.eventKey);
+    if (new Date(event.endAt).getTime() <= now.getTime()) continue;
+    const day = eventDay(event);
+    const dayOffset = dayOffsetOf(day, today);
+    if (dayOffset < 0) continue;
+    const [year, month, dayNo] = day.split('-').map(Number);
     const dayLabel =
       dayOffset === 0
         ? 'Today'
         : dayOffset === 1
           ? 'Tomorrow'
-          : start.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
-    const timeLabel =
-      booking.unit.startAt !== null
-        ? start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-        : booking.unit.kind === 'campWeek'
-          ? 'Camp week'
-          : 'Enrolment';
+          : new Date(year!, month! - 1, dayNo!).toLocaleDateString('en-US', {
+              weekday: 'short',
+              day: 'numeric',
+            });
     entries.push({
-      id: booking.bookingId,
-      programId: booking.program.id,
+      id: event.eventKey,
+      programId: event.program.id,
       dayOffset,
       dayLabel,
-      timeLabel,
-      participantId: booking.participant.id,
+      timeLabel: eventTimeLabel(event),
+      participantId: event.participant.id,
       participantLabel:
-        booking.participant.id === selfParticipantId ? 'You' : booking.participant.firstName,
-      programTitle: booking.program.titleEn,
-      providerName: booking.provider.displayName,
-      areaLabel: booking.branch?.label ?? '',
-      imageKey: presentationImageKey('fitness', booking.program.id),
+        event.participant.id === selfParticipantId ? 'You' : event.participant.firstName,
+      programTitle: event.program.titleEn,
+      providerName: event.provider.displayName,
+      areaLabel: event.branch?.label ?? '',
+      imageKey: presentationImageKey('fitness', event.program.id),
+      ...(event.bookingId !== undefined ? { bookingId: event.bookingId } : {}),
+      ...(event.entitlementId !== undefined ? { entitlementId: event.entitlementId } : {}),
     });
   }
-  return entries.sort((a, b) => a.dayOffset - b.dayOffset);
+  return entries.sort((a, b) =>
+    a.dayOffset !== b.dayOffset ? a.dayOffset - b.dayOffset : a.id < b.id ? -1 : 1,
+  );
+}
+
+/**
+ * RI-5: REAL active Passes/Memberships → the Home plan card shape. Server
+ * truths only: the finite headline or "Unlimited", and a next-session
+ * line only from the server's `nextReservedSessionAt` (a pass with no
+ * reservation shows no fake date).
+ */
+export function toActivePlans(
+  entitlements: CustomerEntitlement[],
+  selfParticipantId: string | undefined,
+): ActivePlan[] {
+  return entitlements
+    .filter((entitlement) => entitlement.status === 'active')
+    .map((entitlement) => {
+      const next =
+        entitlement.nextReservedSessionAt === null
+          ? undefined
+          : new Date(entitlement.nextReservedSessionAt).toLocaleDateString('en-US', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+            });
+      return {
+        id: entitlement.entitlementId,
+        programId: entitlement.program.id,
+        participantId: entitlement.participant.id,
+        participantLabel:
+          entitlement.participant.id === selfParticipantId
+            ? 'You'
+            : entitlement.participant.firstName,
+        kind: (entitlement.optionKind === 'package' ? 'package' : 'membership') as ActivePlan['kind'],
+        programTitle: entitlement.program.titleEn,
+        providerName: entitlement.provider.displayName,
+        progressLabel:
+          entitlement.finite !== undefined ? finiteHeadline(entitlement.finite) : 'Unlimited',
+        ...(next !== undefined ? { nextSessionLabel: next } : {}),
+        entitlementId: entitlement.entitlementId,
+      };
+    });
 }
 
 export function deriveRealAccount(
   profiles: ParticipantProfile[],
   ready: boolean,
-  bookings: CustomerBooking[] = [],
+  calendarEvents: CalendarOccurrence[] = [],
+  entitlements: CustomerEntitlement[] = [],
 ): ResolvedAccount {
   const participants = profiles.map(toDomainParticipant);
   const self = participants.find((participant) => participant.kind === 'self');
@@ -102,9 +161,9 @@ export function deriveRealAccount(
     account: { primaryParticipantId: self?.id ?? 'me' },
     participants,
     childParticipants: participants.filter((participant) => participant.kind === 'child'),
-    // REAL confirmed bookings only — never fabricated (RI-3).
-    scheduleEntries: toScheduleEntries(bookings, self?.id),
-    activePlans: [],
+    // REAL server Calendar events / Entitlements only — never fabricated.
+    scheduleEntries: toScheduleEntries(calendarEvents, self?.id),
+    activePlans: toActivePlans(entitlements, self?.id),
     participantsReady: ready,
   };
 }

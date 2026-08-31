@@ -44,11 +44,10 @@ import { createHttpClient } from './http/http-client';
 import { tokenStorage } from './auth/token-storage';
 import { AuthSession } from './auth/auth-session';
 
-// Mock-backed contracts remaining (replaced by their slices):
-// - schedule (the RI-5 unified-calendar family; Home's real upcoming
-//   schedule now derives from REAL confirmed bookings — the mock binding
-//   serves ONLY the dev-QA fixture override).
-export { scheduleService } from './mock/mock-schedule-service';
+// RI-5: no mock-backed contract binding remains — the schedule family's
+// real composition derives from the unified Calendar read + the real
+// Entitlement family (account-derivation.ts); the mock schedule module
+// serves ONLY the dev-QA fixture resolver below and its isolated tests.
 // Shared presentation helper (pure derivation, not data):
 export { providerMonogram } from '../utils/monogram';
 // Dev-QA fixture resolver (account-context __DEV__ override only):

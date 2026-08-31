@@ -19,9 +19,11 @@ export interface AccountSnapshot {
 export interface ScheduleEntry {
   id: string;
   programId: string;
-  /** Days after MOCK_TODAY (0 = today); the week strip shows offsets 0–6. */
+  /** Days after today (0 = today); the week strip shows offsets 0–6.
+   *  (Fixture entries derive from MOCK_TODAY; real entries — RI-5 — from
+   *  the unified Calendar events.) */
   dayOffset: number;
-  /** 'Today' | 'Mon 3' | … — derived from MOCK_TODAY, never the device clock. */
+  /** 'Today' | 'Mon 3' | … */
   dayLabel: string;
   timeLabel: string;
   participantId: ParticipantId;
@@ -31,6 +33,10 @@ export interface ScheduleEntry {
   providerName: string;
   areaLabel: string;
   imageKey: string;
+  /** RI-5 — the EXPLICIT navigable owner where the backend event carries
+   *  one (never parsed from an event key). Fixture entries omit both. */
+  bookingId?: string;
+  entitlementId?: string;
 }
 
 /** An active membership, package, or recurring enrolment (docs/18 §4.5). */
@@ -44,8 +50,11 @@ export interface ActivePlan {
   providerName: string;
   /** e.g. '6 of 10 sessions left'. */
   progressLabel: string;
-  /** e.g. 'Mon, 6:30 PM'. */
-  nextSessionLabel: string;
+  /** e.g. 'Mon, 6:30 PM'. RI-5: real plans carry it only when the SERVER
+   *  reports a next reserved session — never a fabricated date. */
+  nextSessionLabel?: string;
+  /** RI-5 — the real Pass/Membership this plan card opens. */
+  entitlementId?: string;
 }
 
 /** A scenario fixture resolved into plain account data (docs/19 §3 data flow). */

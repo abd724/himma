@@ -369,6 +369,120 @@ async function ensureRi4Fulfillment(db: Kysely<DB>): Promise<{ createdPrograms: 
   return { createdPrograms };
 }
 
+/**
+ * RI-5 — the unified-Calendar dev catalogue (idempotent, run every seed
+ * invocation): the two calendar sources the RI-2/RI-4 seed did not yet
+ * exercise end-to-end.
+ *
+ * 1. Cohort meeting patterns for the seeded 'Padel Fundamentals Course'
+ *    cohort: TWO active weekly schedules on the SAME weekday (09:00 and
+ *    17:00 — the canonical same-day-distinct-meetings case) with the first
+ *    meeting date recorded as an exception on BOTH (the canonical
+ *    exception-date-omitted case). Written through the certified schema;
+ *    the Calendar expansion itself stays entirely backend authority.
+ * 2. A FREE schedule-bound membership option on the Mat Pilates program
+ *    ('Evening membership — Mon & Wed', 19:00–20:00) whose ACTIVE
+ *    fulfillment revision snapshots the promised pattern — the recurring
+ *    membership Calendar source and the immutability proof target.
+ */
+async function ensureRi5Calendar(db: Kysely<DB>): Promise<void> {
+  // 1. Cohort meeting patterns + exception date.
+  const cohort = await sql<{
+    id: string;
+    program_id: string;
+    organization_id: string;
+    effective_start: string;
+  }>`
+    SELECT ec.id, ec.program_id, ec.organization_id, ec.effective_start::text
+    FROM enrolment_cohort ec
+    JOIN program p ON p.id = ec.program_id
+    WHERE p.title_en = 'Padel Fundamentals Course'
+    LIMIT 1`.execute(db);
+  const cohortRow = cohort.rows[0];
+  if (cohortRow !== undefined) {
+    const linked = await sql<{ schedule_id: string }>`
+      SELECT schedule_id FROM enrolment_cohort_schedule
+      WHERE cohort_id = ${cohortRow.id} LIMIT 1`.execute(db);
+    if (linked.rows.length === 0) {
+      for (const [startTime, endTime] of [
+        ['09:00', '10:00'],
+        ['17:00', '18:00'],
+      ] as const) {
+        const scheduleId = newId();
+        await sql`
+          INSERT INTO recurring_schedule
+            (id, program_id, organization_id, weekdays, start_time, end_time,
+             effective_start, effective_end, exception_dates)
+          VALUES (${scheduleId}, ${cohortRow.program_id}, ${cohortRow.organization_id},
+                  ARRAY[0]::smallint[], ${startTime}, ${endTime},
+                  ${cohortRow.effective_start}::date, NULL,
+                  '{}'::date[])`.execute(db);
+        await sql`
+          INSERT INTO enrolment_cohort_schedule (cohort_id, schedule_id, program_id)
+          VALUES (${cohortRow.id}, ${scheduleId}, ${cohortRow.program_id})`.execute(db);
+      }
+    }
+    // Re-anchor EVERY run (the camp-week precedent) so the journeys stay
+    // deterministic on long-lived dev databases: the cohort runs from
+    // Dubai-today+7 for 90 days and stays enrollable; both meeting
+    // schedules meet weekly on the Dubai weekday of today+10, with the
+    // FIRST such meeting (today+10 itself) recorded as the exception —
+    // the first actual Calendar occurrences land on today+17 (09:00 and
+    // 17:00, the same-day-distinct pair).
+    await sql`
+      UPDATE enrolment_cohort SET
+        effective_start = (now() AT TIME ZONE 'Asia/Dubai')::date + 7,
+        effective_end = (now() AT TIME ZONE 'Asia/Dubai')::date + 97,
+        enrolment_cutoff_at = now() + interval '10 days'
+      WHERE id = ${cohortRow.id}`.execute(db);
+    await sql`
+      UPDATE recurring_schedule SET
+        weekdays = ARRAY[EXTRACT(DOW FROM (now() AT TIME ZONE 'Asia/Dubai')::date + 10)::smallint],
+        effective_start = (now() AT TIME ZONE 'Asia/Dubai')::date + 7,
+        effective_end = NULL,
+        exception_dates = ARRAY[(now() AT TIME ZONE 'Asia/Dubai')::date + 10]
+      WHERE id IN (SELECT schedule_id FROM enrolment_cohort_schedule
+                   WHERE cohort_id = ${cohortRow.id})`.execute(db);
+  }
+
+  // 2. The FREE schedule-bound membership (Mon & Wed 19:00–20:00).
+  const label = 'Evening membership — Mon & Wed';
+  const existing = await sql<{ id: string }>`
+    SELECT o.id FROM program_price_option o
+    JOIN program p ON p.id = o.program_id
+    WHERE p.title_en = 'Mat Pilates Community Classes' AND o.label_en = ${label}
+    LIMIT 1`.execute(db);
+  if (existing.rows.length > 0) return;
+  const mat = await sql<{ id: string; organization_id: string }>`
+    SELECT id, organization_id FROM program
+    WHERE title_en = 'Mat Pilates Community Classes' LIMIT 1`.execute(db);
+  const matRow = mat.rows[0];
+  if (matRow === undefined) return;
+  const optionId = newId();
+  await sql`
+    INSERT INTO program_price_option (id, program_id, organization_id, kind,
+                                      amount_fils, sessions_count, label_en)
+    VALUES (${optionId}, ${matRow.id}, ${matRow.organization_id}, 'membership',
+            0, NULL, ${label})`.execute(db);
+  const revisionId = newId();
+  await sql`
+    INSERT INTO price_option_fulfillment_revision
+      (id, price_option_id, program_id, organization_id, revision_no, usage_kind,
+       uses_total, validity_kind, validity_days, validity_end_date,
+       reservation_required, walk_in_allowed, branch_id)
+    VALUES (${revisionId}, ${optionId}, ${matRow.id}, ${matRow.organization_id}, 1,
+            'unlimited', NULL, 'fixedEndDate', NULL, '2027-12-31'::date,
+            true, true, NULL)`.execute(db);
+  // The promised pattern snapshot: Monday and Wednesday, 19:00–20:00
+  // (weekday convention: 0 = Sunday … 6 = Saturday).
+  for (const weekday of [1, 3]) {
+    await sql`
+      INSERT INTO price_option_fulfillment_schedule_term
+        (id, revision_id, weekday, start_time, end_time)
+      VALUES (${newId()}, ${revisionId}, ${weekday}, '19:00', '20:00')`.execute(db);
+  }
+}
+
 async function main(): Promise<void> {
   const config = cliConfig();
   if (config.nodeEnv === 'production') {
@@ -389,6 +503,9 @@ async function main(): Promise<void> {
     // RI-4: ensure the Passes/check-in dev products + time-anchored units
     // exist (idempotent; refreshes the check-in-window units every run).
     await ensureRi4Fulfillment(db);
+    // RI-5: ensure the calendar-source products (cohort patterns +
+    // schedule-bound membership) exist.
+    await ensureRi5Calendar(db);
     // Heal projection drift even when the rows already exist (the certified
     // search engine reads program_search_document, maintained by the
     // service layer — the seed writes rows directly).
@@ -705,6 +822,9 @@ async function main(): Promise<void> {
 
   // RI-4: the Passes/check-in dev products + time-anchored units.
   await ensureRi4Fulfillment(db);
+  // RI-5: the calendar-source products (cohort patterns + schedule-bound
+  // membership).
+  await ensureRi5Calendar(db);
 
   // The certified search engine reads the derived search documents; build
   // them exactly the way the owning service does.

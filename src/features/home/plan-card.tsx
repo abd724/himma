@@ -6,15 +6,18 @@ import { StyleSheet, Text, View } from 'react-native';
 
 /**
  * An active membership, package, or recurring enrolment with progress
- * emphasis — docs/18 §4.5. Opens the plan detail once HMA-026 ships;
- * inert with press feedback until then.
+ * emphasis — docs/18 §4.5. RI-5: real plans open their Pass/Membership
+ * detail (HMA-026) via the EXPLICIT server entitlement id; fixture plans
+ * stay inert with press feedback. The next-session line renders only when
+ * the server reports one — never a fabricated date.
  */
-export function PlanCard({ plan }: { plan: ActivePlan }) {
+export function PlanCard({ plan, onPress }: { plan: ActivePlan; onPress?: () => void }) {
   const forLine = plan.participantLabel === 'You' ? 'For you' : `For ${plan.participantLabel}`;
   return (
     <View style={styles.wrap}>
       <PressableFeedback
-        accessibilityLabel={`${plan.programTitle}, ${plan.providerName}, ${forLine.toLowerCase()}. ${plan.progressLabel}. Next session ${plan.nextSessionLabel}`}
+        accessibilityLabel={`${plan.programTitle}, ${plan.providerName}, ${forLine.toLowerCase()}. ${plan.progressLabel}.${plan.nextSessionLabel === undefined ? '' : ` Next session ${plan.nextSessionLabel}.`}${onPress === undefined ? '' : ' Opens details'}`}
+        onPress={onPress}
         style={styles.card}
       >
         <View style={styles.iconWrap}>
@@ -29,7 +32,9 @@ export function PlanCard({ plan }: { plan: ActivePlan }) {
           </Text>
           <View style={styles.progressRow}>
             <Text style={styles.progress}>{plan.progressLabel}</Text>
-            <Text style={styles.next}>Next: {plan.nextSessionLabel}</Text>
+            {plan.nextSessionLabel !== undefined ? (
+              <Text style={styles.next}>Next: {plan.nextSessionLabel}</Text>
+            ) : null}
           </View>
         </View>
         <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />

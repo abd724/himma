@@ -8,17 +8,25 @@ import { StyleSheet, Text, View } from 'react-native';
 
 /**
  * The household's next booked session — Home's lead card (docs/18 §4.3).
- * Prominent but calm: no countdowns, no urgency. Opens Booking detail once
- * HMA-024 ships; inert with press feedback until then (docs/09 §17.2).
+ * Prominent but calm: no countdowns, no urgency. RI-5: opens the owning
+ * Booking/Pass detail via the entry's EXPLICIT server identifier where one
+ * exists (fixture entries stay inert with press feedback — docs/09 §17.2).
  */
-export function UpcomingActivityCard({ entry }: { entry: ScheduleEntry }) {
+export function UpcomingActivityCard({
+  entry,
+  onPress,
+}: {
+  entry: ScheduleEntry;
+  onPress?: () => void;
+}) {
   const forLine =
     entry.participantLabel === 'You' ? 'For you' : `For ${entry.participantLabel}`;
   const spokenFor = entry.participantLabel === 'You' ? 'for you' : `for ${entry.participantLabel}`;
   return (
     <View style={styles.wrap}>
       <PressableFeedback
-        accessibilityLabel={`Upcoming activity: ${entry.programTitle} ${spokenFor}, ${entry.dayLabel} at ${entry.timeLabel}, ${entry.providerName}, ${entry.areaLabel}`}
+        accessibilityLabel={`Upcoming activity: ${entry.programTitle} ${spokenFor}, ${entry.dayLabel} at ${entry.timeLabel}, ${entry.providerName}, ${entry.areaLabel}${onPress === undefined ? '' : '. Opens details'}`}
+        onPress={onPress}
         style={styles.card}
       >
         <AppImage source={demoImage(entry.imageKey)} style={styles.image} />

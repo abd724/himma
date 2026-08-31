@@ -15,6 +15,22 @@ import {
   scheduleSummaryLines,
   statusPresentation,
 } from '@/features/passes/passes-presentation';
+import type { CalendarOccurrence } from '@/services/contracts/entitlements';
+
+/** Full server event from the varying fields (RI-5 widened DTO). */
+function calendarEvent(
+  partial: Pick<CalendarOccurrence, 'eventKey' | 'sourceType' | 'startAt' | 'endAt'> &
+    Partial<CalendarOccurrence>,
+): CalendarOccurrence {
+  return {
+    context: 'booked',
+    participant: { id: 'p-1', firstName: 'Sara' },
+    program: { id: 'prog-1', titleEn: 'Program' },
+    provider: { id: 'org-1', displayName: 'Provider' },
+    branch: null,
+    ...partial,
+  };
+}
 
 describe('finite balance vocabulary (docs/35 §8)', () => {
   // The owner's worked example: 5 total, 1 attended, 2 upcoming
@@ -67,7 +83,7 @@ describe('canonical occurrence pass-through (owner RI-4 correction; docs/35 §28
   it('uses the EXPLICIT server occurrence DTO verbatim — event keys are opaque and their format is irrelevant; two same-day meetings stay distinct', () => {
     const choices = occurrenceChoices(
       [
-        {
+        calendarEvent({
           // Deliberately opaque keys: the format carries NO meaning here.
           eventKey: 'opaque-event-1',
           sourceType: 'cohortOccurrence',
@@ -75,31 +91,31 @@ describe('canonical occurrence pass-through (owner RI-4 correction; docs/35 §28
           endAt: '2026-09-06T06:00:00.000Z',
           bookingId: 'bk-1',
           occurrence: { date: '2026-09-06', startTime: '09:00' },
-        },
-        {
+        }),
+        calendarEvent({
           eventKey: 'opaque-event-2',
           sourceType: 'cohortOccurrence',
           startAt: '2026-09-06T13:00:00.000Z',
           endAt: '2026-09-06T14:00:00.000Z',
           bookingId: 'bk-1',
           occurrence: { date: '2026-09-06', startTime: '17:00' },
-        },
-        {
+        }),
+        calendarEvent({
           eventKey: 'opaque-event-3',
           sourceType: 'cohortOccurrence',
           startAt: '2026-09-06T05:00:00.000Z',
           endAt: '2026-09-06T06:00:00.000Z',
           bookingId: 'OTHER',
           occurrence: { date: '2026-09-06', startTime: '09:00' },
-        },
-        {
+        }),
+        calendarEvent({
           // A session-booking event carries no occurrence DTO → no choice.
           eventKey: 'opaque-event-4',
           sourceType: 'sessionBooking',
           startAt: '2026-09-06T05:00:00.000Z',
           endAt: '2026-09-06T06:00:00.000Z',
           bookingId: 'bk-1',
-        },
+        }),
       ],
       'bk-1',
     );
@@ -112,7 +128,7 @@ describe('canonical occurrence pass-through (owner RI-4 correction; docs/35 §28
   it('CROSS-MIDNIGHT: the explicit Monday/00:30 DTO passes through untouched — no client timezone arithmetic exists', () => {
     const choices = occurrenceChoices(
       [
-        {
+        calendarEvent({
           eventKey: 'opaque-event-5',
           sourceType: 'campWeekOccurrence',
           // The instant is Sunday in UTC — the AUTHORITY stays the server DTO.
@@ -120,7 +136,7 @@ describe('canonical occurrence pass-through (owner RI-4 correction; docs/35 §28
           endAt: '2026-09-06T21:30:00.000Z',
           bookingId: 'bk-1',
           occurrence: { date: '2026-09-07', startTime: '00:30' },
-        },
+        }),
       ],
       'bk-1',
     );

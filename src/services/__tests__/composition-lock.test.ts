@@ -168,7 +168,7 @@ describe('composition boundary locks', () => {
     expect(presentation).toMatch(/event\.occurrence\.startTime/);
   });
 
-  it('RI-4: no client-authored balances, no manual consumption, no Calendar UI', () => {
+  it('RI-4: no client-authored balances, no manual consumption', () => {
     // Balances arrive from the server: no feature/state module computes
     // remaining/available counts by arithmetic on the entitlement truths.
     for (const dir of ['features', 'state', 'app']) {
@@ -179,11 +179,12 @@ describe('composition boundary locks', () => {
         expect(source).not.toMatch(/markAttended|useOneCredit|decrementVisits|manualCheckIn/);
       }
     }
-    // RI-5 owns the unified Calendar: no calendar route/screen exists; the
-    // bounded occurrence read is consumed ONLY by check-in selection.
-    for (const file of sourceFiles(path.join(SRC, 'app'))) {
-      expect(path.basename(file)).not.toMatch(/calendar/i);
-    }
+    // RI-5 (owning-slice amendment of the RI-4 no-Calendar-UI lock): the
+    // unified Calendar now EXISTS, and the bounded server read has exactly
+    // the certified consumer set — the Calendar surface, Home's account
+    // derivation source, and RI-4 check-in occurrence selection. Nothing
+    // else may issue calendar reads (no scattered fetching, no competing
+    // client-side aggregation of bookings/passes/recurrences).
     const occurrenceConsumers: string[] = [];
     for (const dir of ['app', 'features', 'state', 'components']) {
       for (const file of sourceFiles(path.join(SRC, dir))) {
@@ -193,9 +194,50 @@ describe('composition boundary locks', () => {
         }
       }
     }
-    expect(occurrenceConsumers).toEqual([
+    expect(occurrenceConsumers.sort()).toEqual([
+      path.join('features', 'calendar', 'calendar-view.tsx'),
       path.join('features', 'checkin', 'occurrence-select-screen.tsx'),
+      path.join('state', 'account-context.tsx'),
     ]);
+  });
+
+  it('RI-5: the Calendar is real, read-only, and never a second aggregation authority', () => {
+    // The Calendar surface consumes the composition-bound entitlements
+    // adapter (the certified bounded server Calendar read; the wire path
+    // itself is named ONLY inside that adapter) — no mock exists for it
+    // anywhere (the RI-4 mock-layer lock above already bans the contracts
+    // from services/mock; pin the binding here too).
+    const view = readFileSync(
+      path.join(SRC, 'features', 'calendar', 'calendar-view.tsx'),
+      'utf8',
+    );
+    expect(view).toContain("from '@/services/composition'");
+    expect(view).toContain('entitlementsApi.listOccurrences');
+    // Read-only: the calendar feature performs NO mutation and duplicates
+    // no credential/reservation authority (owner items 14–15 — one
+    // check-in and one reservation implementation stay canonical).
+    for (const file of sourceFiles(path.join(SRC, 'features', 'calendar'))) {
+      const source = stripComments(readFileSync(file, 'utf8'));
+      expect(source).not.toMatch(
+        /issueBookingCredential|issueEntitlementCredential|credentialStatus|confirmReservation|requestReservationQuote|confirmFreeAcquisition|initiateAcquisition|claimHold/,
+      );
+      expect(source).not.toMatch(/commerceApi|displayCode/);
+    }
+    // The backend Calendar projection is the ONE aggregation authority: no
+    // app module expands recurrence rules, generates occurrence dates from
+    // camp spans, or fabricates calendar events (the server list renders
+    // verbatim; a flexible pass with no reservation has no dates to show).
+    for (const dir of ['app', 'features', 'state', 'components']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = stripComments(readFileSync(file, 'utf8'));
+        expect(source).not.toMatch(/rrule|byweekday|exceptionDates|exception_dates/i);
+        // No module constructs a calendar event object (server data only —
+        // the opaque key cannot be minted client-side).
+        expect(source).not.toMatch(/eventKey\s*:\s*[`'"]/);
+        // Camp spans are presentation metadata, never a date generator.
+        expect(source).not.toMatch(/span\.(startDate|endDate)[^)]*(for|while|\.map)\s*\(/);
+      }
+    }
   });
 
   it('no screen/state/app module imports a mock implementation directly', () => {
