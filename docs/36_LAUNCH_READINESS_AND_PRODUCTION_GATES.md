@@ -311,7 +311,7 @@ Quote/checkout expiry needs **no runner** (enforced by `expires_at` predicates a
 
 | Track | Scope | First actionable slice after LR-0 |
 |---|---|---|
-| **A — Production Platform & Operations (W6)** | IN-02/07/09/10/11/12, OP-01…07, SE-03, VE-01, PA-09/10 wiring | **W6-0: Infrastructure & Operations workstream plan** (the docs/20–22 pattern — W6 has never activated and has no plan document; governance requires the owner-approved spec first) |
+| **A — Production Platform & Operations (W6)** | IN-02/07/09/10/11/12, OP-01…07, SE-03, VE-01, PA-09/10 wiring | **W6-0 DELIVERED — the plan is [docs/37](37_W6_PRODUCTION_RUNTIME_AND_OPERATIONS_PLAN.md) (awaiting owner review); on approval the first implementation slice is W6-1 (production runtime foundation). Slice-to-gate mapping: docs/37 §39 (W6-1 → IN-02/07/09 · W6-2 → OP-03 · W6-3 → OP-01/02/04/05/07)** |
 | **B — Payments & Finance** | PA-01…04, FI-05, FI-01/02 rulings | Owner: start Stripe/KYB + VAT counsel NOW (longest external lead times, zero code). First implementation slice: **commission-term administration** (D-W3-5-classified Admin capability, FI-05) |
 | **C — Verification & Provider Readiness** | VE-02/03/04, PR-01, PR-04 | Owner: decide VE-04 evidence checklist + schedule §8.6 design-partner sessions. First implementation slice: **evidence content-safety + provider evidence-upload UX** (after VE-04) |
 | **D — Mobile Release** | MR-01…13, PA-05, MR-08 | Owner: procure accounts/devices/identifiers/brand. First implementation slice: **release engineering** (EAS/signing config + https bounce/universal links + in-app account deletion) once MR-01…03 exist |

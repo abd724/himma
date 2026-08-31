@@ -1,0 +1,344 @@
+# 37 — W6 · Production Runtime, Workers & Operations Architecture Plan (W6-0)
+
+**Status: W6-0 delivered (2026-08-31 — this commit, awaiting owner review). DOCUMENTATION/RECONCILIATION ONLY: no runtime code, no worker, no scheduler, no rate-limit change, no DB role, no migration, no cloud/Stripe/Cognito configuration, no production gate flipped. `productionChargingPossible` remains the literal `false`. Migration head stays `0020_membership_booking_and_multi_occurrence_attendance`.**
+
+**Authority:** owner directive 2026-08-31 (W6-0 authorized at the LR-0 closure `5bd3781`); docs/36 (the authoritative launch-gate matrix — §14 below maps every W6 slice to its gate IDs; docs/36 remains authoritative and this plan creates no parallel checklist); docs/23 §10 (architecture requirements, esp. §10.2 idempotency, §10.4 async, §10.7 rate limiting, §10.9 CI/CD, §10.10 observability, §10.13 outbox/inbox/saga), §11.1 (correctness/quality targets), §12 (failure scenarios); docs/26 (identity), docs/33 (W5 trust boundaries — binding, untouched), docs/35 (S6 lock orders and sweep semantics). Every current-state claim below was verified against source at `b6d751d`; file references inline. Functions are never assumed to have callers — every invocation claim was checked.
+
+**Design goal:** the smallest production-grade runtime that executes the already-certified domain services safely. The process layer INVOKES domain authority; it never becomes new authority (no worker recreates Booking state machines, payment trust, commission arithmetic, attendance, or Entitlement rules).
+
+---
+
+## 1. Reconciled runtime inventory (exact current state)
+
+For each item: **Domain/service** = implemented and certified · **Wiring** = production executable wiring. "None" means verified absent, not inferred.
+
+| Item | Domain/service (implemented) | Production executable wiring |
+|---|---|---|
+| Executable entrypoints | — | **None.** `backend/package.json` has no `start` script. Only `scripts/dev-server.ts` (refuses `NODE_ENV=production` at `:45-49`), `dev-seed.ts`, `db:*` scripts, `stripe-sandbox-smoke.ts`, admin bootstrap/seed scripts |
+| `buildApp` | Complete composed Fastify app (`src/app/build-app.ts`): deny-by-default policy pipeline, all route modules, fail-closed production guards (admin readiness flags, content-safety refusal, forced-flag throws) | Composed ONLY by `dev-server.ts:90` and tests. Receives a Kysely `Db`; owns no pool, no listener, no teardown |
+| HTTP listener | — | Only `dev-server.ts:128-129` (`app.ready(); app.listen({port, host})`); `PORT`/`HOST` env read only there — `src/` has no port/host handling |
+| Config loading | `loadConfig` (`src/config/env.ts:123`): `nodeEnv` + `database` + optional `stripe`; production refuses missing `DATABASE_URL`; test DB safety assert. That is the ENTIRE shape — no port/host/log/CORS/role/cadence fields | `.env.example` documents 5 of the ~14 read variables; `DEV_*` vars read ad hoc in `dev-server.ts` |
+| DB pool lifecycle | Canonical factory `createPool` (`src/db/pool.ts:17-26`, sets `-c TimeZone=UTC`) | dev-server builds its OWN inline `new Pool` (`dev-server.ts:51-57`) — **bypassing `createPool`, so no `TimeZone=UTC`, all pg defaults (max 10), and the pool is never `end()`ed**. `buildApp` has no pool teardown |
+| Runtime DB role | Grant model exists (§10 below): `himma_app` NOLOGIN with least-privilege grants, pinned by tests via `SET LOCAL ROLE` | **The runtime pool connects as the schema-owner user** (`config.database.user`); no `SET ROLE` exists outside tests — the grant model is aspirational at runtime today |
+| Migration runner | node-pg-migrate over `migrations/*.sql` (`src/db/migrations.ts`): transaction per migration, sha256 immutability of applied files, lexical order, production down refused, `migration_checksum` journal; `db:verify` checks applied-order + checksums + a hardcoded schema-object manifest | Manual `npm run db:migrate` only. **No advisory lock / concurrency guard on the run itself**; `db:verify` does NOT pin grants |
+| Graceful shutdown | — | **None anywhere**: zero `SIGTERM`/`SIGINT` handlers in `src`/`scripts`; `app.close()` only in test teardown |
+| Health/readiness | `GET /internal/health` (`build-app.ts:267-274`) | Static `{status:'ok'}` — no DB probe, no readiness/liveness distinction, no other status route |
+| Structured logging | — | Fastify's built-in pino behind a bare `logger?: boolean` (default OFF; dev-server sets true). No level/redaction/serializer config, no direct pino dependency |
+| Request IDs | `audit_event.request_id` column exists; `appendAuditEvent` ACCEPTS `requestId` (`src/db/audit.ts:20,40`) | **No caller ever passes it** (repo-wide grep: only the two lines in `audit.ts`); no `genReqId`, no header handling, no context threading — every audit row has `request_id = NULL` |
+| Rate limiters | Identity/staff limiter: 10 fixed-window rules, digested keys, single-method `RateLimiterStore` port (§9). S6 redemption throttle: PostgreSQL-backed window upsert (production-suitable) | Identity store is in-memory and `createRateLimiterStore` **throws in production** (`rate-limiter.ts:65-75`) — production boot refused by design |
+| Outbox | `appendOutboxEvent` (Trx-only, advisory-lock per-aggregate `sequence_no`); table CARRIES relay scaffolding: `published_at`, `publish_attempts`, partial unpublished index, and the schema's only column-restricted UPDATE grant (`0001:179`) | **No relay exists; nothing ever writes `published_at`/`publish_attempts`.** Rows accumulate unpublished forever |
+| Inbox | `inbox_event` PK `(consumer, event_id)`; `markInboxProcessed` `ON CONFLICT DO NOTHING` first-delivery detection | One consumer id exists (`search-projection`); driven by tests/dev only |
+| Search indexing | PostgreSQL FTS + `pg_trgm` over `program_search_document`; recompute-from-live-truth writer (`refreshProgramSearchDocumentsInTrx` — payloads never applied); `processSearchProjectionEvents` (outbox→inbox→refresh, bounded); `rebuildAllSearchDocuments` full backfill; read path ANDs the live visibility predicate (projection never authorizes) | Consumer has **no standing worker** (source states it); dev-seed calls the rebuild manually. In production, provider publishes would never become searchable |
+| Payment async | `ingestGatewayDelivery` (durable receipt), `processPendingGatewayEvents` (50), `processTrustedPaymentResults` (20) → saga/compensation, `sweepLapsedPaidCheckouts` (20) — all idempotent, CAS-guarded, certified | Driven ONLY by the best-effort try/catch post-ack pass inside the webhook request (`payment-webhook-routes.ts:100-106`). No worker, no schedule |
+| Sweep functions | `sweepExpiredHolds`, `processExpiredAssignments`, `expireDueStaffInvitations` — idempotent, lock-ordered | Tests only |
+| Reconciliation | `reconcileLedgerAgainstProvider` (pure read: "nothing is written, nothing converges here") | Tests only |
+| Alert/diagnostic | `findStuckPaymentStates`, `liveIntentsOnConcludedPurchases`, `paymentCapabilityReport` | No caller, no alert channel, report surfaced nowhere |
+| Retention | Requirements recorded in migration comments (0001/0002/0004/0018); **no retention function exists at all**; `idempotency_key.expires_at` is never set; app role has DELETE on ZERO tables | None |
+| Scheduler/cron | — | **None** (no node-cron/BullMQ/queue/worker dep; no `setInterval` in `src`/`scripts` beyond a constant-time response pad and a dev webhook delay) |
+| Deployment artifacts | — | **None repo-wide**: no Dockerfile/compose/systemd/Procfile/CI workflows/`.github`/IaC/eas.json (verified exhaustive search) |
+
+## 2. The production-entrypoint gap (confirmed) and what the production API executable must own
+
+**Verified directly:** `buildApp` is composed only by `scripts/dev-server.ts` (which throws for production) and by tests; there is no `start` script and no other executable. The LR-0 conclusion stands exactly.
+
+The future production API executable (W6-1) must own, in order:
+
+1. **Config validation** — parse + validate the full §6 contract for its role BEFORE touching the network; any missing mandatory value → print a bounded error naming the variable → exit non-zero. No fallback of any kind (§6).
+2. **Database initialization** — `createPool` (the canonical factory, restoring `TimeZone=UTC`) with explicit `max`, `connectionTimeoutMillis`, `idleTimeoutMillis`, `statement_timeout`; a startup connectivity probe (bounded retries, then fail).
+3. **App composition** — `buildApp` with REAL production dependencies only: parsed Cognito config, the shared rate-limit store (§9), the S3 evidence store when configured (§29), payment composition per §33 (absent or TEST — never deterministic, never live in W6), truthful `AdminProductionReadiness` flags, logger config (§24). The existing fail-closed guards remain the enforcement.
+4. **HTTP listener** — `listen({host, port})` from validated config; `host` explicit (containers need `0.0.0.0` — an explicit config value, never a hardcoded default that surprises local runs).
+5. **Signal handling + graceful shutdown** — §8.
+6. **Health/readiness** — §7.
+7. **Startup failure behavior** — any composition/listen failure exits non-zero after one structured log line; no retry-forever at the process level (the platform restarts; readiness gating prevents traffic).
+
+The worker executable owns the same 1–3 plus its loop supervisor (§4) instead of 4–6's listener (it exposes only liveness, §7).
+
+## 3. Deployment neutrality (binding for W6-1…3)
+
+No cloud/deployment target has been ruled (docs/36 IN-01). W6 therefore designs **process roles, not platform resources**: plain Node executables reading environment variables, speaking only PostgreSQL + HTTPS egress, with health endpoints and signal-based shutdown. That contract maps unchanged onto containers, managed container services, VMs, or Kubernetes. Nothing in W6-1…3 may import a cloud SDK, assume a metadata service, or bake in a vendor (the existing hand-rolled SigV4 S3 client is already vendor-light and stays as-is). Cognito/S3-compatible storage existing does NOT choose AWS as the deployment platform; provider-specific deployment (IaC, W6-4) comes only after the IN-01 ruling.
+
+## 4. Target production process topology
+
+**Recommendation: ONE backend package, ONE artifact, TWO runtime roles selected by explicit config (`RUNTIME_ROLE=api | worker`).**
+
+- **`api`** — the long-running HTTP server (§2). Scales horizontally (stateless; docs/23 §10.3).
+- **`worker`** — one long-running process hosting BOTH the durable async consumers (outbox dispatch/search projection, pending gateway events, trusted payment results) AND the periodic scheduler ticks (sweeps, reconciliation, stuck-state detection, retention). Internally: a loop supervisor running each job family on its §13 cadence.
+
+**Why scheduler-inside-worker rather than a third executable:** at Tier-1 volumes every scheduled job is a bounded sub-second pass; a separate scheduler process would add an executable, a deployment unit, and an operational surface while isolating nothing (the scheduled jobs call the same DB with the same idempotency guarantees as the queue consumers). Safety never depends on process count: every tick is advisory-lock-guarded and every job idempotent (§20), so running two workers — deliberately or during deploy overlap — is safe, which is also the fault-isolation story (a crashed worker's work is reclaimable; a second instance simply continues). Independent scaling remains available later by splitting job families across `WORKER_JOBS` filters (an env allowlist, part of the §6 contract) without any code restructuring. This is explicitly NOT microservices: one codebase, one image, two roles (docs/23 §10 requires no more).
+
+Minimum production deployment: `api ×2` (rolling deploys) + `worker ×1` (×2 tolerated at all times). A separate short-lived **migration job** completes the topology (§27) — a command, not a resident role.
+
+## 5. One codebase, explicit runtime roles (binding rule)
+
+All roles ship from the single backend package and invoke the certified services exactly as tests do today: `processPendingGatewayEvents`, `processTrustedPaymentResults`, `sweepLapsedPaidCheckouts`, `processSearchProjectionEvents`, `sweepExpiredHolds`, `reconcileLedgerAgainstProvider`, `findStuckPaymentStates`, `processExpiredAssignments`, `expireDueStaffInvitations`, `rebuildAllSearchDocuments`. The worker adds ONLY: claiming, scheduling, retry/backoff bookkeeping, correlation, and alert emission. Any behavior change inside a domain service is out of W6 scope and would be a governance violation, not a slice detail.
+
+## 6. Production startup/config contract (per role; fail-closed)
+
+Config splits into three categories (§32): **secrets**, **public configuration**, **operational policy**. All delivered as environment variables (deployment-neutral; a secret manager injects them later — vendor open). `loadConfig` grows by additive, validated fields; every mandatory item missing in production = refuse startup naming the variable. **No production fallback exists to: localhost, fixture storage, dev identity, the deterministic payment provider, or in-memory security stores** — the existing guards already throw for most of these; W6-1 adds validation for the rest (host/port/role) rather than defaults.
+
+| Config | api | worker | migration job |
+|---|---|---|---|
+| `NODE_ENV=production`, `RUNTIME_ROLE` | mandatory | mandatory | mandatory (`migrate`) |
+| `DATABASE_URL` (secret) | mandatory | mandatory | mandatory (DDL-capable role, §28) |
+| `HOST`, `PORT` | mandatory | — (liveness port only) | — |
+| Pool sizing / timeouts | defaults with explicit override | defaults | n/a (single client) |
+| Cognito (issuer, client ids, refresh client — public values) | mandatory once ID-02 exists; until then absent = fake-adapter-off + admin/provider surfaces unregistered (existing readiness-flag behavior) | not needed (no HTTP identity) | — |
+| Object storage (endpoint/region/bucket/prefix + key secret) | optional; when present composes the S3 store (§29) | only if a future job needs it (none in W6) | — |
+| Payment (`STRIPE_SECRET_KEY` TEST-mode, webhook secrets) | optional; absent = payments-disabled composition (§33) | same (workers no-op on empty queues) | — |
+| Rate-limit store config | mandatory (PG-backed, §9 — same `DATABASE_URL`) | — | — |
+| Logging (level; role tag automatic) | mandatory-with-default | same | same |
+| Runner cadences (§13) | — | operational policy with engineering defaults | — |
+| Alert seam destination (§26) | optional | optional | — |
+
+## 7. Health and readiness
+
+- **Liveness** (`GET /internal/live`, both roles — the worker exposes a minimal status listener for it): the process is up and the event loop responsive. Static; never touches dependencies. Platform restarts on liveness failure only.
+- **Readiness** (`GET /internal/ready`, api): the process may receive traffic — (1) mandatory production config validated at startup (already guaranteed by §6, reported here); (2) database connectivity via a cheap bounded probe (`SELECT 1`, cached a few seconds); (3) composed runtime dependencies present (the things startup already proved; readiness re-asserts liveness of the DB only). The existing `/internal/health` stays as-is for compatibility and becomes an alias of liveness.
+- **Binding principle:** *readiness includes only dependencies whose unavailability makes serving ANY request harmful or impossible AND which the platform can help by withholding traffic — in this architecture, exactly the database.* Third-party availability (Stripe, Cognito, object storage) is NEVER a synchronous readiness dependency: their outages already surface as certified typed degraded responses per docs/23 §12 (payment 503 boundary, auth outage normalization, `evidenceSafetyUnavailable`), and making them readiness would convert a transient external outage into a self-inflicted full-platform restart loop. Nothing in the existing architecture requires otherwise (verified: the current health route probes nothing).
+- Worker "readiness" is not a traffic concept; the worker reports per-loop heartbeats through metrics/logs (§25) instead.
+
+## 8. Graceful shutdown and crash/restart expectations
+
+**api:** on `SIGTERM`/`SIGINT`: (1) flip readiness to failing (platform stops routing); (2) `fastify.close()` — stop accepting, let in-flight requests finish under a bounded drain deadline (config, default ~15 s); (3) `pool.end()`; (4) exit 0. A second signal or deadline overrun → immediate exit non-zero. Because every mutating endpoint is idempotency-keyed and every domain transaction atomic, a hard kill mid-request loses nothing committed and every client retry is safe — graceful drain is about latency/error politeness, not correctness.
+
+**worker:** on signal: stop starting new claims/ticks; allow the current bounded batch to finish (each item is one short transaction); release by simply exiting — an uncommitted claim's row lock vanishes with the connection and the item returns to the pool (§21); close pool; exit 0. **Crash contract:** a worker killed mid-item leaves either a committed, inbox-deduped effect or nothing; recovery is automatic on next claim. No manual repair may ever be required (this is a §15/§38 proof obligation).
+
+**scheduler ticks:** advisory locks are transaction/session-scoped — a crashed tick's lock evaporates; the next tick (any instance) simply runs. No partial ownership survives a restart by construction.
+
+## 9. Shared production rate limiting
+
+Inventory of every security-relevant limiter (verified):
+
+| Limiter | Current implementation | Process-local? | Production-suitable? | Sharing scope needed | Plan |
+|---|---|---|---|---|---|
+| Identity/staff limiter (10 rules: session establishment, reset, linking, invalid bearer, MFA enrollment/challenge/recovery, staff invitation/management/accept) | `InMemoryRateLimiterStore` Map; fixed window; digested keys; `consume(key, rule, cost)` port | Yes | **No — refuses production by design** | Cross-instance (api replicas) | **PostgreSQL-backed store implementing the existing one-method port** (W6-1) |
+| S6 redemption lookup throttle | `redemption_lookup_attempt` table: SQL-computed window bucket + `ON CONFLICT` counter upsert, inside the caller's Trx | No (PostgreSQL) | **Yes** (built as the cross-instance answer) | Already shared | Unchanged — and it is the design precedent |
+| Webhook ingress | 256 KiB body bound + signature-first refusal (no counter) | n/a | Yes | n/a | Unchanged; infrastructure-level limits may be layered later (IN-08) |
+| Search/booking/public endpoints | None (docs/36 IN-08, P1) | — | — | Cross-instance | Same PG store, new rules — deferred to the IN-08 slice, NOT W6-1 scope creep |
+
+**Production store design (W6-1):** a `rate_limit_window` table mirroring the certified redemption pattern — PK `(key, window_start)`, `count int`, window bucket computed in SQL from the rule's `windowMs`; `consume` = one `INSERT … ON CONFLICT DO UPDATE SET count = count + cost RETURNING count` (cost 0 = plain SELECT peek), decision + `retryAfterSeconds` computed exactly per the in-memory reference semantics (fixed window; deny when `count > limit`). Keys arrive pre-digested (existing `rateLimitDigest`), so no PII lands in rows. Retention: superseded window rows are dead weight → cleaned by the §18 retention job (or opportunistic delete of past windows by the maintenance role).
+
+**Why PostgreSQL, not Redis:** the limited surfaces are auth-shaped (limits 5–20/min/key) — Tier-1 worst case is trivially inside PostgreSQL's comfort; the platform already bets its correctness on PG; the repo already contains a certified PG limiter pattern; and Redis would add a new stateful infrastructure dependency, its own HA story, and a second failure domain for exactly one feature. PostgreSQL cannot be argued unable to meet this requirement at approved scale. Revisit recorded for Tier-2+ hot paths (IN-08) — only if measured contention ever demands it.
+
+## 10. Outbox delivery authority (relay design)
+
+**Current truth (verified):** rows written by `appendOutboxEvent` on a `Trx` — the type system makes writing outside the causing transaction impossible; per-aggregate `sequence_no` serialized by advisory lock; payloads machine-facts-only (test-enforced). The table ALREADY carries delivery scaffolding — `published_at`, `publish_attempts`, a partial index on unpublished rows, and the schema's only column-restricted UPDATE grant — anticipating exactly this relay. Nothing writes those columns today. Consumers: exactly one registered concept (`search-projection`) with inbox dedup. No event loss is possible pre-relay (rows are durable); they are simply never delivered.
+
+**Production relay (W6-2): an in-worker dispatcher, no external broker.** At Tier 1 a message broker adds infrastructure without adding a guarantee PostgreSQL doesn't already give us — the queue IS the outbox table. Design:
+
+- **Claim:** `SELECT … FROM outbox_event WHERE published_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= now()) ORDER BY occurred_at, id LIMIT batch FOR UPDATE SKIP LOCKED` inside a short transaction (§21).
+- **Dispatch:** for each claimed row, invoke every registered consumer (today: search projection; future: notifications) — each consumer runs `markInboxProcessed` + its effect in ONE transaction (the existing certified shape), so delivery is **at-least-once and effects exactly-once via consumer idempotency**. No exactly-once distributed delivery is promised.
+- **Acknowledge:** set `published_at = now()`, `publish_attempts = publish_attempts + 1` (the pre-granted column update) when all registered consumers have processed (or inbox-deduped) the row; commit.
+- **Failure:** increment `publish_attempts`, set `next_attempt_at` per §22 backoff, leave `published_at` NULL. **Additive migration (W6-2):** `next_attempt_at timestamptz NULL`, `last_error_code text NULL` on `outbox_event` (+ the matching grant) — the only schema change W6 anticipates besides §20's run bookkeeping; owned and proven by W6-2 with `db:verify` manifest updates.
+- **Ordering:** per-aggregate `sequence_no` gives consumers a total order per aggregate; the search consumer is order-insensitive anyway (§11). Claim order is best-effort `occurred_at` — cross-aggregate ordering is explicitly NOT guaranteed and no current consumer needs it.
+- **Crash recovery:** an uncommitted claim releases with the connection; a committed-but-unacked consumer effect is absorbed by the inbox on redelivery. No event is lost after the producer transaction commits — the row persists until acknowledged.
+
+## 11. Search projection worker
+
+**Traced current path:** provider/listing mutation → S3/S4 services append `organization.*` outbox events in the same transaction → *(gap: nothing delivers)* → `processSearchProjectionEvents` filters `aggregate_type='organization'`, anti-joins the inbox, and per event runs `markInboxProcessed` + `refreshOrganizationSearchDocumentsInTrx` in one transaction → `program_search_document` (FTS vectors + facets) → public `GET /search` reads the projection ANDed with the LIVE visibility predicate. Today this works only because dev-seed calls `rebuildAllSearchDocuments` manually and tests invoke the processor directly.
+
+**Production behavior (W6-2):** the dispatcher (§10) delivers `organization.*` events to the search consumer continuously — a successful provider publication becomes publicly searchable with no manual step (target: publish→searchable p95 < 60 s, docs/23 §11.1).
+
+- **Idempotency / stale-order safety:** structural — the writer recomputes documents entirely from live catalogue truth (payloads never applied), so replays, duplicates, and out-of-order events all converge on current truth; the inbox additionally dedups per event.
+- **Retry / failure visibility:** per §22; repeated failure of one event quarantines it with an alert — and because the writer is recompute-from-truth, a later event for the same organization heals the projection even past a quarantined predecessor.
+- **Rebuild/backfill:** `rebuildAllSearchDocuments` already exists and is the certified backfill; W6-3 exposes it as an operator-invoked maintenance command (never scheduled — it is a repair tool). Search itself is NOT redesigned (§30).
+
+## 12. Payment asynchronous pipeline
+
+**Reconciled:** the webhook route's acceptance criterion is **durable receipt** — signature verified over exact raw bytes in an isolated parser scope, one transaction persisting `gateway_event(received)` + audit + outbox, then 200. Business processing (verification → trusted results → saga confirmation/compensation) is a SEPARATE concern that today runs only as the bounded best-effort post-ack pass (50/20/20) inside that same request, failures merely logged.
+
+**Production pipeline (W6-2)** — the certified semantics already permit this split exactly:
+
+- The webhook route keeps its post-ack pass unchanged (it is certified, bounded, and gives the happy path sub-second convergence).
+- The worker runs `processPendingGatewayEvents` and `processTrustedPaymentResults` on the §13 cadence as the AUTHORITATIVE drivers — convergence no longer depends on the next webhook arriving. Claiming stays exactly the certified pattern (bounded select + per-row `FOR UPDATE` re-check CAS): it is already safe under concurrent runs, so W6 does not rewrite it (a SKIP LOCKED optimization is allowed only as a non-semantic index/claim refinement inside W6-2 if measured contention warrants — the CAS remains the correctness authority).
+- **No W5 trust boundary moves:** signature-first refusal, no-row-on-reject, dedup on `(provider, gateway_event_id)`, verified-rest semantics, saga-only confirmation, compensation rules — all untouched. The worker calls the same functions tests certify.
+
+## 13. Runner inventory and engineering cadences
+
+Cadences are engineering recommendations derived from existing TTLs/state semantics/UX (no product policy invented; none is owner-escalated). All runners are idempotent (per-row CAS/locks — certified); "overlap" = two concurrent invocations, safe for every row below; concurrency model = advisory-lock-guarded tick (§20) + per-item row semantics.
+
+| Runner | Interval | Max acceptable delay | Why (derived) |
+|---|---|---|---|
+| `processPendingGatewayEvents` | 30 s | 60 s | docs/23 §11.1: 99 % of webhooks processed < 60 s; post-ack covers the happy path, the worker covers outage catch-up (100 % converged < 15 min after recovery — met with huge margin) |
+| `processTrustedPaymentResults` | 30 s | 60 s | Customer-facing "We're checking your payment status…" (D-RI-5) should resolve within one app poll cycle |
+| `sweepLapsedPaidCheckouts` | 60 s | ~3 min | Hold TTL is 10 min (D-W5-5); the customer status should flip `awaitingPayment → expired` within a couple of minutes of hold death; correctness never depends on promptness (late capture still confirms-or-compensates — certified) |
+| Outbox dispatcher (§10) | continuous, 2 s idle poll | 60 s to consumer effect | publish→searchable p95 < 60 s (§11.1) |
+| `findStuckPaymentStates` | 5 min | 10 min | docs/23 §12.10: stuck `processing` payments alert operations "within minutes" |
+| `reconcileLedgerAgainstProvider` | daily | 48 h | docs/23 §13: "reconciliation daily"; window = previous UTC day with overlap (§14) |
+| `sweepExpiredHolds` | 5 min | hours | Hygiene only (§16) |
+| `processExpiredAssignments` | hourly | 24 h | Role expiry is authorization-checked at use; the sweep terminalizes + audits |
+| `expireDueStaffInvitations` | hourly | 24 h | Same shape |
+| Retention sweeps (§18) | daily | days | Storage hygiene under ruled policies |
+
+## 14. Scheduled ledger reconciliation
+
+The existing `reconcileLedgerAgainstProvider` is a pure read ("nothing is written, nothing converges here") — and it STAYS that way: **reconciliation is detection, never silent financial rewriting**. Convergence authority remains the certified webhook/saga path exclusively.
+
+Production job (W6-3): daily, window = the previous UTC day plus a 6 h overlap (idempotent — re-reading is free); output = a structured reconciliation report (counts + per-discrepancy machine facts) written to logs/metrics and, when any discrepancy exists, an operational alert (§26). Discrepancy classes surface exactly what the service already distinguishes (ledger-without-provider, provider-without-ledger, amount/state mismatch — the certified vocabulary; no new classification invented). Retry: a failed run alerts and re-runs on the next tick; `reconciliation_event` persistence remains explicitly deferred (docs/33 W5-6) until an owner-authorized slice adds it — the report is operational output, not domain state.
+
+## 15. Stuck-payment detection
+
+`findStuckPaymentStates` already encodes what qualifies (aged in-flight payment states on Himma's durable-receipt clock — its thresholds are the certified definition; W6 adopts them unchanged) plus `liveIntentsOnConcludedPurchases`. Production job (W6-3): scan every 5 min; **alert dedup** by stable state-key (intent id + condition) with a re-alert suppression window (~1 h) and an all-clear emission when a key vacates; destination = the generic operational-alert seam (§26) — Slack/email/PagerDuty selection is explicitly deferred to infrastructure choice. The job observes; it never mutates payment state.
+
+## 16. Hold expiry — classification verified
+
+Verified: lapsed holds are (a) excluded by effective-expiry predicates on every read path and (b) reclaimed inline on the claim path (`expireLapsedHoldsForUnit` before capacity math), and hold consumption/expiry settles counters transactionally (S5-certified). Therefore `sweepExpiredHolds` is **storage/operational hygiene plus counter tidiness — NOT a correctness requirement and NOT a customer-visible availability-latency requirement** (availability reads already use effective truth). W6-3 schedules it at 5 min as hygiene; no correctness claim anywhere may come to depend on it (a §38 proof pins that the platform stays correct with the sweep disabled).
+
+## 17. Quote / Entitlement expiry — verified schedulerless
+
+Confirmed: price-quote and checkout TTLs are enforced by `expires_at` predicates at read/claim time; entitlement status (`active/expired/exhausted`) is DERIVED, with the final-use `entitlement.exhausted` event emitted in-transaction; credential expiry is unusable-at-read with no sweeper by design (S6-2). **No correctness scheduler exists or is needed, and none is added.** No cosmetic terminalization jobs are introduced (rows are not made to "look" expired); if analytics ever wants terminalized rows, that is a separately classified future item, not W6.
+
+## 18. Retention inventory (policy vs job)
+
+| Data | Policy status | Job status | Notes |
+|---|---|---|---|
+| `redemption_lookup_attempt` windows | Engineering (operational rows; no legal dimension) | Missing — recorded "future W6 operational sweep" (`0018:398`) | W6-3: daily delete of windows older than a config horizon (default ~7 d) via the maintenance role |
+| `rate_limit_window` (new, §9) | Engineering | W6-3 with the store | Same shape |
+| `idempotency_key` rows | Engineering — `expires_at` exists, never set; deleting a key re-enables execution, so horizon must exceed any legitimate client retry window | Missing | W6-3: set/enforce a long horizon (engineering default ~90 d, config) |
+| Expired/superseded `redemption_credential` rows | Engineering (digest-only rows; hygiene optional) | Missing | Optional; low priority |
+| `audit_event` | **Policy NOT ruled** (docs/36 SE-05; legal/PDPL dimension) | Missing (append-only even to owner via trigger — a retention path needs deliberate design) | Job blocked on policy; W6-3 builds only the infrastructure seam |
+| Identity/staff security records (MFA challenges, invitations, sessions) | **Policy NOT ruled** (docs/36 SE-05/SE-04; migration comments reference an "elevated retention job") | Missing | Blocked on policy |
+| Verification evidence objects | **Policy NOT ruled** (D-W3-6, docs/36 VE-05) | Missing | Blocked on owner/counsel ruling |
+| `outbox_event` published rows / `inbox_event` | Engineering | Missing | W6-3: delete published outbox + matching inbox rows older than a config horizon (~30 d) |
+
+**No retention period with an unresolved owner/legal dimension is chosen here.** W6-3 ships the mechanism (maintenance role + job seam + the engineering-scoped sweeps); policy-gated sweeps activate only when their docs/36 gates rule.
+
+## 19. DELETE-capable maintenance role
+
+Verified grants: `himma_app` (NOLOGIN) holds least-privilege grants — DELETE on **zero** tables, append-only tables INSERT-only, `audit_event` immutable by trigger even against the owner; and (new finding) **today's runtime connects as the schema owner, bypassing the model entirely**. The W6 role plan (§28) fixes both without role sprawl:
+
+- **`himma_app` stays untouched** as the privilege set; api and worker attach to it (§28). It never gains DELETE.
+- **`himma_maintenance` (new, W6-3 migration):** NOLOGIN role granted ONLY the explicit DELETE/maintenance statements the §18 engineering-scoped jobs need (`redemption_lookup_attempt`, `rate_limit_window`, `idempotency_key`, published `outbox_event`/`inbox_event`) — enumerated per table, nothing blanket. Retention runs use it via `SET LOCAL ROLE himma_maintenance` inside the job transaction (the pattern the test suite already uses for `himma_app`), so even the worker's connection holds deletion power only inside an explicit, audited job scope. Policy-gated deletions (audit, identity records, evidence) get grants only when their policies rule, in their own owning slices.
+- The API never receives DELETE authority of any kind. **No grant migration in W6-0** — this section only designs it.
+
+## 20. Scheduler semantics (multi-instance safe)
+
+Every periodic job = a **tick**: `SELECT pg_try_advisory_lock(hashtextextended('w6:job:<name>', 42))` on a dedicated session — if not acquired, another instance is running it: skip silently (that is success, not failure). On acquire: run the bounded job, record the run (§25), release. Overlap safety is therefore double-walled: the advisory lock prevents concurrent ticks of the same job, and every job is idempotent anyway (certified), so even a lock-bypass (session death mid-run + immediate retake) merely re-runs an idempotent pass. Restart ownership: locks die with the session — nothing to repair. "We will run one worker" is explicitly NOT a safety assumption (§38 proves double-fire harmlessness). Run bookkeeping (`job_run` table: name, started/finished, outcome, items, error code — additive W6-3 migration) feeds last-run/missed-run alerting (§26); the advisory-lock key-space (`w6:job:*`) is disjoint from every existing domain key (verified inventory in §1's outbox/bootstrap/role-trigger locks).
+
+## 21. Worker claiming (durable queue semantics)
+
+For the outbox dispatcher (the one true competing-consumer queue): **claim = short transaction, `FOR UPDATE SKIP LOCKED`, bounded batch** (§10). Lifecycle: BEGIN → claim batch (locked rows invisible to rivals; verified: SKIP LOCKED is used nowhere today, so W6-2 introduces the pattern WITH multi-connection proofs) → per row: dispatch to consumers (each consumer effect its own committed transaction with inbox dedup) → mark row published/failed → COMMIT (releasing locks). Two workers cannot own one row concurrently (lock); a crashed claim releases instantly (no lease table, no reaper); long transactions are avoided because the claim transaction only marks — consumer work commits separately, and batch size bounds the window. The payment processors keep their certified claim shape (bounded select + per-row `FOR UPDATE` re-check + CAS), which already satisfies "no concurrent double-ownership, crash-recoverable, short-locked" — W6 does not prescribe SKIP LOCKED where a certified pattern exists (§12).
+
+## 22. Backoff and poison work
+
+Failure classification and handling (dispatcher and workers):
+
+- **Transient dependency error** (DB timeouts, storage/Stripe network): retry with exponential backoff + jitter — `next_attempt_at = now() + min(2^attempts × 30 s, 1 h)`; no max-attempt discard (the work is real; it waits).
+- **Permanent/domain refusal** (typed refusal from a certified service): NOT an error — the certified outcome is recorded (existing semantics, e.g. quarantined gateway events, compensation) and the item concludes.
+- **Malformed event / poison work** (repeated crash on the same item): after N attempts (engineering default 8) → mark **quarantined** (`last_error_code` set, `published_at` still NULL, excluded from claims by the `next_attempt_at`/state predicate) + operational alert (§26). Quarantine is durable visibility, never deletion — nothing is silently discarded, and no hot retry loop exists (backoff grows to the 1 h cap). Un-quarantine is an explicit operator action (W6-3 maintenance command) after the cause is fixed; for search specifically, recompute-from-truth means a later event or rebuild heals the projection regardless (§11).
+
+## 23. Request correlation / `audit_event.request_id` (W6 observability scope)
+
+**Chain (W6-1):** inbound HTTP request → Fastify `genReqId` issues a canonical id (UUIDv4/v7, always server-generated); an inbound `x-request-id` is recorded as a *client correlation hint* in the log context ONLY if it matches a strict bounded format (`^[A-Za-z0-9._-]{1,64}$`) — client values are never adopted as the canonical id (untrusted, unbounded) → the id enters an `AsyncLocalStorage` request context + every log line → **`appendAuditEvent` gains an ALS fallback: when `requestId` is not explicitly passed, it reads the ambient context** — closing the never-populated `audit_event.request_id` with a change confined to `src/db/audit.ts` + the context plumbing, ZERO domain-service signature changes (closed domains stay closed) → outbox payloads stay machine-facts-only (ids, not correlation — unchanged), while operational logs correlate outbox dispatch by row id + request/job id.
+
+**Worker/scheduled work:** each tick/batch mints a `run_id` (same format) carried through the identical ALS seam, so audit rows written by workers carry the run correlation. Response header `x-request-id` echoes the canonical id for support correlation.
+
+## 24. Structured logging
+
+W6-1 configures pino (already Fastify-internal; no new vendor binding — stdout JSON, platform-agnostic): every line carries timestamp, severity, `role` (api/worker/migrate), canonical request/run id, bounded route or job identity (Fastify route pattern, never raw URLs with ids/params beyond the pattern), bounded machine error code, and duration for requests/job passes. **Redaction is fail-closed and test-pinned (a §38 proof): never log** bearer/refresh token material, cookies/authorization headers, numeric redemption codes or opaque credential secrets, webhook signing secrets or raw webhook bodies, Stripe keys, raw payment fields, or gratuitous customer/child PII (emails/names appear only where an existing certified surface already requires them — logs get digests/ids). Log level is config; production default `info`.
+
+## 25. Metrics (minimal M1–M4 set; vendor integration deferred)
+
+Emitted through one internal metrics seam (counter/gauge/histogram interface; W6-1 implements a log/in-memory exporter only — the vendor adapter is an IN-10 follow-up, not W6): **api** — request rate/latency/error rate per route pattern, in-flight count; **db** — pool in-use/waiting/errors, probe latency; **worker** — per family: claimed/succeeded/failed/retried counts, queue depth (unpublished outbox rows, `received` gateway events, unprocessed trusted items), **age of oldest pending item** (the single most important convergence signal); **payments** — pending gateway-event age, stuck-payment count (from §15), compensation count, reconciliation discrepancy count; **search** — pending projection depth/age, quarantined count; **scheduler** — per job: last successful run timestamp, duration, consecutive failures.
+
+## 26. Alerting (conditions; destination abstract)
+
+One generic **operational-alert seam**: `emitOperationalAlert({key, severity, code, machineFacts})` — structured, deduped by key (§15), delivered by a pluggable destination (W6 ships a structured-log destination; Slack/PagerDuty/email selection follows the infrastructure/staffing decision — docs/36 OP-07/OP-08). Mandatory alert conditions: api readiness failing > 2 min · oldest pending outbox/gateway-event/trusted-item age > 5 min · repeated payment processing failure (same item ≥ 3 attempts) · any reconciliation discrepancy · any stuck-payment detection · any quarantine event · scheduler job missed (no successful run within 3× its interval) or failing consecutively ≥ 3 · database connectivity failure (probe failing > 1 min) · worker heartbeat absent > 5 min.
+
+## 27. Database migrations at deploy
+
+Current workflow (verified §1): manual `npm run db:migrate`; per-migration transactions; checksum/order verification; **no concurrency guard**; production down-migrations refused by the runner. **Recommended model: a dedicated migration JOB** — one short-lived process (`RUNTIME_ROLE=migrate`) running `db:migrate` + `db:verify` to completion BEFORE any new application instance is allowed to become ready; new-version api/worker instances refuse readiness while pending migrations exist (a cheap `pgmigrations` count check folded into startup validation). Replicas never race migrations; W6-1 additionally adds a `pg_advisory_lock` around the runner as a second wall (two accidental concurrent jobs serialize; node-pg-migrate provides none today). **Rollback:** application rollback = redeploy previous version (all migrations are additive/backward-compatible by the established two-phase discipline); schema rollback in production is deliberately refused by the existing runner and stays refused — recovery from a genuinely bad migration is roll-forward or the docs/23 §10.11 restore path, and several migrations carry fail-closed down preflights precisely so data-bearing downgrades cannot run silently. This matches repository convention rather than contradicting it.
+
+## 28. Production DB connection roles (least privilege, no sprawl)
+
+| Process | Connects as | Privileges |
+|---|---|---|
+| api | `himma_api` (new LOGIN role, `IN ROLE himma_app`, W6-1 migration) | exactly `himma_app`'s certified grant set — fixing the verified gap that runtime currently connects as schema owner |
+| worker | same `himma_api` login (or a twin `himma_worker IN ROLE himma_app` if per-process audit attribution is wanted — engineering choice at W6-1) | same as api — the worker runs the same certified domain services, so the grant set is identical; separation would duplicate, not restrict |
+| retention/maintenance work | worker's connection + `SET LOCAL ROLE himma_maintenance` inside job transactions (§19) | only the enumerated DELETEs |
+| migration job | the schema-owner/DDL role (as today) | DDL; used by nothing else in production |
+
+Genuine separation exists exactly where privileges differ (DDL, DELETE); api/worker share because their required grants are provably identical.
+
+## 29. Object-storage runtime dependencies
+
+Only the **api** role needs object storage (evidence upload/serving routes); no W6 worker touches it. Config: endpoint/region/bucket/keyPrefix (public config) + access key secret (§32); when present, W6-1's composition wires the existing `createS3EvidenceStore` (closing its verified never-composed status at the wiring level); when absent, the evidence surface keeps its certified fail-closed 404. Readiness: object storage is NOT a readiness dependency (§7) — outages surface as the certified typed refusals. **The content-safety gate is untouched:** `contentSafetyReady` stays false (production `true` still throws without a genuine scanner), so Admin evidence retrieval remains fail-closed until docs/36 VE-02 closes — W6 wires storage, it does not open evidence review.
+
+## 30. Production search dependency
+
+Verified: search is PostgreSQL-only — FTS (`tsvector` + GIN) plus `pg_trgm` over the `program_search_document` projection, fed by the outbox consumer, read behind the live visibility predicate. **Production requires PostgreSQL search only.** No Elasticsearch/OpenSearch/external engine is required by the certified design and none is introduced; docs/23 §10.5 records the dedicated-engine question as a Tier-2 consideration (owner decision §18.20 territory), not a W6 concern.
+
+## 31. Deployment artifacts
+
+Verified: **none exist anywhere in the repository** — no Dockerfile, compose file, CI workflow, `.github/`, process-manager unit, Procfile, PaaS config, IaC, or `eas.json`. W6-1 will need (deployment-neutral only): a backend container definition (one image, role via env) + `.dockerignore` · a build/`start` script set (`start:api`, `start:worker`, `migrate`) · a complete environment template superseding the 5-variable `.env.example` (§6 contract, placeholders only) · the §36 local compose topology (W6's certification harness). CI pipeline work is the docs/36 IN-11 slice; provider-specific IaC is W6-4, blocked on IN-01 — neither lands in W6-0…3.
+
+## 32. Secrets model (no values committed — categories only)
+
+| Category | Examples | Handling |
+|---|---|---|
+| **Secrets** | `DATABASE_URL` password, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET[_RETIRING]`, object-storage access key, future SMTP/push keys | Environment-injected at deploy; recommended eventual delivery via a managed secret store (vendor open — IN-04); never logged (redaction test-pinned), never in images/repo; rotation procedure = docs/36 SE-01 |
+| **Public configuration** | API hostname, `HOST`/`PORT`, Cognito issuer + public client ids, object-storage endpoint/bucket/region, CORS origins | Plain env; committed only as placeholder templates |
+| **Operational policy** | runner cadences, batch sizes, backoff caps, retention horizons (engineering-scoped ones), log level, drain deadline | Plain env with engineering defaults baked in; changing them is ops, not a deploy |
+
+## 33. Production charging stays impossible (preserved through W6)
+
+W6 changes WHERE code runs, never WHAT payments can do. The production entrypoint composes payments in exactly two states: **absent** (no Stripe config → no provider → the webhook route does not even register → the certified customer 503/fail-closed boundaries) or **TEST-mode** (TEST-prefixed key accepted by the existing driver guard). Every W5 gate survives verbatim: the deterministic provider remains production-refused, non-TEST keys still throw at driver construction, `resolvePaymentProvider`'s production refusal and the `productionChargingPossible` literal `false` are NOT touched by W6-1/2/3 — **the production-composition seam W6-1 adds must route through the existing `resolvePaymentProvider` discipline, so reaching TEST-mode composition requires its own deliberate, lock-amended change in W6-1's certification (proposed as the bounded amendment: production + explicit TEST-mode key + explicit `PAYMENTS_MODE=test` opt-in → Stripe TEST driver; everything else refuses exactly as today), while LIVE remains structurally impossible pending the docs/36 PA-06 enablement slice.** W6-1/2 smokes therefore run production topology with payments absent or TEST — `productionChargingPossible` is never flipped and no W6 proof may depend on flipping it.
+
+## 34. Stripe TEST-mode pathway (TEST certification ≠ LIVE activation)
+
+Production runtime (W6-1…3, this plan) → Stripe TEST config present (docs/36 PA-02) → real webhook ingress reachable (PA-03) → async worker converging events (W6-2) → scheduled reconciliation + stuck-state detection observing (W6-3) → compensation smoke (deliberate late-success/hold-death scenarios in TEST mode) → **D-W5-6 TEST certification recorded (PA-04)** → — hard stop — → live activation is a SEPARATE later chain (FI-01/02 rulings + LE-06 acknowledgments + owner approval → PA-06 enablement slice → PA-07 live pilot). The two are never collapsed; TEST certification proves the machine, live activation is a business/legal decision.
+
+## 35. Failure-domain analysis
+
+| Failure | api | worker | Correctness posture |
+|---|---|---|---|
+| PostgreSQL unavailable | Readiness fails → traffic withheld; in-flight requests error typed; recovers on probe success | Loops error → backoff; no claims possible → nothing half-done | Durable truth is IN PostgreSQL; nothing to lose. Alert §26 |
+| Stripe unavailable | Checkout initiation → certified typed refusal/503; webhook silence = Stripe-side retry queue | Payment passes fail transient → backoff; convergence resumes on recovery (§11.1's 15-min post-recovery target) | Explicit degraded state, no loss (events are durable at Stripe until acked) |
+| Cognito unavailable | Auth flows → certified outage normalization (transient ≠ authoritative); active sessions keep working per certified semantics | Unaffected | Degraded, honest |
+| Object storage unavailable | Evidence routes → certified typed refusals; readiness unaffected | Unaffected | Degraded, honest |
+| Worker crashes | — | Claims release with connections; ticks' advisory locks evaporate; restart resumes; duplicate effects impossible (idempotency/inbox) | Automatic recovery, no manual repair |
+| Scheduler (tick) crashes | — | Same as worker crash — no partial ownership exists (§20) | Same |
+| Process killed mid-item | Request lost pre-commit = nothing happened (idempotent client retry) | Item returns to pool (§8/§21) | At-least-once + idempotent effects |
+| Search projection repeatedly fails | Search serves last-good projection (stale, honest) | Poison item quarantines + alerts; later events or rebuild heal (recompute-from-truth) | Degraded visibility, never wrong authorization (live predicate) and never silent (§22) |
+
+## 36. Local production-like certification harness (planned; built in W6-1…3, not W6-0)
+
+A compose-style local/CI topology proving production composition without any cloud: real PostgreSQL + the migration job + `api` role + `worker` role — all with `NODE_ENV=production` and the §6 contract, plus only production-equivalent substitutes (a local S3-compatible store for §29 where exercised; Stripe TEST once PA-02 credentials exist — until then payments-absent composition). **Dev shortcuts must be impossible in this harness by construction** (a §38 proof): dev identity cannot compose (no fake adapter deps), the deterministic provider is refused, fixture storage absent, in-memory rate-limit store refused — the harness certifies the same refusals production relies on. Multi-process concurrency proofs (two workers, scheduler double-fire, kill -9 recovery) run against this topology on real PostgreSQL.
+
+## 37. W6 implementation-slice decomposition
+
+Each slice is independently owner-reviewable, commits alone, and stops for review (docs/20–22 pattern).
+
+**W6-1 — Production Runtime Foundation.** Owns: the production API executable + config validation contract (§2/§6) · `createPool` adoption with lifecycle + teardown · PG-backed rate-limit store behind the existing port (§9) · request correlation + ALS audit seam (§23) · structured logging + redaction (§24) · metrics/alert seams (§25/§26 interfaces + log destinations) · liveness/readiness (§7) · graceful shutdown (§8) · migration-job boundary + runner advisory lock + readiness pending-migration check (§27) · `himma_api` login role migration (§28) · S3 store composition wiring (§29) · payments-absent/TEST composition seam with lock amendments (§33) · start scripts + container definition + env template (§31). NO live charging; NO worker.
+
+**W6-2 — Durable Async Worker.** Owns: the worker executable + loop supervisor (§4) · outbox dispatcher with SKIP LOCKED claiming, backoff, quarantine (+ the additive `next_attempt_at`/`last_error_code` migration) (§10/§21/§22) · search-projection consumer live (§11) · `processPendingGatewayEvents`/`processTrustedPaymentResults` worker cadence (§12) · worker liveness/heartbeat.
+
+**W6-3 — Scheduler & Operational Jobs.** Owns: advisory-lock tick infrastructure + `job_run` bookkeeping migration (§20) · `sweepLapsedPaidCheckouts` cadence (§13) · scheduled reconciliation (§14) · stuck-state detection + alert dedup (§15) · hygiene sweeps (§16, identity/staff) · retention infrastructure + `himma_maintenance` role migration + engineering-scoped sweeps (§18/§19) · operator maintenance commands (rebuild-search, un-quarantine) · missed-run alerting (§26).
+
+*(W6-4 — provider-specific deployment/IaC/CI — exists as a named successor but is BLOCKED on the IN-01 ruling and specified elsewhere; docs/36 IN-11 may be folded into it.)*
+
+## 38. Acceptance-proof matrix (mandatory per slice; real multi-process/multi-connection PostgreSQL where concurrency matters)
+
+**W6-1:** production-mode boot succeeds with valid config and REFUSES with a named variable on each missing mandatory item · production config CANNOT compose dev identity, the deterministic provider, fixture storage, or the in-memory rate-limit store (composition-refusal tests) · rate-limit store passes the existing limiter contract suite cross-connection (two concurrent consumers, one window) · `request_id` reaches `audit_event` end-to-end through an HTTP request, and a worker-style run id does the same through the ALS seam · redaction suite (secret-shaped values never appear in log output) · readiness flips on DB loss/recovery; liveness does not · graceful shutdown drains in-flight requests, ends the pool, exits 0; second-signal hard exit proven · migration job + racing second job serialize on the advisory lock; api refuses readiness with pending migrations · `himma_api` runtime role passes the append-only/grant denial suite live (not just via `SET LOCAL ROLE`) · TEST-mode payment composition possible ONLY with explicit opt-in; `productionChargingPossible` source lock re-green.
+
+**W6-2:** two workers claiming concurrently never process the same outbox row (SKIP LOCKED proof, real multi-connection) · worker killed (SIGKILL) mid-claim → row recovered by the survivor; committed consumer effect + redelivery → inbox dedup, exactly-once effect · publish → searchable end-to-end with no manual step, p95 within target on the harness · poison event → backoff schedule honored → quarantined + alert emitted + later event heals the projection · gateway event ingested during api/webhook process restart survives and converges via the worker alone (webhook post-ack disabled in the test) · full W5 battery re-green (trust boundaries untouched).
+
+**W6-3:** scheduler double-fire (two instances, same tick) produces no duplicate business effect and exactly one `job_run` success · tick crash releases the lock; next tick runs clean · reconciliation discrepancy alerts and MUTATES NOTHING (ledger byte-identical) · stuck-state alert dedup + all-clear behavior · retention deletes ONLY via `himma_maintenance` (app role attempt fails), only enumerated tables, only beyond horizon · platform correctness with ALL sweeps disabled (hold/quote/entitlement predicates still correct — §16/§17 pin) · missed-run alert fires when a job is suppressed 3× its interval.
+
+## 39. Mapping to docs/36 (authoritative; no parallel checklist)
+
+| Slice | Closes | Advances |
+|---|---|---|
+| W6-1 | **IN-02** (entrypoint), **IN-07** (rate-limit store), **IN-09** (logging/request-ids incl. the audit seam) | IN-04 (config contract), IN-11 (deploy/migration boundaries), IN-12 (harness topology), SE-01 (secret categories/redaction), VE-01 (storage composition — closure needs the real bucket), PA-03 precondition, ID-03/04 preconditions, §33 TEST seam toward PA-04 |
+| W6-2 | **OP-03** (outbox relay + search consumer) | OP-02 (worker halves), IN-14 (queue-lag/webhook-convergence gate mechanics), PA-04 precondition |
+| W6-3 | **OP-01** (scheduler infra), **OP-02** (payment cadence), **OP-04**, **OP-05**, **OP-07** (alert/restart proofs — final destination pending infra choice) | PA-09 (scheduled reconciliation — full closure adds ops procedure), PA-10 (stuck alerting — destination pending), OP-06 (mechanism; policy-gated sweeps await VE-05/SE-05), SE-05 (request-id half closed by W6-1; retention half advanced) |
+
+Gate rows in docs/36 are updated by each closing slice in its own commit (the established maintenance rule). Deliberately NOT W6: IN-01/03/04/05/06 external/config halves, IN-10 vendor telemetry, IN-08, OP-08 staffing, all PA/FI/VE/MR/SE/LE external gates.
+
+## 40. Owner decisions (minimized) and engineering-owned choices
+
+**Genuine owner/company decisions:** (1) approve this plan — topology (§4), slice decomposition (§37), and the §33 TEST-composition seam as W6-1's one payment-lock amendment; (2) final deployment/cloud target (docs/36 IN-01 — blocks only W6-4, NOT W6-1…3, which stay provider-neutral by design); (3) retention policies with legal/business dimension (audit, identity records, evidence — docs/36 SE-05/VE-05; W6 builds mechanism only); (4) operational notification destination + staffing (with OP-08/IN-10 infrastructure choice). **Explicitly NOT escalated (engineering-owned):** polling intervals, batch sizes, backoff curves and caps, poison thresholds, advisory-lock keying, SKIP LOCKED adoption, process/role naming, pool sizing, engineering-scoped retention horizons — none alters product or business semantics.
+
+---
+
+*W6-0 changes documentation and HANDOFF only. On owner approval, W6-1 is the recommended first implementation slice (it unblocks every production smoke in every track and requires no external input); W6-1 does NOT start without that approval.*
