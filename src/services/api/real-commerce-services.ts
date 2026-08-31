@@ -6,9 +6,12 @@
  * client-side price arithmetic exists anywhere here — fils become display
  * strings and nothing else.
  *
- * S6 boundary (owner RI-3 §23): package/pass/membership price options are
- * composed as NON-purchasable rows ('Coming soon') — never forced into a
- * capacity Booking.
+ * RI-4 — the RI-3 not-yet-bookable S6 boundary is RETIRED where real backend
+ * support now exists: package/membership options compose as PURCHASABLE
+ * `entitlementAcquisition` rows riding the SAME flow screens; the summary
+ * quotes through the S6 acquisition API (unit-less — no session step, no
+ * hold) and checkout dispatches to the purchase trail. A package is NEVER
+ * routed through the capacity Booking flow.
  */
 import type { DiscoveryApi, ListingDetailDto, PriceOptionDto } from '@/services/api/discovery-api';
 import {
@@ -27,6 +30,10 @@ import type {
 } from '@/services/contracts/booking';
 import type { CheckoutPage } from '@/services/contracts/checkout';
 import type { CommerceApi, CommerceUnitKind, Quote } from '@/services/contracts/commerce';
+import type {
+  AcquisitionQuote,
+  EntitlementsApi,
+} from '@/services/contracts/entitlements';
 import type { Participant, Provider } from '@/types/domain';
 import { currentDateParts, participantSuitability } from '@/utils/eligibility';
 import { spokenLabel } from '@/utils/price';
@@ -60,6 +67,8 @@ function optionTitle(option: PriceOptionDto): string {
       return 'Term enrolment';
     case 'package':
       return 'Session package';
+    case 'membership':
+      return 'Membership';
     default:
       return 'Activity';
   }
@@ -68,6 +77,12 @@ function optionTitle(option: PriceOptionDto): string {
 function optionPriceLabel(option: PriceOptionDto): string {
   if (option.kind === 'free') return 'Free';
   if (option.amountFils === null) return '';
+  // A genuinely zero-priced entitlement product (docs/35 §5.5) reads Free.
+  if (option.amountFils === 0 && (option.kind === 'package' || option.kind === 'membership')) {
+    return option.kind === 'package' && option.sessionsCount !== null
+      ? `Free · ${option.sessionsCount} sessions`
+      : 'Free';
+  }
   const amount = filsLabel(option.amountFils);
   switch (option.kind) {
     case 'dropIn':
@@ -82,6 +97,8 @@ function optionPriceLabel(option: PriceOptionDto): string {
       return option.sessionsCount === null
         ? amount
         : `${amount} for ${option.sessionsCount} sessions`;
+    case 'membership':
+      return amount;
     default:
       return amount;
   }
@@ -140,19 +157,24 @@ async function composeOptions(
 
   const options: BookingOption[] = [];
   for (const option of listing.priceOptions) {
-    if (option.kind === 'package') {
-      // S6 boundary: representable, browsable, NOT purchasable yet.
+    if (option.kind === 'package' || option.kind === 'membership') {
+      // RI-4: the REAL S6 acquisition trail — purchasable, unit-less
+      // (no session selection; the flow's skip rule applies). Terms are
+      // quoted authoritatively at the summary step; a missing fulfillment
+      // configuration refuses there typed (`fulfillmentUnavailable`).
       options.push({
         id: option.id,
-        kind: 'package',
+        kind: option.kind,
         title: optionTitle(option),
         priceLabel: optionPriceLabel(option),
         priceOptionId: option.id,
-        purchasable: false,
-        unavailableNote: 'Coming soon — not yet bookable in the app',
+        commercial: 'entitlementAcquisition',
         requiresSession: false,
         sessions: [],
-        detailLines: [],
+        detailLines:
+          option.kind === 'package' && option.sessionsCount !== null
+            ? [`${option.sessionsCount} sessions · use whenever suits you`]
+            : [],
       });
       continue;
     }
@@ -231,9 +253,43 @@ function toEligibility(
     .map((participant) => participantSuitability(eligibility, participant, today));
 }
 
+/**
+ * Customer-safe wording of the SERVER acquisition terms (docs/35 §8 —
+ * displayed truths only; no backend vocabulary, no revision internals).
+ * Exported for unit tests.
+ */
+export function acquisitionTermsLines(quote: AcquisitionQuote): string[] {
+  const terms = quote.fulfillment;
+  const lines: string[] = [];
+  lines.push(
+    terms.usageKind === 'unlimited'
+      ? 'Unlimited visits'
+      : terms.usesTotal !== undefined
+        ? `${terms.usesTotal} visits`
+        : 'Multi-visit pass',
+  );
+  if (terms.validityKind === 'daysFromConfirmation' && terms.validityDays !== undefined) {
+    lines.push(`Valid for ${terms.validityDays} days from purchase`);
+  } else if (terms.validityKind === 'fixedEndDate' && terms.validityEndDate !== undefined) {
+    const until = new Date(`${terms.validityEndDate}T00:00:00`);
+    lines.push(
+      `Valid until ${until.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+    );
+  }
+  if (terms.reservationRequired && terms.walkInAllowed) {
+    lines.push('Reserve sessions or walk in with a check-in code');
+  } else if (terms.reservationRequired) {
+    lines.push('Reserve your sessions in the app');
+  } else if (terms.walkInAllowed) {
+    lines.push('Walk in and check in with a code');
+  }
+  return lines;
+}
+
 export function createRealBookingService(
   api: DiscoveryApi,
   commerce: CommerceApi,
+  entitlements: EntitlementsApi,
 ): BookingService {
   async function buildPage(
     input: BookingOptionsInput,
@@ -304,6 +360,40 @@ export function createRealBookingService(
       const { page, listing } = built;
       const option = page.options.find((entry) => entry.id === draft.optionId);
       if (option === undefined || option.purchasable === false) return undefined;
+
+      // RI-4 — the S6 acquisition trail: unit-less, no session, no hold.
+      // THE authoritative acquisition quote replaces the capacity quote;
+      // checkout dispatches on `acquisitionQuote`.
+      if (option.commercial === 'entitlementAcquisition') {
+        if (option.priceOptionId === undefined) return undefined;
+        const participant = page.householdEligibility.find(
+          (entry) => entry.participantId === draft.participantId && entry.suitable,
+        );
+        if (participant === undefined) return undefined;
+        const acquisitionQuote = await entitlements.requestAcquisitionQuote({
+          programId: draft.programId,
+          priceOptionId: option.priceOptionId,
+          participantId: String(draft.participantId),
+        });
+        return {
+          program: page.program,
+          provider: page.provider,
+          ...(page.branch !== undefined ? { branch: page.branch } : {}),
+          participant,
+          option,
+          selectionLines: acquisitionTermsLines(acquisitionQuote),
+          priceLines: acquisitionQuote.lines.map((line) => ({
+            label: line.labelEn,
+            value: line.amountFils === 0 ? 'Free' : filsLabel(line.amountFils),
+          })),
+          bookingPriceLabel:
+            acquisitionQuote.totalFils === 0
+              ? 'Price · Free'
+              : `Price · ${filsLabel(acquisitionQuote.totalFils)}`,
+          acquisitionQuote,
+        };
+      }
+
       if (option.priceOptionId === undefined || option.unitKind === undefined) return undefined;
       const session = option.sessions.find((entry) => entry.id === draft.sessionId);
       if (option.requiresSession && (session === undefined || session.availability === 'full')) {
@@ -364,11 +454,18 @@ export function composeCheckoutPage(
   participants: Participant[],
 ): CheckoutPage | undefined {
   {
-      if (summary.quote === undefined) return undefined;
-      const quote = summary.quote;
+      // RI-4: exactly one authoritative quote exists — capacity OR
+      // acquisition; both carry the same server line/total shape.
+      const quote = summary.quote ?? summary.acquisitionQuote;
+      if (quote === undefined) return undefined;
+      const acquisition = summary.acquisitionQuote !== undefined;
       const free = quote.totalFils === 0;
       const bookingPriceLabel = summary.bookingPriceLabel;
-      const ctaLabel = free ? ('Confirm booking' as const) : ('Continue to payment' as const);
+      const ctaLabel = free
+        ? acquisition
+          ? ('Get your pass' as const)
+          : ('Confirm booking' as const)
+        : ('Continue to payment' as const);
       const participant = participants.find(
         (entry) => entry.id === summary.participant.participantId,
       );
@@ -403,7 +500,7 @@ export function composeCheckoutPage(
         paymentRequired: !free,
         validation: { ok: true },
         ctaLabel,
-        spokenCtaLabel: free ? 'Confirm booking' : 'Continue to payment',
+        spokenCtaLabel: ctaLabel,
       };
   }
 }

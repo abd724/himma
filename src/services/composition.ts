@@ -37,6 +37,7 @@ import {
 } from './api/real-discovery-services';
 import { createTaxonomyCache } from './api/taxonomy-cache';
 import { createCommerceApi } from './api/commerce-api';
+import { createEntitlementsApi } from './api/entitlements-api';
 import { createRealBookingService } from './api/real-commerce-services';
 import { apiBaseUrl } from './http/api-config';
 import { createHttpClient } from './http/http-client';
@@ -99,7 +100,16 @@ export const mapService = createRealMapService(discoveryApi, taxonomyCache);
 // isolated tests exclusively (source-locked out of this module).
 // ---------------------------------------------------------------------------
 export const commerceApi = createCommerceApi(httpClient);
-export const bookingService = createRealBookingService(discoveryApi, commerceApi);
+
+// ---------------------------------------------------------------------------
+// RI-4 — REAL Passes & Memberships composition (docs/35 §8/§9/§13): the S6
+// entitlement acquisition, Passes projections, reservation, and redemption-
+// credential surfaces. No mock implementation exists for this family — the
+// running app always uses the real backend, and the acquisition path rides
+// the SAME booking-flow screens through the options composition below.
+// ---------------------------------------------------------------------------
+export const entitlementsApi = createEntitlementsApi(httpClient);
+export const bookingService = createRealBookingService(discoveryApi, commerceApi, entitlementsApi);
 
 /**
  * D-RI-3 operational record: Sign in with Apple and Google sign-in reuse

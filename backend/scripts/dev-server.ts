@@ -28,6 +28,7 @@ import { createDb } from '../src/db/kysely';
 import { CaptureMailSender } from '../src/modules/identity/mail/mail-sender';
 import { DevPasswordIdentityProvider } from '../src/modules/identity/providers/dev/dev-password-identity';
 import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
+import { registerDevCheckinActor } from './dev-checkin-actor';
 import { registerDevHostedCheckout } from './dev-hosted-checkout';
 import { cliConfig, fail } from './cli-env';
 
@@ -115,6 +116,9 @@ async function main(): Promise<void> {
     checkoutUrls,
     webhookDelayMs: Number(process.env.DEV_PAYMENT_WEBHOOK_DELAY_MS ?? 900),
   });
+  // RI-4 — the dev-only provider check-in ACTOR (real S6-2 services under
+  // a real front-desk membership; Playwright's stand-in for the desk).
+  registerDevCheckinActor(app, { db });
 
   await app.ready();
   await app.listen({ port, host });

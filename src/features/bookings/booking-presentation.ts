@@ -41,6 +41,10 @@ export function bookingWhenLabel(booking: CustomerBooking, now: Date = new Date(
 }
 
 export function bookingPriceLabel(booking: CustomerBooking): string {
+  // RI-4 (S6-3 item 26): an entitlement-reserved Booking is paid-for by the
+  // customer's pass — the SERVER flag decides, never the AED 0 amount; a
+  // provider's genuinely free session still reads "Free".
+  if (booking.coveredByEntitlement) return 'Included with pass';
   if (booking.price.totalFils === 0) return 'Free';
   return `AED ${(booking.price.totalFils / 100).toLocaleString('en-US', {
     maximumFractionDigits: 2,

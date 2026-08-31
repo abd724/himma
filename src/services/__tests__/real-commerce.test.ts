@@ -1,9 +1,10 @@
 /**
- * RI-3 — the real booking/checkout composition over API doubles: options
- * from real listing+availability truth, the S6 product boundary
- * (packages are visible but NEVER purchasable), the summary displaying
- * the server quote VERBATIM, and the checkout page derived from that
- * same quote (free vs paid).
+ * RI-3/RI-4 — the real booking/checkout composition over API doubles:
+ * options from real listing+availability truth, the RI-4 acquisition rows
+ * (packages/memberships purchasable through the S6 trail — never a
+ * capacity Booking), the summary displaying the server quote VERBATIM,
+ * and the checkout page derived from that same quote (free vs paid vs
+ * acquisition).
  */
 import { describe, expect, it } from '@jest/globals';
 import type {
@@ -17,6 +18,7 @@ import {
   filsLabel,
 } from '@/services/api/real-commerce-services';
 import type { CommerceApi, Quote, QuoteRequest } from '@/services/contracts/commerce';
+import type { AcquisitionQuote, EntitlementsApi } from '@/services/contracts/entitlements';
 import type { Participant } from '@/types/domain';
 
 const ME: Participant = { id: 'part-self', label: 'Me', kind: 'self' };
@@ -143,13 +145,42 @@ function doubles(quoteTotalFils: number) {
       };
     },
   } as unknown as CommerceApi;
-  return { discovery, commerce, quoteRequests };
+  const acquisitionRequests: { programId: string; priceOptionId: string; participantId: string }[] =
+    [];
+  const entitlements = {
+    async requestAcquisitionQuote(input: {
+      programId: string;
+      priceOptionId: string;
+      participantId: string;
+    }): Promise<AcquisitionQuote> {
+      acquisitionRequests.push(input);
+      return {
+        quoteId: 'acq-quote-1',
+        programId: input.programId,
+        participantId: input.participantId,
+        optionKind: 'package',
+        totalFils: 76000,
+        currency: 'AED',
+        lines: [{ lineNo: 1, kind: 'base', labelEn: '10-class pack', amountFils: 76000 }],
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        fulfillment: {
+          usageKind: 'finite',
+          usesTotal: 10,
+          validityKind: 'daysFromConfirmation',
+          validityDays: 60,
+          reservationRequired: true,
+          walkInAllowed: true,
+        },
+      };
+    },
+  } as unknown as EntitlementsApi;
+  return { discovery, commerce, entitlements, quoteRequests, acquisitionRequests };
 }
 
 describe('real booking options', () => {
-  it('composes real options; the S6 package is VISIBLE but never purchasable; closed sessions are not selectable', async () => {
-    const { discovery, commerce } = doubles(9000);
-    const service = createRealBookingService(discovery, commerce);
+  it('composes real options; the RI-4 package row is PURCHASABLE through the acquisition trail; closed sessions are not selectable', async () => {
+    const { discovery, commerce, entitlements } = doubles(9000);
+    const service = createRealBookingService(discovery, commerce, entitlements);
     const page = await service.getBookingOptions({
       programId: 'prog-1',
       participantId: 'everyone',
@@ -162,10 +193,46 @@ describe('real booking options', () => {
     expect(dropIn.priceLabel).toBe('AED 90 per session');
     expect(dropIn.sessions.map((session) => session.id)).toEqual(['unit-1']); // closed excluded
     const pack = page!.options.find((option) => option.id === 'po-pack')!;
-    expect(pack.purchasable).toBe(false);
-    expect(pack.unavailableNote).toContain('Coming soon');
+    // RI-4: the 'Coming soon' boundary is retired — the package rides the
+    // S6 acquisition trail (unit-less: no sessions, no hold, never a
+    // capacity Booking).
+    expect(pack.purchasable).not.toBe(false);
+    expect(pack.commercial).toBe('entitlementAcquisition');
+    expect(pack.requiresSession).toBe(false);
+    expect(pack.sessions).toEqual([]);
+    expect(pack.unavailableNote).toBeUndefined();
     expect(pack.priceLabel).toBe('AED 760 for 10 sessions');
     expect(page!.availability.status).toBe('bookable');
+  });
+
+  it('RI-4: the acquisition summary quotes through the S6 API (no unit, no capacity quote) and checkout dispatches on it', async () => {
+    const { discovery, commerce, entitlements, quoteRequests, acquisitionRequests } =
+      doubles(9000);
+    const service = createRealBookingService(discovery, commerce, entitlements);
+    const summary = await service.getBookingSummary({
+      draft: { programId: 'prog-1', optionId: 'po-pack', participantId: 'part-self' },
+      participants: [ME],
+      areaId: '',
+    });
+    expect(summary).toBeDefined();
+    // The S6 acquisition quote — never the capacity quote.
+    expect(acquisitionRequests).toEqual([
+      { programId: 'prog-1', priceOptionId: 'po-pack', participantId: 'part-self' },
+    ]);
+    expect(quoteRequests).toEqual([]);
+    expect(summary!.quote).toBeUndefined();
+    expect(summary!.acquisitionQuote?.quoteId).toBe('acq-quote-1');
+    expect(summary!.bookingPriceLabel).toBe('Price · AED 760');
+    // Server terms, customer-safe wording only.
+    expect(summary!.selectionLines).toEqual([
+      '10 visits',
+      'Valid for 60 days from purchase',
+      'Reserve sessions or walk in with a check-in code',
+    ]);
+    const page = composeCheckoutPage(summary!, [ME])!;
+    expect(page.paymentRequired).toBe(true);
+    expect(page.ctaLabel).toBe('Continue to payment');
+    expect(page.price.bookingPriceLabel).toBe('Price · AED 760');
   });
 });
 
@@ -178,8 +245,8 @@ describe('real summary + checkout derivation', () => {
   };
 
   it('the summary displays the SERVER quote verbatim and carries it forward', async () => {
-    const { discovery, commerce, quoteRequests } = doubles(9000);
-    const service = createRealBookingService(discovery, commerce);
+    const { discovery, commerce, entitlements, quoteRequests } = doubles(9000);
+    const service = createRealBookingService(discovery, commerce, entitlements);
     const summary = await service.getBookingSummary({
       draft,
       participants: [ME],
@@ -201,7 +268,7 @@ describe('real summary + checkout derivation', () => {
 
   it('checkout derives from THAT summary: paid → payment required; free → certified free path, no methods', async () => {
     const paid = doubles(9000);
-    const paidService = createRealBookingService(paid.discovery, paid.commerce);
+    const paidService = createRealBookingService(paid.discovery, paid.commerce, paid.entitlements);
     const paidSummary = (await paidService.getBookingSummary({
       draft,
       participants: [ME],
@@ -214,7 +281,7 @@ describe('real summary + checkout derivation', () => {
     expect(paidPage.price.bookingPriceLabel).toBe('Booking price · AED 90');
 
     const free = doubles(0);
-    const freeService = createRealBookingService(free.discovery, free.commerce);
+    const freeService = createRealBookingService(free.discovery, free.commerce, free.entitlements);
     const freeSummary = (await freeService.getBookingSummary({
       draft,
       participants: [ME],

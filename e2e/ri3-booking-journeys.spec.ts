@@ -135,7 +135,7 @@ test('PAID journey: hold countdown → hosted boundary → signed webhook → sa
   await expect(page.getByText('Upcoming').last()).toBeVisible();
 });
 
-test('S6 product boundary: a package option is visible but truthfully NOT bookable', async ({
+test('S6 products (RI-4): the package option is a REAL selectable acquisition — the Coming-soon boundary is retired', async ({
   page,
 }) => {
   await page.goto('/');
@@ -147,11 +147,11 @@ test('S6 product boundary: a package option is visible but truthfully NOT bookab
   await page.getByLabel(/Adult BJJ Fundamentals by Harbor Martial Arts/).last().click();
   await page.getByLabel(/^Book: Adult BJJ Fundamentals/).last().click();
 
-  await expect(page.getByText('Coming soon', { exact: true }).last()).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByText('10-class pack').last()).toBeVisible();
-  // The unavailable option is disabled — selecting it is impossible.
-  const unavailable = page.getByTestId(/^option-unavailable-/).last();
-  await expect(unavailable).toHaveAttribute('aria-disabled', 'true');
+  // RI-4: the pack is purchasable through the S6 acquisition trail — the
+  // RI-3 'Coming soon' boundary no longer exists anywhere on the page.
+  await expect(
+    page.getByRole('radio', { name: /10-class pack, AED 600 for 10 sessions/ }).last(),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Coming soon', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId(/^option-unavailable-/)).toHaveCount(0);
 });

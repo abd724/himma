@@ -122,6 +122,16 @@ export interface CustomerBooking {
     effectiveStart: string | null;
   };
   price: { totalFils: number; currency: 'AED' };
+  /**
+   * RI-4 (S6-3 owner item 26): TRUE when this Booking's AED 0 quote is
+   * covered by the customer's Entitlement — presentation must read
+   * "Included with pass", NEVER "Free". A provider's genuinely free
+   * session keeps this false; the flag is the ONLY authority (an AED 0
+   * price never implies pass coverage).
+   */
+  coveredByEntitlement: boolean;
+  /** The covering Entitlement id for navigation, when covered. */
+  entitlementId: string | null;
   createdAt: string;
   confirmedAt: string | null;
 }

@@ -16,6 +16,10 @@ import path from 'node:path';
 
 const SRC = path.resolve(__dirname, '..', '..');
 
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -63,14 +67,10 @@ describe('composition boundary locks', () => {
     for (const forbidden of ['mock-booking-service', 'mock-checkout-service']) {
       expect(composition).not.toContain(forbidden);
     }
-    // The RI-2 pending boundary is retired; the S6 product boundary is the
-    // options composition's non-purchasable rows (never a fake Session).
+    // The RI-2 pending boundary is retired; since RI-4 the S6 product
+    // boundary itself is retired — packages/memberships ride the REAL
+    // acquisition trail (asserted in the RI-4 lock below).
     expect(composition).not.toContain('BOOKING_INTEGRATION_PENDING');
-    const realCommerce = readFileSync(
-      path.join(SRC, 'services', 'api', 'real-commerce-services.ts'),
-      'utf8',
-    );
-    expect(realCommerce).toMatch(/purchasable: false/);
   });
 
   it('RI-3: commission/economics can never enter Customer App models — and no customer payment-success authority exists', () => {
@@ -100,6 +100,78 @@ describe('composition boundary locks', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('RI-4: the Passes/entitlements family is REAL-ONLY — composition binds the HTTP adapter, no mock implements it, and the acquisition trail is never a Booking hack', () => {
+    const composition = readFileSync(path.join(SRC, 'services', 'composition.ts'), 'utf8');
+    expect(composition).toMatch(/entitlementsApi = createEntitlementsApi\(httpClient\)/);
+    // The options composition routes package/membership through the S6
+    // acquisition trail — the RI-3 'Coming soon' boundary is retired and
+    // no package is ever forced into a capacity Booking.
+    const realCommerce = readFileSync(
+      path.join(SRC, 'services', 'api', 'real-commerce-services.ts'),
+      'utf8',
+    );
+    expect(stripComments(realCommerce)).not.toContain('Coming soon');
+    expect(realCommerce).toMatch(/commercial: 'entitlementAcquisition'/);
+    // No mock module implements the entitlements/check-in contracts.
+    for (const file of sourceFiles(path.join(SRC, 'services', 'mock'))) {
+      const source = readFileSync(file, 'utf8');
+      expect(source).not.toMatch(/EntitlementsApi|contracts\/entitlements|credential|checkIn/);
+    }
+  });
+
+  it('RI-4: credential secrets never persist or log — the check-in/passes features touch NO storage and the store is memory-only', () => {
+    for (const dir of [
+      path.join(SRC, 'features', 'checkin'),
+      path.join(SRC, 'features', 'passes'),
+    ]) {
+      for (const file of sourceFiles(dir)) {
+        // Doc comments legitimately RECORD the prohibitions — lock the
+        // executable source only (the slice-closeout precedent).
+        const source = stripComments(readFileSync(file, 'utf8'));
+        expect(source).not.toMatch(/AsyncStorage|SecureStore|localStorage|sessionStorage/);
+        expect(source).not.toMatch(/console\.(log|info|warn|error|debug)/);
+        expect(source).not.toMatch(/analytics|Sentry|crashlytics/i);
+      }
+    }
+    // The display code never rides a route/URL (hrefs carry identifiers
+    // only — asserted behaviorally in checkin.test.ts, structurally here).
+    const entry = readFileSync(
+      path.join(SRC, 'features', 'checkin', 'checkin-entry.ts'),
+      'utf8',
+    );
+    expect(entry).not.toMatch(/displayCode.*params\.set|params\.set.*displayCode/);
+  });
+
+  it('RI-4: no client-authored balances, no manual consumption, no Calendar UI', () => {
+    // Balances arrive from the server: no feature/state module computes
+    // remaining/available counts by arithmetic on the entitlement truths.
+    for (const dir of ['features', 'state', 'app']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = readFileSync(file, 'utf8');
+        expect(source).not.toMatch(/usesTotal\s*-|-\s*reservedUpcoming|remaining\s*-\s*1|used\s*\+\s*1/);
+        // No manual consumption affordance exists anywhere (owner §30).
+        expect(source).not.toMatch(/markAttended|useOneCredit|decrementVisits|manualCheckIn/);
+      }
+    }
+    // RI-5 owns the unified Calendar: no calendar route/screen exists; the
+    // bounded occurrence read is consumed ONLY by check-in selection.
+    for (const file of sourceFiles(path.join(SRC, 'app'))) {
+      expect(path.basename(file)).not.toMatch(/calendar/i);
+    }
+    const occurrenceConsumers: string[] = [];
+    for (const dir of ['app', 'features', 'state', 'components']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = readFileSync(file, 'utf8');
+        if (source.includes('listOccurrences')) {
+          occurrenceConsumers.push(path.relative(SRC, file));
+        }
+      }
+    }
+    expect(occurrenceConsumers).toEqual([
+      path.join('features', 'checkin', 'occurrence-select-screen.tsx'),
+    ]);
   });
 
   it('no screen/state/app module imports a mock implementation directly', () => {

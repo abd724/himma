@@ -34,6 +34,7 @@ function oneOffAmount(summary: BookingSummary, option: BookingOption): number | 
   switch (option.kind) {
     case 'single-session':
       return price.kind === 'dropIn' ? price.amount : undefined;
+    case 'membership':
     case 'package':
       return price.kind === 'package' ? price.amount : undefined;
     case 'camp-week':
@@ -61,6 +62,7 @@ function priceKindFor(option: BookingOption): CheckoutPriceSummary['priceKind'] 
       return option.priceLabel === 'Free' ? 'free' : 'oneOff';
     case 'single-session':
     case 'camp-week':
+    case 'membership':
     case 'package':
       return 'oneOff';
   }

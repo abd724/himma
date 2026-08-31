@@ -182,6 +182,193 @@ async function createSeedProgram(ctx: SeedContext, input: SeedProgramInput): Pro
   return programId;
 }
 
+/**
+ * RI-4 — the Passes & Memberships dev catalogue (idempotent, run every
+ * seed invocation — fresh AND already-seeded databases):
+ *
+ * - ACTIVE fulfillment revisions for every seeded package/membership
+ *   option (S6-1 recorded that no dev entitlement product was purchasable
+ *   until RI-4 wiring — this is that wiring's seed half).
+ * - A FREE intro pack + FREE unlimited community membership on a new
+ *   Serenity mat-Pilates program (the zero-price acquisition journeys),
+ *   with future reservable sessions plus ONE session kept inside the
+ *   ±60-minute check-in window on every run (reserved-use check-in).
+ * - A FREE open-day camp week on Bright Minds whose span/daily window is
+ *   re-anchored to "today, starting in ~30 minutes" each run (the 0020
+ *   canonical per-day occurrence journey).
+ *
+ * Entirely fictional; writes only through the certified schema.
+ */
+async function ensureRi4Fulfillment(db: Kysely<DB>): Promise<{ createdPrograms: boolean }> {
+  // 1. Revisions for every seed entitlement option lacking one.
+  await sql`
+    INSERT INTO price_option_fulfillment_revision
+      (id, price_option_id, program_id, organization_id, revision_no, usage_kind,
+       uses_total, validity_kind, validity_days, validity_end_date,
+       reservation_required, walk_in_allowed, branch_id)
+    SELECT gen_random_uuid(), o.id, o.program_id, o.organization_id, 1,
+           CASE WHEN o.kind = 'membership' AND o.sessions_count IS NULL THEN 'unlimited'
+                ELSE 'finite' END,
+           NULL::integer,
+           CASE WHEN o.kind = 'membership' AND o.sessions_count IS NULL THEN 'fixedEndDate'
+                ELSE 'daysFromConfirmation' END,
+           CASE WHEN o.kind = 'membership' AND o.sessions_count IS NULL THEN NULL ELSE 60 END,
+           CASE WHEN o.kind = 'membership' AND o.sessions_count IS NULL
+                THEN '2027-12-31'::date ELSE NULL END,
+           true, true, NULL
+    FROM program_price_option o
+    JOIN organization org ON org.id = o.organization_id
+    WHERE o.kind IN ('package', 'membership')
+      AND org.legal_name LIKE ${`%${SEED_TAG}`}
+      AND NOT EXISTS (SELECT 1 FROM price_option_fulfillment_revision r
+                      WHERE r.price_option_id = o.id)`.execute(db);
+
+  // 2. The RI-4 free products (marker: the mat-Pilates program title).
+  let createdPrograms = false;
+  const marker = await sql<{ id: string }>`
+    SELECT id FROM program WHERE title_en = 'Mat Pilates Community Classes'`.execute(db);
+  let matProgramId = marker.rows[0]?.id;
+  if (matProgramId === undefined) {
+    const serenity = await sql<{ id: string; branch_id: string }>`
+      SELECT o.id, b.id AS branch_id FROM organization o
+      JOIN branch b ON b.organization_id = o.id
+      WHERE o.trade_name = 'Serenity Pilates House'
+        AND o.legal_name LIKE ${`%${SEED_TAG}`}
+      LIMIT 1`.execute(db);
+    const brightMinds = await sql<{ id: string; branch_id: string }>`
+      SELECT o.id, b.id AS branch_id FROM organization o
+      JOIN branch b ON b.organization_id = o.id
+      WHERE o.trade_name = 'Bright Minds Studio'
+        AND o.legal_name LIKE ${`%${SEED_TAG}`}
+      LIMIT 1`.execute(db);
+    const types = await sql<{ id: string; slug: string }>`
+      SELECT id, slug FROM activity_type WHERE slug IN ('reformer-pilates', 'art-club')`.execute(
+      db,
+    );
+    const typeBySlug = new Map(types.rows.map((row) => [row.slug, row.id]));
+    const serenityRow = serenity.rows[0];
+    const brightRow = brightMinds.rows[0];
+    if (serenityRow !== undefined && brightRow !== undefined) {
+      createdPrograms = true;
+      const provider: SeedProvider = { orgId: serenityRow.id, branchIds: [serenityRow.branch_id] };
+      const ctx: SeedContext = {
+        db,
+        areaIds: {},
+        typeIds: {
+          'reformer-pilates': typeBySlug.get('reformer-pilates')!,
+          'art-club': typeBySlug.get('art-club')!,
+        },
+        categoryIds: {},
+      };
+      matProgramId = await createSeedProgram(ctx, {
+        provider,
+        typeSlug: 'reformer-pilates',
+        title: 'Mat Pilates Community Classes',
+        description:
+          'Community mat classes for every level — come to any scheduled class with your pass.',
+        allAges: true,
+        options: [
+          { kind: 'package', amountFils: 0, sessionsCount: 5, label: 'Intro pack — 5 classes' },
+          { kind: 'membership', amountFils: 0, label: 'Community membership' },
+        ],
+        sessions: [
+          [2, 12],
+          [4, 12],
+          [6, 12],
+          [9, 12],
+        ],
+      });
+      // The 0020 canonical-occurrence journey: a FREE open-day camp.
+      await createSeedProgram(ctx, {
+        provider: { orgId: brightRow.id, branchIds: [brightRow.branch_id] },
+        typeSlug: 'art-club',
+        title: 'Creative Open Days',
+        description:
+          'Free drop-in creative open days — check in on each day you attend during the week.',
+        allAges: true,
+        // Camp weeks book through the certified paid 'camp' kind (capacity
+        // kinds are strictly positive) — a nominal fictional price.
+        options: [{ kind: 'camp', amountFils: 5000, label: 'Open day week' }],
+        campWeeks: [{ startDaysAhead: 0, capacity: 20 }],
+      });
+      // Revisions for the two new entitlement options (same rule as above).
+      await sql`
+        INSERT INTO price_option_fulfillment_revision
+          (id, price_option_id, program_id, organization_id, revision_no, usage_kind,
+           uses_total, validity_kind, validity_days, validity_end_date,
+           reservation_required, walk_in_allowed, branch_id)
+        SELECT gen_random_uuid(), o.id, o.program_id, o.organization_id, 1,
+               CASE WHEN o.kind = 'membership' THEN 'unlimited' ELSE 'finite' END,
+               NULL::integer,
+               CASE WHEN o.kind = 'membership' THEN 'fixedEndDate'
+                    ELSE 'daysFromConfirmation' END,
+               CASE WHEN o.kind = 'membership' THEN NULL ELSE 60 END,
+               CASE WHEN o.kind = 'membership' THEN '2027-12-31'::date ELSE NULL END,
+               true, true, NULL
+        FROM program_price_option o
+        WHERE o.program_id = ${matProgramId}
+          AND o.kind IN ('package', 'membership')
+          AND NOT EXISTS (SELECT 1 FROM price_option_fulfillment_revision r
+                          WHERE r.price_option_id = o.id)`.execute(db);
+    }
+  }
+
+  // 3. Time-anchored units, refreshed EVERY run so the check-in window
+  //    journeys stay live: one mat-Pilates session starting in ~30 min,
+  //    and the open-day camp re-anchored to today's Dubai date with a
+  //    daily window opening in ~30 min.
+  if (matProgramId !== undefined) {
+    const inWindow = await sql<{ id: string }>`
+      SELECT id FROM session
+      WHERE program_id = ${matProgramId}
+        AND start_at BETWEEN now() AND now() + interval '45 minutes'
+      LIMIT 1`.execute(db);
+    if (inWindow.rows.length === 0) {
+      await sql`
+        INSERT INTO session (id, program_id, organization_id, branch_id, start_at, end_at,
+                             capacity, registration_cutoff_at)
+        SELECT gen_random_uuid(), p.id, p.organization_id, pb.branch_id,
+               now() + interval '30 minutes', now() + interval '90 minutes', 12,
+               now() + interval '30 minutes'
+        FROM program p
+        JOIN program_branch pb ON pb.program_id = p.id
+        WHERE p.id = ${matProgramId}
+        LIMIT 1`.execute(db);
+    }
+  }
+  // Heal older dev databases where the open-day option pre-dated the
+  // camp-kind correction (a free option cannot carry a camp week).
+  await sql`
+    UPDATE program_price_option SET kind = 'camp', amount_fils = 5000
+    WHERE kind = 'free'
+      AND program_id IN (SELECT id FROM program WHERE title_en = 'Creative Open Days')`.execute(
+    db,
+  );
+  const camp = await sql<{ id: string }>`
+    SELECT cw.id FROM camp_week cw
+    JOIN program p ON p.id = cw.program_id
+    WHERE p.title_en = 'Creative Open Days'
+    LIMIT 1`.execute(db);
+  if (camp.rows.length > 0) {
+    // Anchor: today's Dubai civil date, daily window opening in ~30 min
+    // (clamped away from midnight so daily_end stays after daily_start).
+    await sql`
+      UPDATE camp_week SET
+        start_date = ((now() + interval '30 minutes') AT TIME ZONE 'Asia/Dubai')::date,
+        end_date = ((now() + interval '30 minutes') AT TIME ZONE 'Asia/Dubai')::date
+                     + 4,
+        daily_start_time = LEAST(
+          (date_trunc('minute', (now() + interval '30 minutes') AT TIME ZONE 'Asia/Dubai'))::time,
+          '21:30'::time),
+        daily_end_time = LEAST(
+          (date_trunc('minute', (now() + interval '30 minutes') AT TIME ZONE 'Asia/Dubai'))::time,
+          '21:30'::time) + interval '2 hours',
+        registration_cutoff_at = now() + interval '10 days'
+      WHERE id = ${camp.rows[0]!.id}`.execute(db);
+  }
+  return { createdPrograms };
+}
+
 async function main(): Promise<void> {
   const config = cliConfig();
   if (config.nodeEnv === 'production') {
@@ -199,6 +386,9 @@ async function main(): Promise<void> {
   const existing = await sql<{ id: string }>`
     SELECT id FROM organization WHERE legal_name LIKE ${`%${SEED_TAG}`} LIMIT 1`.execute(db);
   if (existing.rows.length > 0) {
+    // RI-4: ensure the Passes/check-in dev products + time-anchored units
+    // exist (idempotent; refreshes the check-in-window units every run).
+    await ensureRi4Fulfillment(db);
     // Heal projection drift even when the rows already exist (the certified
     // search engine reads program_search_document, maintained by the
     // service layer — the seed writes rows directly).
@@ -512,6 +702,9 @@ async function main(): Promise<void> {
       [12, 30],
     ],
   });
+
+  // RI-4: the Passes/check-in dev products + time-anchored units.
+  await ensureRi4Fulfillment(db);
 
   // The certified search engine reads the derived search documents; build
   // them exactly the way the owning service does.

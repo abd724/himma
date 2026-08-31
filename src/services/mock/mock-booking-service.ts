@@ -143,6 +143,7 @@ function summaryPriceLine(
       return { label: 'Term enrolment', value: `${amount} per term` };
     case 'camp-week':
       return { label: `1 week · ${session?.dayLabel ?? ''}`, value: `${amount} per week` };
+    case 'membership':
     case 'package':
       // 'Package of N sessions' — size and price only (docs/09 §21.7).
       return { label: option.title, value: amount };
@@ -169,6 +170,7 @@ function summaryBookingPriceLabel(program: FixtureProgram, option: BookingOption
       return `Booking price · ${amount} per term`;
     case 'camp-week':
       return `Booking price · ${amount} per week`;
+    case 'membership':
     case 'package':
       return `Booking price · ${amount}`;
   }

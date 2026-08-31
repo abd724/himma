@@ -14,7 +14,7 @@
  */
 import { PressableFeedback } from '@/components/ui/pressable-feedback';
 import { SkeletonBlock } from '@/components/ui/skeleton-block';
-import { commerceApi } from '@/services/composition';
+import { commerceApi, entitlementsApi } from '@/services/composition';
 import { pendingCheckoutStore } from '@/services/booking/pending-checkout';
 import { ApiError } from '@/services/http/http-client';
 import { useAuth } from '@/state/auth-context';
@@ -41,8 +41,39 @@ export function CheckoutReturnScreen() {
         setFallback('noPending');
         return;
       }
+      // RI-4 — the PURCHASE trail (pass/membership acquisition): hand off
+      // to the acquisition status read; lost responses replay the SAME
+      // stable key (`uq_entitlement_purchase_quote` makes it one purchase).
+      if (pending.kind === 'purchase') {
+        if (pending.purchaseId !== undefined) {
+          router.replace(`/passes/status/${pending.purchaseId}` as never);
+          return;
+        }
+        try {
+          const checkout = await entitlementsApi.initiateAcquisition(
+            pending.quoteId,
+            pending.idempotencyKey,
+          );
+          if (cancelled) return;
+          await pendingCheckoutStore.save({ ...pending, purchaseId: checkout.purchaseId });
+          router.replace(`/passes/status/${checkout.purchaseId}` as never);
+        } catch (error) {
+          if (cancelled) return;
+          if (error instanceof ApiError) {
+            await pendingCheckoutStore.clear();
+            setFallback('expired');
+            return;
+          }
+          setFallback('noPending');
+        }
+        return;
+      }
       if (pending.bookingId !== undefined) {
         router.replace(`/bookings/status/${pending.bookingId}` as never);
+        return;
+      }
+      if (pending.holdId === undefined) {
+        setFallback('noPending');
         return;
       }
       // Response was lost before the bookingId arrived: recover the SAME

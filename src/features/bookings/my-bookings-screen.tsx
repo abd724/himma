@@ -1,9 +1,11 @@
 /**
- * RI-3 — My Bookings v1 (HMA-006; owner RI-3 §20) over the certified
- * own-booking list. Truthful sections only: pending payments needing a
- * status check, upcoming confirmed, past, and quiet not-completed history.
- * No cancellation/refund UI (no such customer domain exists); Passes &
- * Memberships stay RI-4/S6 and are never faked here.
+ * RI-3/RI-4 — My Bookings (HMA-006; owner RI-3 §20) over the certified
+ * own-booking list, now paired with the REAL Passes & Memberships area
+ * (RI-4): one screen, two segments — Bookings = scheduled activities,
+ * Passes = purchased reusable access. Truthful sections only: pending
+ * payments needing a status check, upcoming confirmed, past, and quiet
+ * not-completed history. No cancellation/refund UI (no such customer
+ * domain exists).
  */
 import { EmptyFeedCard } from '@/components/domain/empty-feed-card';
 import { ErrorStateCard } from '@/components/domain/error-state-card';
@@ -18,9 +20,10 @@ import { commerceApi } from '@/services/composition';
 import type { CustomerBooking } from '@/services/contracts/commerce';
 import { useAuth } from '@/state/auth-context';
 import { subscribeBookingsChanged } from '@/state/bookings-events';
+import { PassesList } from '@/features/passes/passes-list';
 import { colors, dockTokens, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,9 +32,20 @@ export function MyBookingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const auth = useAuth();
+  const params = useLocalSearchParams<{ view?: string }>();
 
   const [bookings, setBookings] = useState<CustomerBooking[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // The segment derives from the route param unless the customer tapped a
+  // tab SINCE that param value arrived — no state-sync effect needed
+  // (react-hooks v6: setState never runs inside an effect here).
+  const paramSegment: 'bookings' | 'passes' = params.view === 'passes' ? 'passes' : 'bookings';
+  const [selection, setSelection] = useState<{
+    forParam: string | undefined;
+    segment: 'bookings' | 'passes';
+  } | null>(null);
+  const segment =
+    selection !== null && selection.forParam === params.view ? selection.segment : paramSegment;
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -75,8 +89,34 @@ export function MyBookingsScreen() {
     <View style={styles.root}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <Text style={styles.heading} accessibilityRole="header">
-          Bookings
+          {segment === 'passes' ? 'Passes & Memberships' : 'Bookings'}
         </Text>
+        {auth.status === 'authenticated' ? (
+          <View style={styles.segments} accessibilityRole="tablist">
+            {(
+              [
+                { id: 'bookings' as const, label: 'Bookings' },
+                { id: 'passes' as const, label: 'Passes' },
+              ]
+            ).map((entry) => (
+              <PressableFeedback
+                key={entry.id}
+                accessibilityRole="tab"
+                accessibilityLabel={entry.label}
+                accessibilityState={{ selected: segment === entry.id }}
+                onPress={() => setSelection({ forParam: params.view, segment: entry.id })}
+                style={[styles.segment, segment === entry.id && styles.segmentActive]}
+                testID={`bookings-segment-${entry.id}`}
+              >
+                <Text
+                  style={[styles.segmentLabel, segment === entry.id && styles.segmentLabelActive]}
+                >
+                  {entry.label}
+                </Text>
+              </PressableFeedback>
+            ))}
+          </View>
+        ) : null}
         <ScrollView
           style={styles.safeArea}
           contentContainerStyle={[styles.content, { paddingBottom: contentBottomPadding }]}
@@ -84,6 +124,8 @@ export function MyBookingsScreen() {
         >
           {auth.status === 'restoring' ? (
             <BookingsSkeleton />
+          ) : auth.status === 'authenticated' && segment === 'passes' ? (
+            <PassesList />
           ) : auth.status !== 'authenticated' ? (
             <View style={styles.guestCard} testID="bookings-guest">
               <View style={styles.guestIcon}>
@@ -249,8 +291,34 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     paddingHorizontal: pagePadding,
     paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  segments: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: pagePadding,
     paddingBottom: spacing.md,
   },
+  segment: {
+    minHeight: 44,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radii.chip,
+    backgroundColor: colors.background.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentActive: {
+    backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
+  },
+  segmentLabel: {
+    ...typography.chip,
+    fontFamily: fontFamily.bold,
+    color: colors.text.primary,
+  },
+  segmentLabelActive: { color: colors.text.inverse },
   content: {
     gap: spacing.xl,
     paddingTop: spacing.xs,

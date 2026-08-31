@@ -8,6 +8,7 @@ import type {
   ProviderBranch,
 } from '@/types/domain';
 import type { CommerceUnitKind, Quote } from '@/services/contracts/commerce';
+import type { AcquisitionQuote } from '@/services/contracts/entitlements';
 import type { ParticipantSuitability } from '@/utils/eligibility';
 
 /**
@@ -38,7 +39,8 @@ export type BookingOptionKind =
   | 'recurring'
   | 'term'
   | 'camp-week'
-  | 'package';
+  | 'package'
+  | 'membership';
 
 /** One bookable shape of a program (a program may offer several, e.g. trial + enrolment). */
 export interface BookingOption {
@@ -58,12 +60,19 @@ export interface BookingOption {
   offerId?: string;
   unitKind?: CommerceUnitKind;
   /**
-   * S6 product boundary (owner RI-3 §23): false for catalogue products the
-   * certified Booking domain cannot legally fulfil yet (packages/passes/
-   * memberships). Rendered truthfully as unavailable — NEVER forced into a
-   * capacity Booking. Absent = purchasable.
+   * S6 product boundary (owner RI-3 §23): false for catalogue products no
+   * certified flow can legally fulfil. Since RI-4 the package/membership
+   * kinds ARE purchasable through the real S6 acquisition trail; this flag
+   * remains for genuinely unsupported future kinds. Absent = purchasable.
    */
   purchasable?: boolean;
+  /**
+   * RI-4 — the option's commercial trail. `entitlementAcquisition` rows
+   * ride the SAME flow screens but quote/confirm through the S6 purchase
+   * APIs (unit-less, no hold, never a capacity Booking); absent = the
+   * certified capacity trail.
+   */
+  commercial?: 'entitlementAcquisition';
   /** Customer-safe wording for a non-purchasable option ('Coming soon'). */
   unavailableNote?: string;
   /** True when choosing this option requires picking a dated session/week. */
@@ -144,6 +153,12 @@ export interface BookingSummary {
    * verbatim (fils → AED display only, no client arithmetic).
    */
   quote?: Quote;
+  /**
+   * RI-4 — set INSTEAD of `quote` for entitlement-acquisition options: the
+   * authoritative S6 acquisition quote (unit-less). Checkout dispatches to
+   * the purchase trail when present — the two are never both set.
+   */
+  acquisitionQuote?: AcquisitionQuote;
 }
 
 export interface BookingOptionsInput {

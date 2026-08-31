@@ -15,13 +15,18 @@ import * as SecureStore from 'expo-secure-store';
 const STORAGE_KEY = 'himma.checkout.pending.v1';
 
 export interface PendingCheckout {
+  /** RI-4: the commercial trail. Absent = 'booking' (RI-3 records). */
+  kind?: 'booking' | 'purchase';
   programId: string;
-  holdId: string;
+  /** Booking trail only — a purchase holds no inventory. */
+  holdId?: string;
   quoteId: string;
   /** The STABLE checkout idempotency key for this commercial intent. */
   idempotencyKey: string;
   /** Known after the server responded (initiation may have been lost). */
   bookingId?: string;
+  /** Purchase trail only. */
+  purchaseId?: string;
   holdExpiresAt?: string;
   createdAt: string;
 }
@@ -38,12 +43,13 @@ function parse(raw: string | null): PendingCheckout | null {
     const parsed = JSON.parse(raw) as PendingCheckout;
     if (
       typeof parsed.programId !== 'string' ||
-      typeof parsed.holdId !== 'string' ||
       typeof parsed.quoteId !== 'string' ||
       typeof parsed.idempotencyKey !== 'string'
     ) {
       return null;
     }
+    if (parsed.kind === 'purchase') return parsed;
+    if (typeof parsed.holdId !== 'string') return null;
     return parsed;
   } catch {
     return null;

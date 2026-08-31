@@ -1,8 +1,11 @@
 /**
- * RI-3 — booking detail (HMA-024; owner RI-3 §19/§20/§22). Authoritative
- * projection fields only. Cancellation is display-restraint: no customer
- * cancellation/refund domain exists, so the screen offers bounded support
- * copy instead of any mutating affordance.
+ * RI-3/RI-4 — booking detail (HMA-024; owner RI-3 §19/§20/§22; RI-4
+ * §14–§15). Authoritative projection fields only. RI-4 adds the real
+ * check-in entry: session Bookings issue their credential directly;
+ * CampWeek/Cohort Bookings select the canonical occurrence first (0020).
+ * An entitlement-reserved Booking reads "Included with pass" from the
+ * SERVER flag — never inferred from AED 0. Cancellation remains
+ * display-restraint (no customer cancellation domain exists).
  */
 import { EmptyFeedCard } from '@/components/domain/empty-feed-card';
 import { ErrorStateCard } from '@/components/domain/error-state-card';
@@ -15,11 +18,13 @@ import {
   categorizeBooking,
 } from '@/features/bookings/booking-presentation';
 import { programHref } from '@/features/details/detail-navigation';
-import { commerceApi } from '@/services/composition';
+import { issueForTarget } from '@/features/checkin/checkin-entry';
+import { commerceApi, entitlementsApi } from '@/services/composition';
 import type { CustomerBooking } from '@/services/contracts/commerce';
+import { customerErrorCopy } from '@/services/http/error-copy';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -33,6 +38,9 @@ export function BookingDetailScreen() {
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retried, setRetried] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  const [checkInNote, setCheckInNote] = useState<string | null>(null);
+  const lastCheckInAt = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +66,32 @@ export function BookingDetailScreen() {
   };
 
   const category = booking === null ? null : categorizeBooking(booking);
+
+  /** RI-4 check-in entry: sessions issue directly; camp/cohort bookings
+   *  pick the canonical occurrence first (the server requires it). */
+  const startCheckIn = async () => {
+    if (booking === null) return;
+    const now = Date.now();
+    if (now - lastCheckInAt.current < 700) return;
+    lastCheckInAt.current = now;
+    if (booking.unit.kind !== 'session') {
+      router.push(`/bookings/check-in/${booking.bookingId}` as never);
+      return;
+    }
+    setIssuing(true);
+    setCheckInNote(null);
+    try {
+      const { href } = await issueForTarget(entitlementsApi, {
+        kind: 'booking',
+        bookingId: booking.bookingId,
+      });
+      router.push(href as never);
+    } catch (error) {
+      setCheckInNote(customerErrorCopy(error));
+    } finally {
+      setIssuing(false);
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -112,6 +146,48 @@ export function BookingDetailScreen() {
                 })}
               />
             </View>
+
+            {/* RI-4: real check-in for confirmed bookings — server
+                eligibility owns the truth; refusals map to plain copy
+                (e.g. the ±60-minute window) and nothing is assumed from
+                the device clock. Multi-occurrence (camp/cohort) bookings
+                stay check-in-able across their whole span — day one
+                starting never makes the remaining days "past". */}
+            {booking.state === 'confirmed' &&
+            (booking.unit.kind !== 'session' || category === 'upcoming') ? (
+              <>
+                <PressableFeedback
+                  accessibilityLabel="Check in"
+                  accessibilityState={{ disabled: issuing }}
+                  disabled={issuing}
+                  onPress={() => {
+                    void startCheckIn();
+                  }}
+                  style={styles.primaryAction}
+                  testID="booking-check-in"
+                >
+                  <Text style={styles.primaryActionLabel}>
+                    {issuing ? 'Getting your code…' : 'Check in'}
+                  </Text>
+                </PressableFeedback>
+                {checkInNote !== null ? (
+                  <Text style={styles.checkInNote} accessibilityLiveRegion="polite">
+                    {checkInNote}
+                  </Text>
+                ) : null}
+              </>
+            ) : null}
+
+            {booking.coveredByEntitlement && booking.entitlementId !== null ? (
+              <PressableFeedback
+                accessibilityLabel="View your pass"
+                onPress={() => router.push(`/passes/${booking.entitlementId}` as never)}
+                style={styles.secondaryAction}
+                testID="booking-view-pass"
+              >
+                <Text style={styles.secondaryActionLabel}>View your pass</Text>
+              </PressableFeedback>
+            ) : null}
 
             {category === 'pendingPayment' ? (
               <PressableFeedback
@@ -275,5 +351,11 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
+  },
+  checkInNote: {
+    ...typography.supporting,
+    fontFamily: fontFamily.semiBold,
+    color: colors.text.primary,
+    textAlign: 'center',
   },
 });

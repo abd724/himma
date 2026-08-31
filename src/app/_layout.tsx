@@ -72,7 +72,12 @@ export default function RootLayout() {
                 <Stack.Screen name="bookings/return" />
                 <Stack.Screen name="bookings/status/[bookingId]" />
                 <Stack.Screen name="bookings/confirmed/[bookingId]" />
+                <Stack.Screen name="bookings/check-in/[bookingId]" />
                 <Stack.Screen name="bookings/[bookingId]" />
+                <Stack.Screen name="passes/[entitlementId]" />
+                <Stack.Screen name="passes/reserve/[entitlementId]" />
+                <Stack.Screen name="passes/status/[purchaseId]" />
+                <Stack.Screen name="checkin/[credentialId]" />
               </Stack>
             </View>
             </ResultsSessionProvider>

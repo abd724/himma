@@ -170,15 +170,23 @@ describe('payment/production gates unchanged (items 28, 42)', () => {
   });
 });
 
-describe('no S6-3 frontend exists (items 38–40, 42)', () => {
-  it('Customer App, Provider Portal, and Admin sources reference NO S6-3 customer surface', () => {
+describe('S6-3 frontend consumption boundary (items 38–40, 42; amended at RI-4 — the owning-slice pattern)', () => {
+  it('the Customer App consumes the S6-3 surfaces ONLY through its composition-bound adapter; Provider Portal and Admin reference NONE', () => {
     const forbidden =
       /entitlement-reservations|reservable-sessions|customer\/calendar|reservation-quote/;
-    for (const root of [
-      path.join(REPO_ROOT, 'src'), // Customer App
-      path.join(REPO_ROOT, 'portal', 'src'),
-      path.join(REPO_ROOT, 'admin', 'src'),
-    ]) {
+    // RI-4 (owner-authorized): the Customer App's REAL integration — the
+    // customer wire lives exclusively in the one HTTP adapter (+ its unit
+    // test); screens reach it through services/composition only.
+    const appOffenders: string[] = [];
+    walkTs(path.join(REPO_ROOT, 'src'), (file, source) => {
+      if (forbidden.test(source)) appOffenders.push(path.relative(REPO_ROOT, file));
+    });
+    expect(appOffenders.sort()).toEqual([
+      path.join('src', 'services', '__tests__', 'entitlements-api.test.ts'),
+      path.join('src', 'services', 'api', 'entitlements-api.ts'),
+    ]);
+    // Provider Portal and Admin remain locked out of the CUSTOMER surface.
+    for (const root of [path.join(REPO_ROOT, 'portal', 'src'), path.join(REPO_ROOT, 'admin', 'src')]) {
       const offenders: string[] = [];
       walkTs(root, (file, source) => {
         if (forbidden.test(source)) offenders.push(path.relative(REPO_ROOT, file));

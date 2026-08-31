@@ -16,11 +16,12 @@ import { HoldCountdown } from '@/features/booking/hold-countdown';
 import { summaryParticipantBlock } from '@/features/booking/summary-presentation';
 import { demoImage } from '@/data/mock/images';
 import { composeCheckoutPage } from '@/services/api/real-commerce-services';
-import { commerceApi } from '@/services/composition';
+import { commerceApi, entitlementsApi } from '@/services/composition';
 import { pendingCheckoutStore } from '@/services/booking/pending-checkout';
 import { customerErrorCopy } from '@/services/http/error-copy';
 import { ApiError } from '@/services/http/http-client';
 import { notifyBookingsChanged } from '@/state/bookings-events';
+import { notifyPassesChanged } from '@/state/passes-events';
 import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
@@ -69,9 +70,16 @@ export function CheckoutScreen() {
   const [holdStateForRedirect, setHoldStateForRedirect] = useState<'live' | 'checking' | 'expired'>(
     'live',
   );
+  // RI-4: the acquisition trail holds no inventory — no hold is required
+  // (or possible) for a pass/membership purchase.
+  const acquisition = summary?.acquisitionQuote;
   useEffect(() => {
     if (navigationOwned.current || holdStateForRedirect !== 'live') return;
-    if (summary === null || hold === undefined || page === null) {
+    if (
+      summary === null ||
+      page === null ||
+      (summary.acquisitionQuote === undefined && hold === undefined)
+    ) {
       navigationOwned.current = true;
       router.replace(bookingStepHref(programId, 'summary'));
     }
@@ -133,6 +141,104 @@ export function CheckoutScreen() {
     navigationOwned.current = true;
     void releaseHold();
     router.dismissTo(bookingHref(programId));
+  };
+
+  /** RI-4 free ACQUISITION — the certified S6 atomic purchase+grant; no
+   *  payment state of any kind exists on this path. */
+  const confirmFreeAcquisition = async () => {
+    if (acquisition === undefined) return;
+    setBusy(true);
+    setCtaError(null);
+    try {
+      const purchase = await entitlementsApi.confirmFreeAcquisition(
+        acquisition.quoteId,
+        commerce.acquisitionConfirmKeyFor(acquisition.quoteId),
+      );
+      navigationOwned.current = true;
+      notifyPassesChanged();
+      await pendingCheckoutStore.clear();
+      const entitlementId = purchase.entitlement?.entitlementId;
+      router.replace(
+        entitlementId !== undefined
+          ? (`/passes/${entitlementId}?acquired=1` as never)
+          : ('/bookings?view=passes' as never),
+      );
+    } catch (error) {
+      setBusy(false);
+      if (error instanceof ApiError) {
+        if (error.code === 'quoteExpired') {
+          navigationOwned.current = true;
+          router.replace(bookingStepHref(programId, 'summary'));
+          return;
+        }
+        if (error.code === 'quoteAlreadyUsed' || error.code === 'alreadyAcquired') {
+          navigationOwned.current = true;
+          notifyPassesChanged();
+          router.replace('/bookings?view=passes' as never);
+          return;
+        }
+      }
+      setCtaError(customerErrorCopy(error));
+    }
+  };
+
+  /** RI-4 paid ACQUISITION — the certified generalized W5 initiation; the
+   *  purchase-shaped pending record is persisted BEFORE the call so a lost
+   *  response recovers the SAME commercial intent. */
+  const startAcquisitionPayment = async () => {
+    if (acquisition === undefined) return;
+    setBusy(true);
+    setCtaError(null);
+    const idempotencyKey = commerce.acquisitionCheckoutKeyFor(acquisition.quoteId);
+    const pendingBase = {
+      kind: 'purchase' as const,
+      programId,
+      quoteId: acquisition.quoteId,
+      idempotencyKey,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      await pendingCheckoutStore.save(pendingBase);
+      const checkout = await entitlementsApi.initiateAcquisition(
+        acquisition.quoteId,
+        idempotencyKey,
+      );
+      await pendingCheckoutStore.save({ ...pendingBase, purchaseId: checkout.purchaseId });
+      if (Platform.OS === 'web') {
+        (globalThis as { location?: { assign: (url: string) => void } }).location?.assign(
+          checkout.redirectUrl,
+        );
+      } else {
+        navigationOwned.current = true;
+        await Linking.openURL(checkout.redirectUrl);
+        router.replace(`/passes/status/${checkout.purchaseId}` as never);
+      }
+    } catch (error) {
+      setBusy(false);
+      if (error instanceof ApiError) {
+        if (error.code === 'quoteExpired') {
+          navigationOwned.current = true;
+          router.replace(bookingStepHref(programId, 'summary'));
+          return;
+        }
+        if (
+          error.code === 'checkoutAlreadyActive' ||
+          error.code === 'checkoutConcluded' ||
+          error.code === 'quoteAlreadyUsed' ||
+          error.code === 'alreadyAcquired'
+        ) {
+          navigationOwned.current = true;
+          const pending = await pendingCheckoutStore.load();
+          if (pending?.kind === 'purchase' && pending.purchaseId !== undefined) {
+            router.replace(`/passes/status/${pending.purchaseId}` as never);
+            return;
+          }
+          router.replace('/bookings?view=passes' as never);
+          return;
+        }
+      }
+      setCtaError(customerErrorCopy(error));
+    }
   };
 
   /** Free path — the certified atomic confirmation; no payment machinery. */
@@ -478,7 +584,10 @@ export function CheckoutScreen() {
               if (busy) return;
               if (!ctaPressAllowed(readiness, lastCtaPressAt.current, Date.now())) return;
               lastCtaPressAt.current = Date.now();
-              if (page.paymentRequired) void startPayment();
+              if (acquisition !== undefined) {
+                if (page.paymentRequired) void startAcquisitionPayment();
+                else void confirmFreeAcquisition();
+              } else if (page.paymentRequired) void startPayment();
               else void confirmFreeBooking();
             }}
             style={[styles.ctaButton, (!readiness.ready || busy) && styles.ctaButtonDisabled]}

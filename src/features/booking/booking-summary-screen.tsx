@@ -153,7 +153,7 @@ export function BookingSummaryScreen() {
         <IconButton icon="chevron-back" accessibilityLabel="Back" onPress={goBack} />
         <View style={styles.headerText}>
           <Text style={styles.heading} accessibilityRole="header">
-            Review your booking
+            {summary?.acquisitionQuote !== undefined ? 'Review your purchase' : 'Review your booking'}
           </Text>
           {ready ? (
             <Text style={styles.progress}>
@@ -351,8 +351,14 @@ export function BookingSummaryScreen() {
               const now = Date.now();
               if (now - lastCheckoutAt.current < 700) return;
               lastCheckoutAt.current = now;
-              const quote = summary.quote;
               const option = summary.option;
+              // RI-4 — the acquisition trail holds no inventory: nothing to
+              // claim; checkout dispatches on the stored acquisition quote.
+              if (summary.acquisitionQuote !== undefined) {
+                router.push(bookingStepHref(programId, 'checkout'));
+                return;
+              }
+              const quote = summary.quote;
               if (
                 quote === undefined ||
                 option.unitKind === undefined ||

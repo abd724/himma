@@ -136,7 +136,7 @@ export interface CheckoutPage {
    * an issue is unresolved. */
   validation: CheckoutValidation;
   /** docs/09 §22.11: paid → 'Continue to payment', free → 'Confirm booking'. */
-  ctaLabel: 'Continue to payment' | 'Confirm booking';
+  ctaLabel: 'Continue to payment' | 'Confirm booking' | 'Get your pass';
   spokenCtaLabel: string;
 }
 

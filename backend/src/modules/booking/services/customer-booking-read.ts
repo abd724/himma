@@ -120,8 +120,10 @@ export async function listAvailability(
             : 'effective_start',
       )}`.execute(trx);
 
-    const isoDate = (value: Date | null): string | null =>
-      value === null ? null : value.toISOString().slice(0, 10);
+    // node-postgres parses a DATE as a JS Date at SERVER-LOCAL midnight;
+    // formatting via toISOString() shifts the civil date a day back on any
+    // UTC+ host. Local components ARE the civil date (RI-4 correction).
+    const isoDate = (value: Date | null): string | null => civilDateString(value);
     const units = rows.rows.map((row): AvailabilityView => {
       // Derived truth only (docs/32 §12): effective availability is
       // capacity − booked − ACTIVE UNEXPIRED holds at read time; neither
@@ -265,6 +267,17 @@ interface BookingProjectionRow {
   confirmed_at: Date | null;
 }
 
+/** The CIVIL date of a pg DATE value: node-postgres parses DATE columns to
+ *  a JS Date at server-local midnight, so the local components ARE the
+ *  stored civil date — `toISOString()` would shift it a day back on any
+ *  UTC+ host (the Asia/Dubai off-by-one this corrects, RI-4). */
+function civilDateString(value: Date | null): string | null {
+  if (value === null) return null;
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
 function toBookingView(row: BookingProjectionRow): CustomerBookingView {
   const kind: UnitKind =
     row.session_id !== null
@@ -287,9 +300,9 @@ function toBookingView(row: BookingProjectionRow): CustomerBookingView {
       kind,
       unitId: (row.session_id ?? row.camp_week_id ?? row.cohort_id)!,
       startAt: row.start_at === null ? null : row.start_at.toISOString(),
-      startDate: row.start_date === null ? null : row.start_date.toISOString().slice(0, 10),
+      startDate: civilDateString(row.start_date),
       effectiveStart:
-        row.effective_start === null ? null : row.effective_start.toISOString().slice(0, 10),
+        civilDateString(row.effective_start),
     },
     price: { totalFils: Number(row.total_fils), currency: 'AED' },
     coveredByEntitlement: row.reserved_entitlement_id !== null,

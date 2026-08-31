@@ -47,6 +47,22 @@ const COPY: Record<string, string> = {
   checkoutPending: 'We’re still preparing your payment. Try again in a moment.',
   policyUnavailable: 'Booking is temporarily unavailable. Please try again later.',
   idempotencyConflict: 'That request was already processed. Refresh and check your bookings.',
+  // RI-4 — Passes & Memberships / check-in outcomes (the certified S6
+  // vocabulary; customer-safe wording only, no internals):
+  fulfillmentUnavailable: 'This option isn’t available right now. Please try again later.',
+  entitlementNotActive: 'This pass isn’t active right now.',
+  entitlementExhausted: 'This pass has no visits left.',
+  entitlementFullyCommitted:
+    'All remaining visits on this pass are reserved for upcoming sessions.',
+  reservationNotPermitted: 'This pass doesn’t use session reservations.',
+  reservationRequired: 'This pass checks in through a booked session.',
+  occurrenceRequired: 'Choose which day you’re checking in for.',
+  occurrenceNotApplicable: 'This booking has a single session — no day selection is needed.',
+  occurrenceNotEligible: 'That day and time isn’t part of this booking.',
+  outsideCheckInWindow: 'Check-in opens closer to your session time.',
+  alreadyCheckedIn: 'This session is already checked in.',
+  credentialExpired: 'This code has expired. Generate a new one to check in.',
+  credentialAlreadyUsed: 'This code has already been used.',
 };
 
 export function customerErrorCopy(error: unknown): string {

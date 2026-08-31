@@ -126,6 +126,28 @@ export class BookingCommerceController {
   }
 
   /**
+   * RI-4 — stable keys for the S6 ACQUISITION trail (no hold exists): one
+   * confirm key and one checkout key per acquisition QUOTE, so a double
+   * tap/timeout retry replays the same purchase instead of doubling it
+   * (`uq_entitlement_purchase_quote` backs this server-side).
+   */
+  private acquisitionKeys = new Map<string, { confirmKey?: string; checkoutKey?: string }>();
+
+  acquisitionConfirmKeyFor(quoteId: string): string {
+    const entry = this.acquisitionKeys.get(quoteId) ?? {};
+    entry.confirmKey ??= newIdempotencyKey();
+    this.acquisitionKeys.set(quoteId, entry);
+    return entry.confirmKey;
+  }
+
+  acquisitionCheckoutKeyFor(quoteId: string): string {
+    const entry = this.acquisitionKeys.get(quoteId) ?? {};
+    entry.checkoutKey ??= newIdempotencyKey();
+    this.acquisitionKeys.set(quoteId, entry);
+    return entry.checkoutKey;
+  }
+
+  /**
    * Explicit, idempotent release of the current hold (customer abandoned
    * the intent). Failures are swallowed — server-side expiry remains the
    * authority; the local state is forgotten either way.
