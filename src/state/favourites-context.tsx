@@ -1,4 +1,5 @@
-import { createContext, useContext, useMemo, useState, type PropsWithChildren } from 'react';
+import { subscribeAuthReset } from '@/services/auth/auth-signals';
+import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 
 /**
  * One favourites system for both entity kinds — docs/20 §5. Typed keys keep
@@ -39,6 +40,9 @@ const FavouritesContext = createContext<FavouritesContextValue | undefined>(unde
  */
 export function FavouritesProvider({ children }: PropsWithChildren) {
   const [favourites, setFavourites] = useState<ReadonlySet<FavouriteKey>>(new Set());
+  // RI-6 — device favourites are account-scoped: they never carry over to
+  // the next account after local auth is forgotten.
+  useEffect(() => subscribeAuthReset(() => setFavourites(new Set())), []);
   const value = useMemo(
     () => ({
       favourites,

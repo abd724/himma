@@ -169,6 +169,8 @@ export interface AvailabilityUnitDto {
   endDate: string | null;
   effectiveStart: string | null;
   effectiveEnd: string | null;
+  /** RI-6 — venue timezone (IANA) for truthful civil presentation. */
+  timezone: string;
   registrationCutoffAt: string;
   availability: 'available' | 'fewLeft' | 'full' | 'closed';
   spotsLeft?: number;

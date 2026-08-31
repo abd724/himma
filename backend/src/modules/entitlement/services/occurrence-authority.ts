@@ -23,6 +23,10 @@
 
 const DUBAI_OFFSET_MS = 4 * 60 * 60 * 1000;
 
+/** RI-6 — re-exported for the entitlement projections: the canonical
+ *  platform/venue timezone customer DTOs carry (config/platform-timezone). */
+export { PLATFORM_TIMEZONE } from '../../../config/platform-timezone';
+
 /** The Asia/Dubai civil date (YYYY-MM-DD) of an instant. */
 export function dubaiDateOf(instant: Date): string {
   return new Date(instant.getTime() + DUBAI_OFFSET_MS).toISOString().slice(0, 10);

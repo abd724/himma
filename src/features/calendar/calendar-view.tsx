@@ -15,7 +15,6 @@ import { SkeletonBlock } from '@/components/ui/skeleton-block';
 import {
   addDays,
   chipLabels,
-  civilDate,
   contextLabel,
   dayHeading,
   daysWithEvents,
@@ -39,6 +38,7 @@ import { entitlementsApi } from '@/services/composition';
 import type { CalendarOccurrence } from '@/services/contracts/entitlements';
 import { useAccount } from '@/state/account-context';
 import { subscribeBookingsChanged } from '@/state/bookings-events';
+import { platformToday } from '@/utils/venue-time';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -51,7 +51,10 @@ export function CalendarView({ initialDate }: { initialDate?: string }) {
   const router = useRouter();
   const account = useAccount();
   const selfParticipantId = account.account?.primaryParticipantId;
-  const today = civilDate(new Date());
+  // RI-6 — "today" anchors to the platform venue timezone (the schedule's
+  // civil frame), so the strip/window agree with the venue-civil day
+  // grouping on any device timezone.
+  const today = platformToday();
   const [selectedDate, setSelectedDate] = useState(
     initialDate !== undefined && CIVIL_DATE_PARAM.test(initialDate) ? initialDate : today,
   );

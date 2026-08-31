@@ -25,7 +25,7 @@
  * - DETERMINISTIC MOCK (schedule): fixture layer for the dev-QA scenario
  *   override only; Home's real schedule derives from real bookings.
  */
-import { createDevIdentityGateway, createParticipantApi, createSessionApi } from './api/identity-api';
+import { createParticipantApi, createSessionApi } from './api/identity-api';
 import { createDiscoveryApi } from './api/discovery-api';
 import {
   createRealCatalogueService,
@@ -41,6 +41,8 @@ import { createEntitlementsApi } from './api/entitlements-api';
 import { createRealBookingService } from './api/real-commerce-services';
 import { apiBaseUrl } from './http/api-config';
 import { createHttpClient } from './http/http-client';
+import { notifySessionInvalidated, subscribeAuthReset } from './auth/auth-signals';
+import { cognitoPublicConfig, selectIdentityGateway } from './auth/identity-gateway-selection';
 import { tokenStorage } from './auth/token-storage';
 import { AuthSession } from './auth/auth-session';
 
@@ -50,8 +52,24 @@ import { AuthSession } from './auth/auth-session';
 // serves ONLY the dev-QA fixture resolver below and its isolated tests.
 // Shared presentation helper (pure derivation, not data):
 export { providerMonogram } from '../utils/monogram';
-// Dev-QA fixture resolver (account-context __DEV__ override only):
-export { resolveAccountScenario } from './mock/mock-schedule-service';
+
+/**
+ * Dev-QA fixture resolver (account-context `?qa-scenario` override only).
+ * RI-6: resolved LAZILY behind `__DEV__` so the fictional fixture graph
+ * (mock schedule/catalogue data) never ships in a production bundle —
+ * Metro drops the inline require with the eliminated branch. Production
+ * builds always return undefined (the caller falls back to real truth).
+ */
+export function resolveAccountScenario(
+  scenario: import('./contracts/schedule').AccountScenarioId,
+): import('./contracts/schedule').ResolvedAccount | undefined {
+  if (__DEV__) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mock = require('./mock/mock-schedule-service') as typeof import('./mock/mock-schedule-service');
+    return mock.resolveAccountScenario(scenario);
+  }
+  return undefined;
+}
 
 /** The current bearer — owned by AuthSession, read by the HTTP client. */
 let currentAccessToken: string | null = null;
@@ -59,9 +77,26 @@ let currentAccessToken: string | null = null;
 export const httpClient = createHttpClient({
   baseUrl: apiBaseUrl(),
   getAccessToken: () => currentAccessToken,
+  // RI-6: an authenticated request the server answers 401 means the bearer
+  // is authoritatively dead — the auth context clears local auth state so
+  // no stale authenticated UI survives (owner item 6).
+  onUnauthorized: () => notifySessionInvalidated(),
 });
 
-export const identityGateway = createDevIdentityGateway(httpClient);
+// RI-6 — the production identity boundary (owner items 8/9): real Cognito
+// configuration selects the REAL gateway; development selects the certified
+// dev stand-in; an UNCONFIGURED production build fails closed with the
+// typed `authNotConfigured` refusal. Production never routes through the
+// dev identity stand-in (D-RI-3) — selection logic lives in ONE place
+// (identity-gateway-selection.ts, unit-locked).
+export const identityGateway = selectIdentityGateway({
+  isDevBuild: __DEV__,
+  cognito: cognitoPublicConfig({
+    issuer: process.env.EXPO_PUBLIC_COGNITO_ISSUER,
+    clientId: process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID,
+  }),
+  httpClient,
+});
 export const sessionApi = createSessionApi(httpClient);
 export const participantApi = createParticipantApi(httpClient);
 
@@ -84,6 +119,11 @@ export const discoveryApi = createDiscoveryApi(httpClient);
 export const taxonomyCache = createTaxonomyCache(discoveryApi);
 export const catalogueService = createRealCatalogueService(discoveryApi, taxonomyCache);
 export const searchService = createRealSearchService(discoveryApi, taxonomyCache);
+// RI-6 — device recents are account-scoped convenience: they clear with
+// the rest of the account-scoped state whenever local auth is forgotten.
+subscribeAuthReset(() => {
+  void searchService.clearRecentSearches();
+});
 export const detailsService = createRealDetailsService(discoveryApi);
 export const discoverFeedService = createRealDiscoverFeedService(discoveryApi, taxonomyCache);
 export const homeFeedService = createRealHomeFeedService(discoveryApi, taxonomyCache);
@@ -111,13 +151,20 @@ export const entitlementsApi = createEntitlementsApi(httpClient);
 export const bookingService = createRealBookingService(discoveryApi, commerceApi, entitlementsApi);
 
 /**
- * D-RI-3 operational record: Sign in with Apple and Google sign-in reuse
- * the certified identity architecture (provider kinds `apple`/`google`
- * are first-class in the backend evidence model) but REQUIRE genuine
- * provider/app configuration (Apple capability + services id, Google
- * OAuth client, real Cognito pool federation). None exists yet, so the
- * boundary stays FAIL-CLOSED: no gateway method is exposed and the UI
- * presents the options as unavailable — social-login success is never
- * simulated.
+ * D-RI-3 operational record (RI-6: now CONFIGURATION-derived, still
+ * fail-closed): Sign in with Apple and Google sign-in reuse the certified
+ * identity architecture (provider kinds `apple`/`google` are first-class
+ * in the backend evidence model, and `POST /auth/session` already binds
+ * federated Cognito idToken evidence) but REQUIRE genuine external
+ * configuration — Apple developer program membership + Sign-in capability
+ * + Services ID + the `expo-apple-authentication` module; Google OAuth
+ * clients + the native sign-in module; real Cognito pool federation for
+ * both. None exists in this environment, so the flags stay false and the
+ * UI presents the options as honestly unavailable — social-login success
+ * is never simulated. Operational enablement flips the env flags AND
+ * ships the provider modules; the flags alone never fake availability.
  */
-export const SOCIAL_SIGN_IN_AVAILABLE = { apple: false, google: false } as const;
+export const SOCIAL_SIGN_IN_AVAILABLE = {
+  apple: process.env.EXPO_PUBLIC_APPLE_SIGN_IN_ENABLED === 'true',
+  google: process.env.EXPO_PUBLIC_GOOGLE_SIGN_IN_ENABLED === 'true',
+} as const;

@@ -17,6 +17,7 @@ import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { ageRangeLabel, participantAge, spokenAgeLabel } from '@/utils/eligibility';
 import { Ionicons } from '@expo/vector-icons';
+import { qaParamActive } from '@/utils/qa';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
@@ -52,7 +53,7 @@ export function ProviderStorefrontScreen() {
   // opacity only. Held in state per the react-hooks v6 ref rules.
   const [scrollY] = useState(() => new Animated.Value(0));
 
-  const simulateFailure = params['qa-fail'] === '1' && !retried;
+  const simulateFailure = qaParamActive(params['qa-fail']) && !retried;
 
   // Previous content stays visible while a participant or branch switch
   // reloads (Home rule).

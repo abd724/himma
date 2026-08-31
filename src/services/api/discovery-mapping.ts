@@ -7,6 +7,7 @@
  * bundled photography keyed by category slug (no public media serving
  * exists yet; media refs are recorded, not fetched).
  */
+import { civilDateInZone, civilDayDiff, dateLabelInZone, timeLabelInZone } from '@/utils/venue-time';
 import type {
   ActivityType,
   Area,
@@ -255,27 +256,6 @@ export function toProviderBranch(dto: ListingBranchDto): ProviderBranch {
 
 // -- occurrences (D-RI-4) ----------------------------------------------------
 
-function startOfDay(date: Date): Date {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function dayOffsetFrom(now: Date, date: Date): number {
-  return Math.round((startOfDay(date).getTime() - startOfDay(now).getTime()) / 86_400_000);
-}
-
-function dayLabelFor(now: Date, date: Date): string {
-  const offset = dayOffsetFrom(now, date);
-  if (offset === 0) return 'Today';
-  if (offset === 1) return 'Tomorrow';
-  return date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
-function timeLabelFor(date: Date): string {
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
-
 function shortDate(date: Date): string {
   return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
 }
@@ -293,31 +273,49 @@ export function toSessionOccurrences(
 ): SessionOccurrence[] {
   const occurrences: SessionOccurrence[] = [];
   for (const unit of units) {
-    let start: Date | null = null;
+    let offset: number | null = null;
     let dayLabel = '';
     let timeLabel = '';
     if (unit.kind === 'session' && unit.startAt !== null) {
-      start = new Date(unit.startAt);
-      dayLabel = dayLabelFor(now, start);
-      timeLabel = timeLabelFor(start);
+      const start = new Date(unit.startAt);
+      // RI-6 — session times present in the VENUE's civil terms (the
+      // server's explicit timezone), never the device's: a Dubai-midnight
+      // session must not drift onto the wrong day for a travelling
+      // customer.
+      const venueDay = civilDateInZone(start, unit.timezone);
+      offset = civilDayDiff(venueDay, civilDateInZone(now, unit.timezone));
+      dayLabel =
+        offset === 0
+          ? 'Today'
+          : offset === 1
+            ? 'Tomorrow'
+            : dateLabelInZone(start, unit.timezone, {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+              });
+      timeLabel = timeLabelInZone(start, unit.timezone);
     } else if (unit.kind === 'campWeek' && unit.startDate !== null) {
-      start = new Date(`${unit.startDate}T00:00:00`);
+      // Camp/cohort carry CIVIL dates already — timezone-free math.
+      offset = civilDayDiff(unit.startDate, civilDateInZone(now, unit.timezone));
+      const start = new Date(`${unit.startDate}T00:00:00`);
       dayLabel =
         unit.endDate !== null
           ? `${shortDate(start)} – ${shortDate(new Date(`${unit.endDate}T00:00:00`))}`
           : shortDate(start);
       timeLabel = 'Camp week';
     } else if (unit.kind === 'enrolmentCohort' && unit.effectiveStart !== null) {
-      start = new Date(`${unit.effectiveStart}T00:00:00`);
+      offset = civilDayDiff(unit.effectiveStart, civilDateInZone(now, unit.timezone));
+      const start = new Date(`${unit.effectiveStart}T00:00:00`);
       dayLabel = `Starts ${shortDate(start)}`;
       timeLabel =
         unit.effectiveEnd !== null ? `Until ${shortDate(new Date(`${unit.effectiveEnd}T00:00:00`))}` : '';
     }
-    if (start === null || startOfDay(start).getTime() < startOfDay(now).getTime()) continue;
+    if (offset === null || offset < 0) continue;
     const branchLabel = branchLabelById.get(unit.branchId);
     occurrences.push({
       id: unit.unitId,
-      dayOffset: dayOffsetFrom(now, start),
+      dayOffset: offset,
       dayLabel,
       timeLabel,
       availability: unit.availability,

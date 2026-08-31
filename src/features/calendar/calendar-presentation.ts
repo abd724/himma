@@ -18,6 +18,7 @@
  */
 import type { CalendarOccurrence } from '@/services/contracts/entitlements';
 import { displayTime } from '@/features/passes/passes-presentation';
+import { civilDateInZone, timeLabelInZone } from '@/utils/venue-time';
 
 /** Local civil date (YYYY-MM-DD) of a Date — presentation only. */
 export function civilDate(date: Date): string {
@@ -55,19 +56,18 @@ export function calendarWindow(selectedDate: string): { from: string; to: string
 }
 
 /** The civil day an event belongs to: the explicit canonical occurrence
- *  date where the server supplies one; otherwise the day of the server
- *  start instant. Never derived from the event key. */
+ *  date where the server supplies one; otherwise the VENUE-local day of
+ *  the server start instant (RI-6 — the event's own `timezone`, never the
+ *  device's: canonical UAE activity never drifts onto the wrong customer-
+ *  facing day). Never derived from the event key. */
 export function eventDay(event: CalendarOccurrence): string {
-  return event.occurrence?.date ?? civilDate(new Date(event.startAt));
+  return event.occurrence?.date ?? civilDateInZone(new Date(event.startAt), event.timezone);
 }
 
 /** Start-time label from the same truth the day grouping uses. */
 export function eventTimeLabel(event: CalendarOccurrence): string {
   if (event.occurrence !== undefined) return displayTime(event.occurrence.startTime);
-  return new Date(event.startAt).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return timeLabelInZone(new Date(event.startAt), event.timezone);
 }
 
 /** Customer wording for the server event context — never backend

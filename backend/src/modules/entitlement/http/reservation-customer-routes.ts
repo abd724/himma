@@ -123,6 +123,8 @@ const ReservableSessionSchema = Type.Object({
   branchId: Uuid,
   startAt: Type.String(),
   endAt: Type.String(),
+  /** RI-6 — venue timezone for truthful civil presentation. */
+  timezone: Type.String(),
   registrationCutoffAt: Type.String(),
   availability: Type.Union([
     Type.Literal('available'),
@@ -166,6 +168,9 @@ const CalendarEventSchema = Type.Object({
   branch: BranchRef,
   startAt: Type.String(),
   endAt: Type.String(),
+  /** RI-6 — venue timezone (IANA) for truthful civil presentation on any
+   *  device timezone. */
+  timezone: Type.String(),
   span: Type.Optional(
     Type.Object({
       startDate: IsoDate,

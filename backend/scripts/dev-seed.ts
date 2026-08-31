@@ -445,6 +445,41 @@ async function ensureRi5Calendar(db: Kysely<DB>): Promise<void> {
                    WHERE cohort_id = ${cohortRow.id})`.execute(db);
   }
 
+  // RI-6 — the CROSS-MIDNIGHT validation session: a bookable free tajweed
+  // session at Dubai 00:30 (≈20:30 UTC the previous civil day), re-ensured
+  // every run ~6 days ahead. The timezone journeys prove the app keeps it
+  // on the DUBAI civil day whatever the device timezone claims.
+  await sql`
+    INSERT INTO session (id, program_id, organization_id, branch_id, start_at, end_at,
+                         capacity, registration_cutoff_at)
+    SELECT gen_random_uuid(), p.id, p.organization_id, pb.branch_id,
+           (((now() AT TIME ZONE 'Asia/Dubai')::date + 6) + time '00:30') AT TIME ZONE 'Asia/Dubai',
+           (((now() AT TIME ZONE 'Asia/Dubai')::date + 6) + time '01:30') AT TIME ZONE 'Asia/Dubai',
+           30,
+           (((now() AT TIME ZONE 'Asia/Dubai')::date + 6) + time '00:30') AT TIME ZONE 'Asia/Dubai'
+    FROM program p
+    JOIN program_branch pb ON pb.program_id = p.id
+    WHERE p.title_en = 'Community Tajweed Circle'
+      AND NOT EXISTS (
+        SELECT 1 FROM session s
+        WHERE s.program_id = p.id
+          AND (s.start_at AT TIME ZONE 'Asia/Dubai')::time = time '00:30')
+    LIMIT 1`.execute(db);
+  // Re-anchor it every run (the camp precedent) so the journeys stay
+  // deterministic on long-lived dev databases.
+  await sql`
+    UPDATE session SET
+      start_at = (((now() AT TIME ZONE 'Asia/Dubai')::date + 6) + time '00:30') AT TIME ZONE 'Asia/Dubai',
+      end_at = (((now() AT TIME ZONE 'Asia/Dubai')::date + 6) + time '01:30') AT TIME ZONE 'Asia/Dubai',
+      registration_cutoff_at =
+        (((now() AT TIME ZONE 'Asia/Dubai')::date + 6) + time '00:30') AT TIME ZONE 'Asia/Dubai'
+    WHERE id IN (
+      SELECT s.id FROM session s
+      JOIN program p ON p.id = s.program_id
+      WHERE p.title_en = 'Community Tajweed Circle'
+        AND (s.start_at AT TIME ZONE 'Asia/Dubai')::time = time '00:30'
+        AND s.booked_count = 0 AND s.held_count = 0)`.execute(db);
+
   // 2. The FREE schedule-bound membership (Mon & Wed 19:00–20:00).
   const label = 'Evening membership — Mon & Wed';
   const existing = await sql<{ id: string }>`

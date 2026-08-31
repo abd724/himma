@@ -7,6 +7,7 @@
  * backend is unreachable, without destroying stored session material).
  */
 import { authSession } from '@/services/composition';
+import { subscribeSessionInvalidated } from '@/services/auth/auth-signals';
 import type { CustomerProfile } from '@/services/contracts/identity';
 import {
   createContext,
@@ -75,6 +76,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
       cancelled = true;
     };
   }, [restoreAttempt]);
+
+  // RI-6 — the server authoritatively rejected the current bearer mid-
+  // session (HTTP 401 on an authenticated request): clear local auth
+  // state and land on guest so no stale authenticated UI survives a dead
+  // session (owner item 6). Sign-in remains one tap away.
+  useEffect(
+    () =>
+      subscribeSessionInvalidated(() => {
+        void authSession.invalidate().then(() => {
+          setStatus((current) => (current === 'authenticated' ? 'guest' : current));
+          setProfile(null);
+          setUserId(null);
+          setAccountId(null);
+        });
+      }),
+    [],
+  );
 
   const applySnapshot = useCallback(
     (snapshot: { userId: string; accountId?: string; profile: CustomerProfile }) => {

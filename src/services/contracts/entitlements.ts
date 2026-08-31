@@ -83,6 +83,8 @@ export interface ReservableSession {
   branchId: string;
   startAt: string;
   endAt: string;
+  /** RI-6 — venue timezone (IANA) for truthful civil presentation. */
+  timezone: string;
   registrationCutoffAt: string;
   availability: 'available' | 'fewLeft' | 'full' | 'closed';
   spotsLeft?: number;
@@ -247,6 +249,9 @@ export interface CalendarOccurrence {
   branch: { id: string; label: string } | null;
   startAt: string;
   endAt: string;
+  /** RI-6 — the venue timezone (IANA) for truthful civil presentation of
+   *  the instants above on ANY device timezone. */
+  timezone: string;
   /** CampWeek presentation metadata: the overall span each daily
    *  occurrence belongs to — never a replacement for occurrence truth and
    *  never a source to generate dates from. */

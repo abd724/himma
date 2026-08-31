@@ -19,6 +19,7 @@ import { useBookingSession } from '@/state/booking-session-context';
 import { useParticipantContext } from '@/state/participant-context';
 import { colors, fontFamily, pagePadding, radii, shadows, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { qaParamActive } from '@/utils/qa';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -47,7 +48,7 @@ export function BookingSelectionScreen() {
   const [retried, setRetried] = useState(false);
   const lastContinueAt = useRef(0);
 
-  const simulateFailure = params['qa-fail'] === '1' && !retried;
+  const simulateFailure = qaParamActive(params['qa-fail']) && !retried;
 
   useEffect(() => {
     let cancelled = false;

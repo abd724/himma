@@ -12,6 +12,7 @@ import type {
   EntitlementScheduleTerm,
   FiniteBalance,
 } from '@/services/contracts/entitlements';
+import { timeLabelInZone } from '@/utils/venue-time';
 
 /** 'Used up' is the customer word for the server's `exhausted`. */
 export function statusPresentation(status: CustomerEntitlement['status']): {
@@ -123,17 +124,19 @@ export function occurrenceChoices(
   const choices: OccurrenceChoice[] = [];
   for (const event of events) {
     if (event.bookingId !== bookingId || event.occurrence === undefined) continue;
-    const start = new Date(event.startAt);
-    const end = new Date(event.endAt);
+    // RI-6 — labels derive from the CANONICAL civil pair (and the venue
+    // timezone for the end instant), never the device timezone: the
+    // check-in day list always names the scheduled venue day/time.
+    const [year, month, dayNo] = event.occurrence.date.split('-').map(Number);
     choices.push({
       date: event.occurrence.date,
       startTime: event.occurrence.startTime,
-      dayLabel: start.toLocaleDateString('en-US', {
+      dayLabel: new Date(year!, month! - 1, dayNo!).toLocaleDateString('en-US', {
         weekday: 'short',
         day: 'numeric',
         month: 'short',
       }),
-      timeLabel: `${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+      timeLabel: `${displayTime(event.occurrence.startTime)} – ${timeLabelInZone(new Date(event.endAt), event.timezone)}`,
     });
   }
   return choices;

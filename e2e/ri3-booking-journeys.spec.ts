@@ -93,7 +93,12 @@ test('PAID journey: hold countdown → hosted boundary → signed webhook → sa
   await page.getByLabel(/Adult Padel Open Play by Coastal Padel Club/).last().click();
   await page.getByLabel(/^Book: Adult Padel Open Play/).last().click();
 
-  await page.getByRole('radio', { name: /, \d{1,2}:\d{2} (AM|PM)/ }).last().click();
+  // Aged dev databases can fill individual seeded sessions — pick the
+  // last still-bookable one (RI-6 robustness; behavior unchanged).
+  await page
+    .getByRole('radio', { name: /, \d{1,2}:\d{2} (AM|PM)/, disabled: false })
+    .last()
+    .click();
   await page.getByText('Continue', { exact: true }).last().click();
   await page.getByRole('radio', { name: /^You/ }).last().click();
   await page.getByText('Continue', { exact: true }).last().click();

@@ -20,6 +20,7 @@ import { useTaxonomy } from '@/state/use-taxonomy';
 import { useResultsSession, type ResultsTab } from '@/state/results-session-context';
 import { colors, dockTokens, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { qaParamActive } from '@/utils/qa';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -51,7 +52,7 @@ export function ResultsScreen() {
   const [sortSheetOpen, setSortSheetOpen] = useState(false);
 
   const routeQuery = typeof params.q === 'string' ? params.q : '';
-  const simulateFailure = params['qa-fail'] === '1' && !retried;
+  const simulateFailure = qaParamActive(params['qa-fail']) && !retried;
 
   // Search submission resets the session in its event handler; this fallback
   // covers only cold deep links that open Results without a session. Syncing

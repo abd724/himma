@@ -45,6 +45,7 @@ function calendarEvent(partial: Partial<CalendarOccurrence> & { eventKey: string
     branch: { id: 'br-1', label: 'Marina branch' },
     startAt: '2026-09-02T15:00:00.000Z',
     endAt: '2026-09-02T16:00:00.000Z',
+    timezone: 'Asia/Dubai',
     ...partial,
   };
 }

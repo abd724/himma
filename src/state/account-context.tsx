@@ -1,8 +1,8 @@
 import { entitlementsApi, resolveAccountScenario } from '@/services/composition';
 import type { CalendarOccurrence, CustomerEntitlement } from '@/services/contracts/entitlements';
 import type { AccountScenarioId, ResolvedAccount } from '@/services/contracts/schedule';
-import { isAccountScenarioId } from '@/data/mock/schedule';
-import { addDays, civilDate } from '@/features/calendar/calendar-presentation';
+import { addDays } from '@/features/calendar/calendar-presentation';
+import { platformToday } from '@/utils/venue-time';
 import { deriveRealAccount, GUEST_ACCOUNT } from '@/state/account-derivation';
 import { useAuth } from '@/state/auth-context';
 import { subscribeBookingsChanged } from '@/state/bookings-events';
@@ -30,14 +30,22 @@ import {
  * client-side merge of bookings/passes/recurring rules.
  */
 export function scenarioFromParam(value: unknown): AccountScenarioId | undefined {
-  const single = Array.isArray(value) ? value[0] : value;
-  return typeof single === 'string' && isAccountScenarioId(single) ? single : undefined;
+  // RI-6: the fixture id vocabulary loads lazily behind __DEV__ — the
+  // fixture data graph never ships in a production bundle.
+  if (__DEV__) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mock = require('@/data/mock/schedule') as typeof import('@/data/mock/schedule');
+    const single = Array.isArray(value) ? value[0] : value;
+    return typeof single === 'string' && mock.isAccountScenarioId(single) ? single : undefined;
+  }
+  return undefined;
 }
 
 /** Home's bounded schedule window: today through two weeks ahead (well
- *  inside the server's 62-day request maximum). */
+ *  inside the server's 62-day request maximum; RI-6 — anchored to the
+ *  platform venue timezone like every schedule civil frame). */
 export function homeScheduleWindow(now: Date = new Date()): { from: string; to: string } {
-  const today = civilDate(now);
+  const today = platformToday(now);
   return { from: today, to: addDays(today, 13) };
 }
 
@@ -101,7 +109,10 @@ export function AccountProvider({ children }: PropsWithChildren) {
   }, [auth.status, scheduleVersion]);
 
   const value = useMemo<ResolvedAccount>(() => {
-    if (scenario !== undefined) return resolveAccountScenario(scenario);
+    if (scenario !== undefined) {
+      const fixture = resolveAccountScenario(scenario);
+      if (fixture !== undefined) return fixture;
+    }
     if (auth.status !== 'authenticated') return GUEST_ACCOUNT;
     return deriveRealAccount(
       profiles.profiles,

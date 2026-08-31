@@ -27,6 +27,7 @@ function calendarEvent(eventKey: string): CalendarOccurrence {
     branch: null,
     startAt: '2026-09-06T05:00:00.000Z',
     endAt: '2026-09-06T06:00:00.000Z',
+    timezone: 'Asia/Dubai',
   };
 }
 

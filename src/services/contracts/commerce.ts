@@ -120,6 +120,9 @@ export interface CustomerBooking {
     startAt: string | null;
     startDate: string | null;
     effectiveStart: string | null;
+    /** RI-6 — venue timezone (IANA): schedule instants present in venue-
+     *  local civil terms on any device timezone. */
+    timezone: string;
   };
   price: { totalFils: number; currency: 'AED' };
   /**

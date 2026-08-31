@@ -45,6 +45,7 @@ import {
   dubaiWeekdayOf,
   expandCampOccurrences,
   expandCohortOccurrences,
+  PLATFORM_TIMEZONE,
 } from './occurrence-authority';
 
 // ---------------------------------------------------------------------------
@@ -360,6 +361,8 @@ export interface ReservableSessionView {
   branchId: string;
   startAt: string; // ISO
   endAt: string; // ISO
+  /** RI-6 — the venue timezone for truthful civil presentation. */
+  timezone: string;
   registrationCutoffAt: string; // ISO
   availability: 'available' | 'fewLeft' | 'full' | 'closed';
   spotsLeft?: number;
@@ -481,6 +484,7 @@ export async function listReservableSessions(
           branchId: row.branch_id,
           startAt: row.start_at.toISOString(),
           endAt: row.end_at.toISOString(),
+          timezone: PLATFORM_TIMEZONE,
           registrationCutoffAt: row.cutoff_at.toISOString(),
           availability,
           ...(availability === 'fewLeft' ? { spotsLeft: remaining } : {}),
@@ -510,6 +514,11 @@ export interface CalendarEventView {
   branch: { id: string; label: string } | null;
   startAt: string; // ISO instant
   endAt: string; // ISO instant
+  /** RI-6 — the venue timezone (IANA) for truthful civil presentation of
+   *  the instants above on ANY device timezone: canonical UAE scheduled
+   *  activity never moves onto the wrong customer-facing civil day merely
+   *  because the device clock is elsewhere. */
+  timezone: string;
   /** CampWeek presentation metadata: the overall span each daily occurrence
    *  belongs to (never a REPLACEMENT for the occurrence truth — docs/35
    *  §30). */
@@ -642,6 +651,7 @@ export async function getCustomerCalendar(
           row.branch_id === null || row.branch_label === null
             ? null
             : { id: row.branch_id, label: row.branch_label },
+        timezone: PLATFORM_TIMEZONE,
         bookingId: row.id,
       };
       if (row.session_id !== null) {
@@ -782,6 +792,7 @@ export async function getCustomerCalendar(
               : { id: term.branch_id, label: term.branch_label },
           startAt: startAt.toISOString(),
           endAt: dubaiInstant(date, term.end_time).toISOString(),
+          timezone: PLATFORM_TIMEZONE,
           entitlementId: term.id,
         });
       }

@@ -263,13 +263,82 @@ describe('composition boundary locks', () => {
       );
     }
     // Composition wires the identity family from the real HTTP adapters.
+    // RI-6 (owning-slice amendment): the token-acquisition gateway binds
+    // through the ONE selection seam — real Cognito when configured, the
+    // dev stand-in only in dev builds, and a typed fail-closed refusal in
+    // an unconfigured production build. Composition never references the
+    // dev gateway factory directly.
     const composition = readFileSync(path.join(SRC, 'services', 'composition.ts'), 'utf8');
-    expect(composition).toContain("from './api/identity-api'");
-    expect(composition).toMatch(/identityGateway = createDevIdentityGateway\(httpClient\)/);
+    expect(composition).toMatch(/identityGateway = selectIdentityGateway\(/);
+    expect(composition).not.toContain('createDevIdentityGateway');
+    expect(composition).toMatch(/isDevBuild: __DEV__/);
     expect(composition).toMatch(/sessionApi = createSessionApi\(httpClient\)/);
     expect(composition).toMatch(/participantApi = createParticipantApi\(httpClient\)/);
     // The auth session controller is composed from those same adapters.
     expect(composition).toMatch(/authSession = new AuthSession\(/);
+    // The selection seam itself: dev gateway only behind isDevBuild, the
+    // unconfigured path refuses with the typed outcome, and partial
+    // Cognito configuration throws (fail-closed startup).
+    const selection = readFileSync(
+      path.join(SRC, 'services', 'auth', 'identity-gateway-selection.ts'),
+      'utf8',
+    );
+    // The dev gateway loads ONLY inside the __DEV__-eliminated branch — a
+    // production bundle contains no /dev/identity wire at all.
+    expect(selection).toMatch(/if \(__DEV__ && input\.isDevBuild\)/);
+    expect(selection).toMatch(/dev-identity-gateway/);
+    expect(selection).toMatch(/authNotConfigured/);
+    expect(selection).toMatch(/must be an https URL/);
+  });
+
+  it('RI-6: production configuration is fail-closed — no localhost fallback, no dev identity, no deterministic-payment reference, no secrets', () => {
+    // API origin: the localhost default exists ONLY behind __DEV__ and an
+    // unconfigured production build throws instead of falling back.
+    const apiConfig = readFileSync(path.join(SRC, 'services', 'http', 'api-config.ts'), 'utf8');
+    expect(apiConfig).toMatch(/if \(__DEV__\) return DEV_DEFAULT_API_URL/);
+    expect(apiConfig).toMatch(/throw new Error/);
+    // No app module points at dev-server-only actors or the deterministic
+    // payment provider's conveniences (scripts-only surfaces).
+    for (const dir of ['app', 'features', 'state', 'services', 'components']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = stripComments(readFileSync(file, 'utf8'));
+        expect(source).not.toMatch(/\/dev\/checkin|\/dev\/fulfillment|\/dev\/payments|dev-hosted/);
+        // Production logging hygiene: the app never logs (tokens/codes can
+        // never leak through a logger that does not exist).
+        expect(source).not.toMatch(/console\.(log|info|warn|error|debug)/);
+      }
+    }
+  });
+
+  it('RI-6: the hosted-payment return is NAVIGATION ONLY — the deep-link/return surface reads no caller input and holds no payment authority', () => {
+    const returnScreen = readFileSync(
+      path.join(SRC, 'features', 'bookings', 'checkout-return-screen.tsx'),
+      'utf8',
+    );
+    // No query/param reads: a crafted return link cannot select an account,
+    // an intent, a price, or a success state.
+    expect(returnScreen).not.toMatch(/useLocalSearchParams|useGlobalSearchParams|params\./);
+    // Only the persisted pending record (identifiers) + the status READ
+    // screens; never a confirm/success mutation.
+    expect(returnScreen).toMatch(/pendingCheckoutStore/);
+    expect(stripComments(returnScreen)).not.toMatch(
+      /confirmFreeBooking|confirmReservation|confirmFreeAcquisition|paymentSucceeded/,
+    );
+  });
+
+  it('RI-6: qa review params are DEV-gated — every qa-param read goes through the gated helper or a __DEV__ guard', () => {
+    const qaHelper = readFileSync(path.join(SRC, 'utils', 'qa.ts'), 'utf8');
+    expect(qaHelper).toMatch(/if \(!__DEV__\) return false/);
+    for (const dir of ['app', 'features', 'state', 'components']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = readFileSync(file, 'utf8');
+        if (/['"]qa-/.test(stripComments(source))) {
+          expect(
+            source.includes('qaParamActive') || source.includes('__DEV__'),
+          ).toBe(true);
+        }
+      }
+    }
   });
 
   it('screens never perform raw HTTP: fetch/XMLHttpRequest exist only inside the HTTP client', () => {

@@ -63,6 +63,13 @@ const COPY: Record<string, string> = {
   alreadyCheckedIn: 'This session is already checked in.',
   credentialExpired: 'This code has expired. Generate a new one to check in.',
   credentialAlreadyUsed: 'This code has already been used.',
+  // RI-6 — production identity boundary outcomes (fail-closed, honest):
+  authNotConfigured: 'Sign-in isn’t available in this build yet.',
+  accountNotConfirmed: 'This account still needs email confirmation.',
+  emailInUse: 'An account with this email already exists. Try signing in.',
+  invalidPassword: 'That password doesn’t meet the requirements.',
+  identityChallengeUnsupported: 'This account needs extra sign-in steps we don’t support yet.',
+  identityProviderRefused: 'Sign-in couldn’t be completed. Please try again.',
 };
 
 export function customerErrorCopy(error: unknown): string {

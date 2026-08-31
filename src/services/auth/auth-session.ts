@@ -18,7 +18,8 @@ import type {
   IdentityTokens,
   SessionApi,
 } from '@/services/contracts/identity';
-import { ApiError } from '@/services/http/http-client';
+import { ApiError, NetworkError } from '@/services/http/http-client';
+import { notifyAuthReset } from '@/services/auth/auth-signals';
 import type { StoredSession, TokenStorage } from './token-storage';
 
 export interface AuthenticatedSnapshot {
@@ -54,7 +55,16 @@ export class AuthSession {
         const refreshed = await this.deps.gateway.refresh(stored.refreshToken);
         active = { ...stored, accessToken: refreshed.accessToken, expiresAt: refreshed.expiresAt };
         await this.deps.storage.save(active);
-      } catch {
+      } catch (error) {
+        // RI-6: a TRANSIENT failure (offline, timeout) never destroys the
+        // stored session material — only an authoritative rejection of the
+        // refresh authority signs the customer out. Transient failures
+        // surface exactly like an unreachable `/me` below: guest UI with
+        // retry, material retained for the next attempt.
+        if (error instanceof NetworkError) {
+          this.deps.onAccessToken(null);
+          throw error;
+        }
         return this.forget();
       }
     }
@@ -102,6 +112,16 @@ export class AuthSession {
     await this.forget();
   }
 
+  /**
+   * RI-6 — the server authoritatively rejected the current bearer (401 on
+   * an authenticated request): clear local auth state so no stale
+   * authenticated UI survives. No server call — the session is already
+   * dead server-side.
+   */
+  async invalidate(): Promise<void> {
+    await this.forget();
+  }
+
   private async establish(tokens: IdentityTokens): Promise<AuthenticatedSnapshot> {
     this.deps.onAccessToken(tokens.accessToken);
     try {
@@ -133,6 +153,10 @@ export class AuthSession {
   private async forget(): Promise<null> {
     this.deps.onAccessToken(null);
     await this.deps.storage.clear();
+    // RI-6 — account-scoped state (pending checkout record, stashed
+    // check-in secret, device recents, in-flow state) must never survive
+    // into another account's session on the same device.
+    notifyAuthReset();
     return null;
   }
 }

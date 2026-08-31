@@ -12,6 +12,8 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
+import { subscribeAuthReset } from '@/services/auth/auth-signals';
+
 const STORAGE_KEY = 'himma.checkout.pending.v1';
 
 export interface PendingCheckout {
@@ -85,3 +87,12 @@ const nativeStore: PendingCheckoutStore = {
 
 export const pendingCheckoutStore: PendingCheckoutStore =
   Platform.OS === 'web' ? webStore : nativeStore;
+
+// RI-6 — the pending record is ACCOUNT-scoped device state: whenever local
+// auth is forgotten (logout, authoritative 401, rejected restore) it must
+// not survive into another account's session on this device. The server
+// would refuse a foreign replay anyway (not-found-shaped); this keeps the
+// device honest too.
+subscribeAuthReset(() => {
+  void pendingCheckoutStore.clear();
+});

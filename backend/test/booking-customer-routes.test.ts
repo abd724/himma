@@ -315,6 +315,8 @@ describe('the approved customer journey over the wire', () => {
       .json()
       .units.find((u: { unitId: string }) => u.unitId === sessionId);
     expect(unit).toMatchObject({ availability: 'fewLeft', spotsLeft: 2 });
+    // RI-6 — the explicit venue timezone rides every availability unit.
+    expect(unit.timezone).toBe('Asia/Dubai');
     expect(unit.heldCount).toBeUndefined();
     expect(unit.bookedCount).toBeUndefined();
     expect(unit.version).toBeUndefined();

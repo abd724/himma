@@ -12,6 +12,8 @@
  * replay returns metadata only, by design).
  */
 
+import { subscribeAuthReset } from '@/services/auth/auth-signals';
+
 export interface StashedCredential {
   credentialId: string;
   /** The one-time secret — present only when THIS process minted it. */
@@ -20,6 +22,13 @@ export interface StashedCredential {
 }
 
 let current: StashedCredential | null = null;
+
+// RI-6 — the in-memory secret dies with the session: logout (or an
+// authoritative 401) drops it immediately, so a signed-out device holds
+// no live check-in material for the next account to find.
+subscribeAuthReset(() => {
+  current = null;
+});
 
 export function stashCredential(credential: StashedCredential): void {
   current = credential;

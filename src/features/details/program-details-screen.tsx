@@ -21,6 +21,7 @@ import type { SkillLevel } from '@/types/domain';
 import { isLadiesOnly, spokenAgeLabel } from '@/utils/eligibility';
 import { formatPrice, spokenPriceLabel } from '@/utils/price';
 import { Ionicons } from '@expo/vector-icons';
+import { qaParamActive } from '@/utils/qa';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
@@ -64,7 +65,7 @@ export function ProgramDetailsScreen() {
   // a ref) so render-time reads satisfy the react-hooks v6 ref rules.
   const [scrollY] = useState(() => new Animated.Value(0));
 
-  const simulateFailure = params['qa-fail'] === '1' && !retried;
+  const simulateFailure = qaParamActive(params['qa-fail']) && !retried;
 
   // Previous content stays visible while a participant switch reloads.
   useEffect(() => {

@@ -28,6 +28,7 @@ function calendarEvent(
     program: { id: 'prog-1', titleEn: 'Program' },
     provider: { id: 'org-1', displayName: 'Provider' },
     branch: null,
+    timezone: 'Asia/Dubai',
     ...partial,
   };
 }

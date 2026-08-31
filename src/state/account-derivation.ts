@@ -18,7 +18,8 @@
  * loading state until the real list arrived, instead of flashing a wrong
  * empty/ineligible state.
  */
-import { eventDay, eventTimeLabel, civilDate } from '@/features/calendar/calendar-presentation';
+import { eventDay, eventTimeLabel } from '@/features/calendar/calendar-presentation';
+import { dateLabelInZone, platformToday, PLATFORM_TIME_ZONE } from '@/utils/venue-time';
 import { finiteHeadline } from '@/features/passes/passes-presentation';
 import { presentationImageKey } from '@/services/api/discovery-mapping';
 import type { CalendarOccurrence, CustomerEntitlement } from '@/services/contracts/entitlements';
@@ -64,7 +65,9 @@ export function toScheduleEntries(
   selfParticipantId: string | undefined,
   now: Date = new Date(),
 ): ScheduleEntry[] {
-  const today = civilDate(now);
+  // RI-6 — day offsets/labels anchor to the platform venue timezone, the
+  // same civil frame the events themselves group by.
+  const today = platformToday(now);
   const entries: ScheduleEntry[] = [];
   const seen = new Set<string>();
   for (const event of events) {
@@ -122,7 +125,7 @@ export function toActivePlans(
       const next =
         entitlement.nextReservedSessionAt === null
           ? undefined
-          : new Date(entitlement.nextReservedSessionAt).toLocaleDateString('en-US', {
+          : dateLabelInZone(new Date(entitlement.nextReservedSessionAt), PLATFORM_TIME_ZONE, {
               weekday: 'short',
               day: 'numeric',
               month: 'short',

@@ -14,6 +14,7 @@ import { useParticipantContext } from '@/state/participant-context';
 import { useResultsSession } from '@/state/results-session-context';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { qaParamActive } from '@/utils/qa';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -47,8 +48,8 @@ export function MapScreen() {
   // bottom safe area, and the canvas must always clear it.
   const [bottomBarHeight, setBottomBarHeight] = useState(96);
 
-  const simulateFailure = params['qa-fail'] === '1' && !retried;
-  const simulateMissingCounts = params['qa-nocount'] === '1';
+  const simulateFailure = qaParamActive(params['qa-fail']) && !retried;
+  const simulateMissingCounts = qaParamActive(params['qa-nocount']);
   const selectedAreaId = session.filters.areaId;
 
   // Previous nodes stay visible while a filter or participant change reloads.

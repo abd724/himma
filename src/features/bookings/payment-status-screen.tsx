@@ -16,8 +16,9 @@ import type { CustomerPaymentStatus } from '@/services/contracts/commerce';
 import { notifyBookingsChanged } from '@/state/bookings-events';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useForegroundRefresh } from '@/hooks/use-foreground-refresh';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -61,7 +62,10 @@ export function PaymentStatusScreen() {
   }, [bookingId]);
 
   // The bounded reconciliation loop (cadence in payment-polling.ts).
-  useEffect(() => {
+  // RI-6: focus-scoped — only the FOCUSED screen instance polls (a stacked
+  // duplicate after a deep-link return never runs a second loop).
+  useFocusEffect(
+    useCallback(() => {
     if (bookingId === '') return;
     startedAtRef.current ??= Date.now();
     let cancelled = false;
@@ -115,7 +119,8 @@ export function PaymentStatusScreen() {
       if (timerRef.current !== null) clearTimeout(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingId, pollRun]);
+    }, [bookingId, pollRun]),
+  );
 
   const resume = () => {
     startedAtRef.current = Date.now();
@@ -124,6 +129,12 @@ export function PaymentStatusScreen() {
     setPaused(false);
     setPollRun((run) => run + 1);
   };
+
+  // RI-6 — returning from the external browser (or any background) runs
+  // ONE fresh reconciliation of the same single polling loop: timers that
+  // slept with the process never stall the truth, and a lapsed budget
+  // resumes without a manual tap.
+  useForegroundRefresh(resume);
 
   const copy = status === null ? null : PAYMENT_STATUS_COPY[status.status];
   const showRecheck = status?.status === 'expired';

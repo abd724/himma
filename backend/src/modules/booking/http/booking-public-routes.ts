@@ -42,6 +42,8 @@ const PublicAvailabilityViewSchema = Type.Object({
   endDate: NullableString,
   effectiveStart: NullableString,
   effectiveEnd: NullableString,
+  /** RI-6 — venue timezone (IANA) for truthful civil presentation. */
+  timezone: Type.String(),
   registrationCutoffAt: Type.String(),
   availability: Type.Union([
     Type.Literal('available'),

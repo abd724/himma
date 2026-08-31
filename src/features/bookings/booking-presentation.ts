@@ -1,8 +1,14 @@
 /**
  * RI-3 — pure presentation/categorization over the certified own-booking
  * projection. Display derivation only; nothing here creates truth.
+ *
+ * RI-6 — when-labels present in the unit's VENUE timezone (the server's
+ * explicit `unit.timezone`), never the device's: a Dubai-midnight session
+ * never drifts onto the wrong customer-facing civil day. Camp/cohort
+ * civil dates are timezone-free by construction.
  */
 import type { CustomerBooking } from '@/services/contracts/commerce';
+import { civilDateInZone, civilDayDiff, dateLabelInZone, timeLabelInZone } from '@/utils/venue-time';
 
 /** The unit's start instant (sessions) or start day (camps/cohorts). */
 export function bookingStart(booking: CustomerBooking): Date | null {
@@ -15,25 +21,34 @@ export function bookingStart(booking: CustomerBooking): Date | null {
 }
 
 export function bookingWhenLabel(booking: CustomerBooking, now: Date = new Date()): string {
-  const start = bookingStart(booking);
-  if (start === null) return '';
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  const dayLabel = sameDay(start, now)
-    ? 'Today'
-    : sameDay(start, tomorrow)
-      ? 'Tomorrow'
-      : start.toLocaleDateString('en-US', {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-        });
+  const timezone = booking.unit.timezone;
+  // Civil day in the venue frame: sessions from the instant, camps/cohorts
+  // from their explicit civil dates.
+  const venueDay =
+    booking.unit.startAt !== null
+      ? civilDateInZone(new Date(booking.unit.startAt), timezone)
+      : (booking.unit.startDate ?? booking.unit.effectiveStart);
+  if (venueDay === null) return '';
+  const offset = civilDayDiff(venueDay, civilDateInZone(now, timezone));
+  const [year, month, dayNo] = venueDay.split('-').map(Number);
+  const dayLabel =
+    offset === 0
+      ? 'Today'
+      : offset === 1
+        ? 'Tomorrow'
+        : booking.unit.startAt !== null
+          ? dateLabelInZone(new Date(booking.unit.startAt), timezone, {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+            })
+          : new Date(year!, month! - 1, dayNo!).toLocaleDateString('en-US', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+            });
   if (booking.unit.startAt !== null) {
-    const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const time = timeLabelInZone(new Date(booking.unit.startAt), timezone);
     return `${dayLabel} · ${time}`;
   }
   if (booking.unit.kind === 'campWeek') return `Week of ${dayLabel}`;

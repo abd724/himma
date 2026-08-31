@@ -75,6 +75,8 @@ const AvailabilityViewSchema = Type.Object({
   endDate: NullableString,
   effectiveStart: NullableString,
   effectiveEnd: NullableString,
+  /** RI-6 — venue timezone (IANA) for truthful civil presentation. */
+  timezone: Type.String(),
   registrationCutoffAt: Type.String(),
   availability: Type.Union([
     Type.Literal('available'),
@@ -149,6 +151,8 @@ const CustomerBookingSchema = Type.Object({
     startAt: NullableString,
     startDate: NullableString,
     effectiveStart: NullableString,
+    /** RI-6 — venue timezone (IANA) for truthful civil presentation. */
+    timezone: Type.String(),
   }),
   price: Type.Object({ totalFils: Type.Integer(), currency: Type.Literal('AED') }),
   // S6-3 (owner item 26): included-with-pass truth — an entitlement-covered

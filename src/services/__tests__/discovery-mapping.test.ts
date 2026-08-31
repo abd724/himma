@@ -90,6 +90,7 @@ describe('discovery mapping', () => {
       endDate: null,
       effectiveStart: null,
       effectiveEnd: null,
+      timezone: 'Asia/Dubai',
       registrationCutoffAt: at(1),
     };
     const units: AvailabilityUnitDto[] = [
@@ -125,7 +126,8 @@ describe('discovery mapping', () => {
           endDate: '2026-09-11',
           effectiveStart: null,
           effectiveEnd: null,
-          registrationCutoffAt: '2026-09-07T00:00:00Z',
+          timezone: 'Asia/Dubai',
+      registrationCutoffAt: '2026-09-07T00:00:00Z',
           availability: 'available',
         },
         {
@@ -138,7 +140,8 @@ describe('discovery mapping', () => {
           endDate: null,
           effectiveStart: '2026-09-01',
           effectiveEnd: '2026-12-01',
-          registrationCutoffAt: '2026-09-01T00:00:00Z',
+          timezone: 'Asia/Dubai',
+      registrationCutoffAt: '2026-09-01T00:00:00Z',
           availability: 'fewLeft',
           spotsLeft: 3,
         },

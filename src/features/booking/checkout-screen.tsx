@@ -45,7 +45,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export function CheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ programId?: string; 'qa-fail'?: string }>();
+  const params = useLocalSearchParams<{ programId?: string }>();
   const programId = typeof params.programId === 'string' ? params.programId : '';
 
   const { participants } = useParticipantContext();

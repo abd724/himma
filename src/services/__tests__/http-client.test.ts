@@ -106,3 +106,37 @@ describe('http client', () => {
     expect((failure as ApiError).code).toBe('requestFailed');
   });
 });
+
+describe('RI-6: bounded deadlines', () => {
+  it('a hung request times out into NetworkError (never an eternal spinner)', async () => {
+    const client = createHttpClient({
+      baseUrl: 'https://api.test',
+      getAccessToken: () => null,
+      defaultTimeoutMs: 20,
+      fetchImpl: (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+          );
+        }),
+    });
+    await expect(client.request('GET', '/hang')).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it('an explicit caller abort still surfaces as AbortError, not a network failure', async () => {
+    const controller = new AbortController();
+    const client = createHttpClient({
+      baseUrl: 'https://api.test',
+      getAccessToken: () => null,
+      fetchImpl: (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+          );
+        }),
+    });
+    const pending = client.request('GET', '/slow', { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});

@@ -21,8 +21,9 @@ import type { AcquisitionPaymentStatus } from '@/services/contracts/entitlements
 import { notifyPassesChanged } from '@/state/passes-events';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useForegroundRefresh } from '@/hooks/use-foreground-refresh';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -66,7 +67,10 @@ export function PurchaseStatusScreen() {
   const confirmedHandled = useRef(false);
   const [pollRun, setPollRun] = useState(0);
 
-  useEffect(() => {
+  // RI-6: focus-scoped — only the FOCUSED screen instance polls (a stacked
+  // duplicate after a deep-link return never runs a second loop).
+  useFocusEffect(
+    useCallback(() => {
     if (purchaseId === '') return;
     startedAtRef.current ??= Date.now();
     let cancelled = false;
@@ -126,7 +130,8 @@ export function PurchaseStatusScreen() {
       if (timerRef.current !== null) clearTimeout(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [purchaseId, pollRun]);
+    }, [purchaseId, pollRun]),
+  );
 
   const resume = () => {
     startedAtRef.current = Date.now();
@@ -135,6 +140,12 @@ export function PurchaseStatusScreen() {
     setPaused(false);
     setPollRun((run) => run + 1);
   };
+
+  // RI-6 — returning from the external browser (or any background) runs
+  // ONE fresh reconciliation of the same single polling loop: timers that
+  // slept with the process never stall the truth, and a lapsed budget
+  // resumes without a manual tap.
+  useForegroundRefresh(resume);
 
   const copy = status === null ? null : passStatusCopy(status.status);
 

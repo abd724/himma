@@ -554,6 +554,11 @@ describe('bounds and read-only shape (items 18, 34, 36–37)', () => {
     const read = await inject(`/customer/calendar?from=${from}&to=${to}`, customer.bearer);
     expect(read.statusCode).toBe(200);
     expect(read.json().events.length).toBeGreaterThan(0);
+    // RI-6 — every event carries the explicit venue timezone (the additive
+    // DTO correction for truthful civil presentation on any device).
+    for (const event of read.json().events as { timezone: string }[]) {
+      expect(event.timezone).toBe('Asia/Dubai');
+    }
     expect(read.body).not.toMatch(/capacity|booked_count|heldCount|booked" ?:|scheduleId/i);
     expect(read.body).not.toMatch(/commission|economics|staff|intent|digest|token/i);
     // Unauthenticated and cross-account: nothing leaks.

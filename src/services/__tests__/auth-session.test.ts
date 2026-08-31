@@ -12,6 +12,7 @@ import type {
   SessionApi,
 } from '@/services/contracts/identity';
 import { ApiError, NetworkError } from '@/services/http/http-client';
+import { subscribeAuthReset } from '@/services/auth/auth-signals';
 
 const PROFILE: CustomerProfile = {
   user: { id: 'user-1' },
@@ -142,6 +143,19 @@ describe('restore', () => {
     expect(tokenFeed.at(-1)).toBe('access-refreshed');
   });
 
+  it('RI-6: a TRANSIENT refresh failure retains the stored session and rethrows (retry-later, never sign-out)', async () => {
+    const { auth, get } = makeSession({
+      stored: { ...STORED, expiresAt: new Date(Date.now() - 1000).toISOString() },
+      gateway: {
+        refresh: async () => {
+          throw new NetworkError(new Error('offline'));
+        },
+      },
+    });
+    await expect(auth.restore()).rejects.toBeInstanceOf(NetworkError);
+    expect(get()).not.toBeNull(); // material retained for the next launch
+  });
+
   it('expired + refresh refused → storage cleared, guest', async () => {
     const { auth, get } = makeSession({
       stored: { ...STORED, expiresAt: new Date(Date.now() - 1000).toISOString() },
@@ -213,5 +227,27 @@ describe('logout', () => {
     await auth.logout();
     expect(get()).toBeNull();
     expect(tokenFeed.at(-1)).toBeNull();
+  });
+});
+
+describe('RI-6: authoritative invalidation + account-scoped reset signal', () => {
+  it('invalidate() clears local auth state without a server call and fires the auth-reset signal', async () => {
+    const resets: number[] = [];
+    const unsubscribe = subscribeAuthReset(() => resets.push(1));
+    const { auth, get, tokenFeed } = makeSession({ stored: STORED });
+    await auth.invalidate();
+    expect(get()).toBeNull();
+    expect(tokenFeed.at(-1)).toBeNull();
+    expect(resets).toHaveLength(1);
+    unsubscribe();
+  });
+
+  it('logout fires the auth-reset signal (pending checkout, stashed secret, recents all clear through it)', async () => {
+    const resets: number[] = [];
+    const unsubscribe = subscribeAuthReset(() => resets.push(1));
+    const { auth } = makeSession({ stored: STORED });
+    await auth.logout();
+    expect(resets).toHaveLength(1);
+    unsubscribe();
   });
 });

@@ -37,6 +37,7 @@ import { notifyBookingsChanged } from '@/state/bookings-events';
 import { notifyPassesChanged } from '@/state/passes-events';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { useForegroundRefresh } from '@/hooks/use-foreground-refresh';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -82,6 +83,7 @@ export function CredentialScreen() {
   const [regenerating, setRegenerating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const consumedHandled = useRef(false);
+  const [pollEpoch, setPollEpoch] = useState(0);
   const startedAtRef = useRef<number | null>(null);
   const failuresRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -129,8 +131,16 @@ export function CredentialScreen() {
         cancelled = true;
         if (timerRef.current !== null) clearTimeout(timerRef.current);
       };
-    }, [credentialId]),
+      // pollEpoch deliberately restarts the bounded loop on app foreground.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [credentialId, pollEpoch]),
   );
+
+  // RI-6 — app resume runs ONE fresh authoritative status read (the same
+  // single bounded loop restarts): a code that expired or was redeemed
+  // while the app was backgrounded shows its true state immediately; no
+  // background timer is ever the authority.
+  useForegroundRefresh(() => setPollEpoch((epoch) => epoch + 1));
 
   // Presentation countdown only — the SERVER expiry owns the truth; the
   // poll surfaces the effective `expired` state.

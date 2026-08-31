@@ -50,7 +50,8 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "export:release": "expo export"
   },
   "private": true,
   "jest": {

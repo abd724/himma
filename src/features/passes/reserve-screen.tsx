@@ -28,6 +28,7 @@ import { customerErrorCopy } from '@/services/http/error-copy';
 import { ApiError } from '@/services/http/http-client';
 import { notifyBookingsChanged } from '@/state/bookings-events';
 import { notifyPassesChanged } from '@/state/passes-events';
+import { dateLabelInZone, timeLabelInZone } from '@/utils/venue-time';
 import { colors, fontFamily, pagePadding, radii, spacing, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -226,15 +227,14 @@ export function ReserveScreen() {
                   const start = new Date(session.startAt);
                   const selectable =
                     session.availability !== 'full' && session.availability !== 'closed';
-                  const dayLabel = start.toLocaleDateString('en-US', {
+                  // RI-6 — venue-local presentation (the server's explicit
+                  // timezone), never the device's.
+                  const dayLabel = dateLabelInZone(start, session.timezone, {
                     weekday: 'short',
                     day: 'numeric',
                     month: 'short',
                   });
-                  const timeLabel = start.toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  });
+                  const timeLabel = timeLabelInZone(start, session.timezone);
                   return (
                     <PressableFeedback
                       key={session.sessionId}

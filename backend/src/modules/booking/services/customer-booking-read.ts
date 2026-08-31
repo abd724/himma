@@ -20,6 +20,7 @@
 import { sql } from 'kysely';
 
 import { withTransaction } from '../../../db/transaction';
+import { PLATFORM_TIMEZONE } from '../../../config/platform-timezone';
 import {
   readHold,
   unitSpec,
@@ -44,6 +45,8 @@ export interface AvailabilityView {
   endDate: string | null;
   effectiveStart: string | null;
   effectiveEnd: string | null;
+  /** RI-6 — venue timezone (IANA) for truthful civil presentation. */
+  timezone: string;
   registrationCutoffAt: string;
   availability: 'available' | 'fewLeft' | 'full' | 'closed';
   /** Present ONLY in the fewLeft band (derived, never a stored counter). */
@@ -148,6 +151,7 @@ export async function listAvailability(
         endDate: isoDate(row.end_date),
         effectiveStart: isoDate(row.effective_start),
         effectiveEnd: isoDate(row.effective_end),
+        timezone: PLATFORM_TIMEZONE,
         registrationCutoffAt: row.cutoff_at.toISOString(),
         availability,
         ...(availability === 'fewLeft' ? { spotsLeft: remaining } : {}),
@@ -231,6 +235,10 @@ export interface CustomerBookingView {
     startAt: string | null;
     startDate: string | null;
     effectiveStart: string | null;
+    /** RI-6 — venue timezone (IANA): the app presents `startAt` in venue-
+     *  local civil terms on ANY device timezone (a Dubai-midnight session
+     *  never drifts onto the wrong customer-facing day). */
+    timezone: string;
   };
   price: { totalFils: number; currency: 'AED' };
   /** S6-3 (owner item 26): TRUE when this Booking's AED 0 quote is covered
@@ -303,6 +311,7 @@ function toBookingView(row: BookingProjectionRow): CustomerBookingView {
       startDate: civilDateString(row.start_date),
       effectiveStart:
         civilDateString(row.effective_start),
+      timezone: PLATFORM_TIMEZONE,
     },
     price: { totalFils: Number(row.total_fils), currency: 'AED' },
     coveredByEntitlement: row.reserved_entitlement_id !== null,

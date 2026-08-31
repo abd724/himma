@@ -3,46 +3,19 @@
  * contracts. These are the only implementations that may be composed into
  * the running app (source-locked — no mock exists for these contracts).
  *
- * `createDevIdentityGateway` targets the backend's DEVELOPMENT-ONLY
- * /dev/identity token routes — the certified stand-in for the Cognito
- * client flows. Production sign-in (real Cognito email/password + Sign in
- * with Apple + Google, D-RI-3) replaces ONLY this gateway in composition;
- * `SessionApi`/`ParticipantApi` are the certified contracts and never
- * change with the identity provider.
+ * RI-6: the DEVELOPMENT-ONLY token gateway moved to its own module
+ * (dev-identity-gateway.ts) loaded lazily behind `__DEV__` — a production
+ * bundle contains no /dev/identity wire at all. `SessionApi`/
+ * `ParticipantApi` are the certified contracts and never change with the
+ * identity provider.
  */
 import type {
   CustomerProfile,
-  IdentityGateway,
-  IdentityTokens,
   ParticipantApi,
   ParticipantProfile,
   SessionApi,
 } from '@/services/contracts/identity';
 import type { HttpClient } from '@/services/http/http-client';
-
-export function createDevIdentityGateway(client: HttpClient): IdentityGateway {
-  return {
-    async signUp(input) {
-      return client.request<IdentityTokens>('POST', '/dev/identity/signup', {
-        body: input,
-        auth: false,
-      });
-    },
-    async signIn(input) {
-      return client.request<IdentityTokens>('POST', '/dev/identity/signin', {
-        body: input,
-        auth: false,
-      });
-    },
-    async refresh(refreshToken) {
-      return client.request<{ accessToken: string; expiresAt: string }>(
-        'POST',
-        '/dev/identity/refresh',
-        { body: { refreshToken }, auth: false },
-      );
-    },
-  };
-}
 
 export function createSessionApi(client: HttpClient): SessionApi {
   return {

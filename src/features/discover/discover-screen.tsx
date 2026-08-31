@@ -31,6 +31,7 @@ import { useResultsSession } from '@/state/results-session-context';
 import { useTaxonomy } from '@/state/use-taxonomy';
 import { colors, dockTokens, pagePadding, spacing } from '@/theme';
 import type { BrowseEntry } from '@/types/domain';
+import { qaParamActive } from '@/utils/qa';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -65,7 +66,7 @@ export function DiscoverScreen() {
   // cancelling (backdrop/back) leaves Discover untouched (commit-5 merge rule).
   const [draftFilters, setDraftFilters] = useState<FilterSelection>(quickFilterSelection(undefined));
 
-  const simulateFailure = params['qa-fail'] === '1' && !retried;
+  const simulateFailure = qaParamActive(params['qa-fail']) && !retried;
 
   // Account COMPOSITION drives the docs/18 §6 collection gate — never the
   // selected browsing participant (owner caution, 2026-08-03). Guest = null.
