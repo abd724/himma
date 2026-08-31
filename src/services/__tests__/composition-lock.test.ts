@@ -144,6 +144,30 @@ describe('composition boundary locks', () => {
     expect(entry).not.toMatch(/displayCode.*params\.set|params\.set.*displayCode/);
   });
 
+  it('RI-4 correction: calendar event keys are OPAQUE — no app code parses them for occurrence authority; the explicit server DTO is the only source', () => {
+    // The canonical occurrence pair arrives as the backend's explicit
+    // `occurrence` field and is passed to credential issuance verbatim.
+    // Event keys serve rendering identity/deduplication ONLY: no module
+    // may dissect one (split/match/regex on the `booking:<id>:<date>:<time>`
+    // encoding) to reconstruct dates or times.
+    for (const dir of ['app', 'features', 'state', 'services', 'components']) {
+      for (const file of sourceFiles(path.join(SRC, dir))) {
+        const source = stripComments(readFileSync(file, 'utf8'));
+        expect(source).not.toMatch(/eventKey\.(split|match|slice|substring|replace|exec)/);
+        expect(source).not.toMatch(/exec\(\s*[a-zA-Z_.]*eventKey/);
+        expect(source).not.toMatch(/\^booking:|booking:\(|new RegExp\([^)]*booking/);
+        expect(source).not.toMatch(/parseOccurrenceKey/);
+      }
+    }
+    // The occurrence-select surface consumes the explicit DTO field.
+    const presentation = readFileSync(
+      path.join(SRC, 'features', 'passes', 'passes-presentation.ts'),
+      'utf8',
+    );
+    expect(presentation).toMatch(/event\.occurrence\.date/);
+    expect(presentation).toMatch(/event\.occurrence\.startTime/);
+  });
+
   it('RI-4: no client-authored balances, no manual consumption, no Calendar UI', () => {
     // Balances arrive from the server: no feature/state module computes
     // remaining/available counts by arithmetic on the entitlement truths.

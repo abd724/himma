@@ -428,6 +428,10 @@ describe('CampWeek and Cohort representation (items 21–23)', () => {
         sourceType: 'campWeekOccurrence',
         context: 'booked',
         span: { startDate, endDate, dailyStartTime: '09:00', dailyEndTime: '13:00' },
+        // RI-4 correction: the EXPLICIT canonical occurrence authority —
+        // clients pass THESE fields to credential issuance verbatim and
+        // never parse the (opaque) event key.
+        occurrence: { date, startTime: '09:00' },
       });
       expect(event.startAt).toBe(`${date}T05:00:00.000Z`); // 09:00 +04
       expect(event.endAt).toBe(`${date}T09:00:00.000Z`); // 13:00 +04
@@ -492,12 +496,20 @@ describe('CampWeek and Cohort representation (items 21–23)', () => {
           event.sourceType === 'cohortOccurrence' && event.bookingId === bookingId,
       );
     expect(cohortEvents.length).toBeGreaterThan(1);
-    for (const event of cohortEvents) {
+    for (const event of cohortEvents as Array<{
+      eventKey: string;
+      startAt: string;
+      occurrence?: { date: string; startTime: string };
+    }>) {
       const date = dubaiDateOf(new Date(event.startAt));
       expect(dubaiWeekdayOf(date)).toBe(0); // Sundays only
       expect(date).not.toBe(exceptionDate); // the exception is skipped
       expect(event.eventKey).toBe(`booking:${bookingId}:${date}:10:00`);
       expect(event.startAt.endsWith('T06:00:00.000Z')).toBe(true); // 10:00 +04
+      // RI-4 correction: the explicit occurrence DTO carries the SAME
+      // canonical pair (one authority, two projections) — and the
+      // exception date produced NO DTO because it produced no event.
+      expect(event.occurrence).toEqual({ date, startTime: '10:00' });
     }
   });
 });

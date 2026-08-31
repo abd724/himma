@@ -218,14 +218,20 @@ export interface CredentialStatus {
 // ---------------------------------------------------------------------------
 
 export interface CalendarOccurrence {
-  /** Server-derived identity: `booking:<id>:<date>:<HH:MM>` for camp/cohort
-   *  occurrences — the exact canonical pair check-in issuance requires. */
+  /** OPAQUE server identity — usable as a React key / for deduplication
+   *  ONLY. The app never parses its components; the canonical occurrence
+   *  authority arrives in the explicit `occurrence` field below. */
   eventKey: string;
   sourceType: string;
   startAt: string;
   endAt: string;
   bookingId?: string;
   entitlementId?: string;
+  /** The EXPLICIT canonical occurrence pair (camp/cohort Booking
+   *  occurrences) — authored by the backend occurrence authority and
+   *  passed back to credential issuance VERBATIM: no parsing, no timezone
+   *  arithmetic, no reconstruction. */
+  occurrence?: OccurrenceSelection;
 }
 
 export interface EntitlementsApi {

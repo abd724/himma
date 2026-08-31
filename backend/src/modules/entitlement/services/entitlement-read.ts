@@ -514,6 +514,14 @@ export interface CalendarEventView {
    *  belongs to (never a REPLACEMENT for the occurrence truth — docs/35
    *  §30). */
   span?: { startDate: string; endDate: string; dailyStartTime: string; dailyEndTime: string };
+  /**
+   * RI-4 correction — the EXPLICIT canonical occurrence authority for
+   * camp/cohort Booking occurrences: the exact `date + startTime` pair the
+   * 0020 credential issuance requires, authored by the SAME canonical
+   * derivation that produced this event (occurrence-authority.ts). The
+   * event key stays an OPAQUE identity — clients never parse it.
+   */
+  occurrence?: { date: string; startTime: string };
   bookingId?: string;
   entitlementId?: string;
 }
@@ -682,6 +690,9 @@ export async function getCustomerCalendar(
             startAt: dubaiInstant(occurrence.date, occurrence.startTime).toISOString(),
             endAt: dubaiInstant(occurrence.date, occurrence.endTime).toISOString(),
             span,
+            // The explicit credential-occurrence DTO — the same canonical
+            // values, never re-derived (one authority, two projections).
+            occurrence: { date: occurrence.date, startTime: occurrence.startTime },
           });
         }
       } else if (row.cohort_id !== null) {
@@ -703,6 +714,9 @@ export async function getCustomerCalendar(
             ...base,
             startAt: dubaiInstant(occurrence.date, occurrence.startTime).toISOString(),
             endAt: dubaiInstant(occurrence.date, occurrence.endTime).toISOString(),
+            // The explicit credential-occurrence DTO — the same canonical
+            // values, never re-derived (one authority, two projections).
+            occurrence: { date: occurrence.date, startTime: occurrence.startTime },
           });
         }
       }

@@ -2,8 +2,9 @@
  * RI-4 — pure presentation over the certified Passes & Memberships
  * projections. Display derivation ONLY: every number/status arrives from
  * the server; nothing here computes usage, infers status from device time,
- * or constructs canonical occurrence identity (parsing the server's own
- * event key is extraction, not construction — docs/35 §28).
+ * or touches canonical occurrence identity — the explicit server
+ * `occurrence` DTO passes through verbatim and event keys stay OPAQUE
+ * (owner RI-4 correction; docs/35 §28).
  */
 import type {
   CalendarOccurrence,
@@ -100,19 +101,6 @@ export function displayCodeGroups(code: string): string {
   return code.length === 8 ? `${code.slice(0, 4)} ${code.slice(4)}` : code;
 }
 
-/**
- * The canonical occurrence identity EXTRACTED from the server's own event
- * key (`booking:<id>:<YYYY-MM-DD>:<HH:MM>` — docs/35 §28/§30). The app
- * never constructs these values; a non-occurrence key returns undefined.
- */
-export function parseOccurrenceKey(
-  eventKey: string,
-): { bookingId: string; date: string; startTime: string } | undefined {
-  const match = /^booking:(.+):(\d{4}-\d{2}-\d{2}):(\d{2}:\d{2})$/.exec(eventKey);
-  if (match === null) return undefined;
-  return { bookingId: match[1]!, date: match[2]!, startTime: match[3]! };
-}
-
 export interface OccurrenceChoice {
   date: string;
   startTime: string;
@@ -121,9 +109,12 @@ export interface OccurrenceChoice {
 }
 
 /**
- * Selectable canonical occurrences for ONE booking, from the bounded server
- * occurrence read. Labels derive from the server instants; the canonical
- * pair comes verbatim from the event key.
+ * Selectable canonical occurrences for ONE booking, from the bounded
+ * server occurrence read. The canonical pair is the backend's EXPLICIT
+ * `occurrence` DTO passed through VERBATIM (owner RI-4 correction: the
+ * event key is opaque identity — never parsed, never a string-encoded
+ * domain payload); labels derive from the server instants for display
+ * only and never feed the authority.
  */
 export function occurrenceChoices(
   events: CalendarOccurrence[],
@@ -131,14 +122,12 @@ export function occurrenceChoices(
 ): OccurrenceChoice[] {
   const choices: OccurrenceChoice[] = [];
   for (const event of events) {
-    if (event.bookingId !== bookingId) continue;
-    const parsed = parseOccurrenceKey(event.eventKey);
-    if (parsed === undefined || parsed.bookingId !== bookingId) continue;
+    if (event.bookingId !== bookingId || event.occurrence === undefined) continue;
     const start = new Date(event.startAt);
     const end = new Date(event.endAt);
     choices.push({
-      date: parsed.date,
-      startTime: parsed.startTime,
+      date: event.occurrence.date,
+      startTime: event.occurrence.startTime,
       dayLabel: start.toLocaleDateString('en-US', {
         weekday: 'short',
         day: 'numeric',

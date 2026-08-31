@@ -174,6 +174,15 @@ const CalendarEventSchema = Type.Object({
       dailyEndTime: Type.String(),
     }),
   ),
+  /** RI-4 correction: the EXPLICIT canonical occurrence pair for
+   *  camp/cohort Booking occurrences — passed verbatim to credential
+   *  issuance; the event key stays opaque identity. */
+  occurrence: Type.Optional(
+    Type.Object({
+      date: IsoDate,
+      startTime: Type.String({ pattern: '^\\d{2}:\\d{2}$' }),
+    }),
+  ),
   bookingId: Type.Optional(Uuid),
   entitlementId: Type.Optional(Uuid),
 });

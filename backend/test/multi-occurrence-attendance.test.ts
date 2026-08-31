@@ -42,6 +42,7 @@ import {
   redeemCredential,
   type RedemptionDeps,
 } from '../src/modules/entitlement/services/attendance-redemption';
+import { getCustomerCalendar } from '../src/modules/entitlement/services/entitlement-read';
 import { dubaiDateOf } from '../src/modules/entitlement/services/occurrence-authority';
 import { capabilitiesForRole } from '../src/modules/provider/provider-capabilities';
 import type { OrgScope } from '../src/modules/provider/services/provider-principal';
@@ -430,6 +431,18 @@ describe('CampWeek per-occurrence attendance', () => {
     // The ACTUAL redemption instant is on the ADJACENT civil date — the
     // stored occurrence is provably NOT derived from occurred_at.
     expect(dubaiDateOf(rows[0]!.occurred_at)).not.toBe(tomorrow);
+    // RI-4 correction: the calendar's EXPLICIT occurrence DTO for that day
+    // also carries the SCHEDULED pair — read NOW (the adjacent civil date),
+    // it still says tomorrow/00:30; no client conversion could change it.
+    const calendarRead = await getCustomerCalendar(deps(), { accountId: customer.accountId }, {
+      from: dubaiDay(0),
+      to: dubaiDay(3),
+    });
+    if (calendarRead.kind !== 'calendar') throw new Error(calendarRead.kind);
+    const dayOne = calendarRead.events.find(
+      (event) => event.bookingId === bookingId && event.occurrence?.date === tomorrow,
+    );
+    expect(dayOne?.occurrence).toEqual({ date: tomorrow, startTime: '00:30' });
   });
 });
 
@@ -533,14 +546,24 @@ describe('Cohort per-occurrence attendance', () => {
       url: `/customer/calendar?from=${dubaiDay(1)}&to=${dubaiDay(40)}`,
       headers: { authorization: `Bearer ${customer.bearer}` },
     });
-    const cohortKeys = calendar
+    const cohortEvents: Array<{
+      eventKey: string;
+      occurrence?: { date: string; startTime: string };
+    }> = calendar
       .json()
-      .events.filter((event: { bookingId?: string }) => event.bookingId === bookingId)
-      .map((event: { eventKey: string }) => event.eventKey);
+      .events.filter((event: { bookingId?: string }) => event.bookingId === bookingId);
+    const cohortKeys = cohortEvents.map((event) => event.eventKey);
     expect(cohortKeys).toContain(`booking:${bookingId}:${sunday1}:09:00`);
     expect(cohortKeys).toContain(`booking:${bookingId}:${sunday1}:17:00`);
     expect(cohortKeys).not.toContain(`booking:${bookingId}:${sunday2}:09:00`);
     expect(cohortKeys).not.toContain(`booking:${bookingId}:${sunday2}:17:00`);
+    // RI-4 correction: the EXPLICIT occurrence DTOs — two same-date
+    // meetings arrive as two DISTINCT typed pairs the client passes back
+    // verbatim (event keys stay opaque; no exception-date DTO exists).
+    const explicitPairs = cohortEvents.map((event) => event.occurrence);
+    expect(explicitPairs).toContainEqual({ date: sunday1, startTime: '09:00' });
+    expect(explicitPairs).toContainEqual({ date: sunday1, startTime: '17:00' });
+    expect(explicitPairs.every((pair) => pair !== undefined && pair.date !== sunday2)).toBe(true);
   });
 
   it('SCHEDULE-EDIT FREEZE (item 7): an issued credential keeps its frozen occurrence — preview/redeem honor it and attendance copies it; FUTURE issuance follows the edited canonical schedule', async () => {

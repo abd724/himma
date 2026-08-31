@@ -12,7 +12,6 @@ import {
   finiteCommitmentLine,
   finiteHeadline,
   occurrenceChoices,
-  parseOccurrenceKey,
   scheduleSummaryLines,
   statusPresentation,
 } from '@/features/passes/passes-presentation';
@@ -64,41 +63,42 @@ describe('schedule + code display', () => {
   });
 });
 
-describe('canonical occurrence extraction (docs/35 §28)', () => {
-  it('extracts the SERVER pair from occurrence event keys; other keys are not occurrences', () => {
-    expect(parseOccurrenceKey('booking:bk-1:2026-09-07:09:00')).toEqual({
-      bookingId: 'bk-1',
-      date: '2026-09-07',
-      startTime: '09:00',
-    });
-    // A plain session-booking event key carries no occurrence pair.
-    expect(parseOccurrenceKey('booking:bk-1')).toBeUndefined();
-    expect(parseOccurrenceKey('entitlement:ent-1:2026-09-07:09:00')).toBeUndefined();
-  });
-
-  it('lists a booking’s occurrences verbatim — two same-day meetings stay distinct', () => {
+describe('canonical occurrence pass-through (owner RI-4 correction; docs/35 §28)', () => {
+  it('uses the EXPLICIT server occurrence DTO verbatim — event keys are opaque and their format is irrelevant; two same-day meetings stay distinct', () => {
     const choices = occurrenceChoices(
       [
         {
-          eventKey: 'booking:bk-1:2026-09-06:09:00',
+          // Deliberately opaque keys: the format carries NO meaning here.
+          eventKey: 'opaque-event-1',
           sourceType: 'cohortOccurrence',
           startAt: '2026-09-06T05:00:00.000Z',
           endAt: '2026-09-06T06:00:00.000Z',
           bookingId: 'bk-1',
+          occurrence: { date: '2026-09-06', startTime: '09:00' },
         },
         {
-          eventKey: 'booking:bk-1:2026-09-06:17:00',
+          eventKey: 'opaque-event-2',
           sourceType: 'cohortOccurrence',
           startAt: '2026-09-06T13:00:00.000Z',
           endAt: '2026-09-06T14:00:00.000Z',
           bookingId: 'bk-1',
+          occurrence: { date: '2026-09-06', startTime: '17:00' },
         },
         {
-          eventKey: 'booking:OTHER:2026-09-06:09:00',
+          eventKey: 'opaque-event-3',
           sourceType: 'cohortOccurrence',
           startAt: '2026-09-06T05:00:00.000Z',
           endAt: '2026-09-06T06:00:00.000Z',
           bookingId: 'OTHER',
+          occurrence: { date: '2026-09-06', startTime: '09:00' },
+        },
+        {
+          // A session-booking event carries no occurrence DTO → no choice.
+          eventKey: 'opaque-event-4',
+          sourceType: 'sessionBooking',
+          startAt: '2026-09-06T05:00:00.000Z',
+          endAt: '2026-09-06T06:00:00.000Z',
+          bookingId: 'bk-1',
         },
       ],
       'bk-1',
@@ -107,5 +107,23 @@ describe('canonical occurrence extraction (docs/35 §28)', () => {
       '2026-09-06 09:00',
       '2026-09-06 17:00',
     ]);
+  });
+
+  it('CROSS-MIDNIGHT: the explicit Monday/00:30 DTO passes through untouched — no client timezone arithmetic exists', () => {
+    const choices = occurrenceChoices(
+      [
+        {
+          eventKey: 'opaque-event-5',
+          sourceType: 'campWeekOccurrence',
+          // The instant is Sunday in UTC — the AUTHORITY stays the server DTO.
+          startAt: '2026-09-06T20:30:00.000Z',
+          endAt: '2026-09-06T21:30:00.000Z',
+          bookingId: 'bk-1',
+          occurrence: { date: '2026-09-07', startTime: '00:30' },
+        },
+      ],
+      'bk-1',
+    );
+    expect(choices[0]).toMatchObject({ date: '2026-09-07', startTime: '00:30' });
   });
 });
