@@ -1,6 +1,6 @@
 # 36 — Launch Readiness & Production Gates (LR-0)
 
-**Status: LR-0 delivered (2026-08-31 — this commit, awaiting owner review). DOCUMENTATION/RECONCILIATION ONLY: no application code changed, no migration, no production configuration or secret exists in this repository, no closed feature/domain reopened, `productionChargingPossible` untouched (literal `false`).**
+**Status: LR-0 OWNER-APPROVED and CLOSED at `5bd3781` (2026-08-31; RI-6/W1-RI closure bookkeeping `3224566`). This document is the authoritative launch-gate record: 89 open gates (67 P0 · 22 P1), 10 post-launch register items, 12 CODE-COMPLETE closed foundations. The LR-0 recommendation is accepted: W6-0 (Production Runtime, Workers & Operations Architecture Plan — documentation/reconciliation only) is AUTHORIZED; its slice-to-gate mapping lives in docs/37. DOCUMENTATION/RECONCILIATION ONLY: no application code changed, no migration, no production configuration or secret exists in this repository, no closed feature/domain reopened, `productionChargingPossible` untouched (literal `false`).**
 
 This document is the **canonical, authoritative launch-readiness record** for Himma. From this commit forward, launch blockers live HERE — not distributed across HANDOFF paragraphs. HANDOFF points to this file; each future slice that closes a gate updates the matrix row in the same commit (the owning-slice pattern). The feature/domain record stays in docs/24–35; this document records only what still stands between the closed platform and real customers paying real money.
 
