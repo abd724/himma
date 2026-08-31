@@ -316,11 +316,6 @@ export const HTTP_OUTCOMES = {
     code: 'fulfillmentUnavailable',
     message: 'This product cannot be purchased right now. Nothing was charged.',
   },
-  checkInUnavailable: {
-    statusCode: 422,
-    code: 'checkInUnavailable',
-    message: 'Check-in is not available for this booking in the app yet.',
-  },
   outsideCheckInWindow: {
     statusCode: 409,
     code: 'outsideCheckInWindow',
@@ -362,10 +357,16 @@ export const HTTP_OUTCOMES = {
     code: 'entitlementFullyCommitted',
     message: 'Every remaining session on this pass is already reserved.',
   },
-  membershipReservationUnavailable: {
-    statusCode: 409,
-    code: 'membershipReservationUnavailable',
-    message: 'Reservations for membership passes are not available yet.',
+  // S6-3 Final Correction (0020) — canonical multi-occurrence check-in.
+  occurrenceRequired: {
+    statusCode: 422,
+    code: 'occurrenceRequired',
+    message: 'Select which scheduled day and time you are checking in for.',
+  },
+  occurrenceNotApplicable: {
+    statusCode: 422,
+    code: 'occurrenceNotApplicable',
+    message: 'This booking has a single scheduled session — no day selection is needed.',
   },
   reservationNotPermitted: {
     statusCode: 422,

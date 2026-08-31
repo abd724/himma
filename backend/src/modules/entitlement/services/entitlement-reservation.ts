@@ -156,13 +156,6 @@ export type ReservationQuoteResult =
   /** The occurrence is not usable by THIS entitlement's purchased terms
    *  (lineage/branch/schedule/temporal), or is not a Session occurrence. */
   | { kind: 'occurrenceNotEligible' }
-  /** RECORDED S6-3 gap (STOP-before-migration honored): 0013's
-   *  `ck_booking_option_kind` predates the `membership` kind, so a
-   *  membership-kind reservation Booking cannot be REPRESENTED until the
-   *  owner approves the one-line widening (the exact 0019 pattern that
-   *  fixed `ck_program_revision_option_kind`). Package reservations are
-   *  fully operational; membership walk-in/calendar/passes are unaffected. */
-  | { kind: 'membershipReservationUnavailable' }
   | { kind: 'participantIneligible' };
 
 /** Full years between date of birth and the occurrence start (UTC civil —
@@ -325,17 +318,14 @@ export async function requestEntitlementReservationQuote(
       }
     }
 
+    // 0020 (D-S6-5): `ck_booking_option_kind` admits `membership`, so both
+    // entitlement kinds ride the identical reservation trail — the quote's
+    // option kind is the entitlement's purchased product kind.
     const optionKind = await trx
       .selectFrom('program_price_option')
       .select('kind')
       .where('id', '=', entitlement.price_option_id)
       .executeTakeFirstOrThrow();
-    // Recorded gap (see the result type): the reservation BOOKING could not
-    // carry `option_kind = 'membership'` past 0013's CHECK — refuse typed
-    // instead of 500ing at confirmation; migration awaits the owner.
-    if (optionKind.kind === 'membership') {
-      return { kind: 'membershipReservationUnavailable' as const };
-    }
 
     const quoteId = newId();
     const inserted = await sql<{ expires_at: Date }>`

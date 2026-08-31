@@ -38,38 +38,24 @@ import {
   type FiniteProjection,
 } from './entitlement-reservation';
 import type { EntitlementServiceDeps } from './entitlement-shared';
+import {
+  civilDates,
+  dubaiDateOf,
+  dubaiInstant,
+  dubaiWeekdayOf,
+  expandCampOccurrences,
+  expandCohortOccurrences,
+} from './occurrence-authority';
 
 // ---------------------------------------------------------------------------
-// Canonical civil-time helpers (Asia/Dubai — fixed UTC+4, no DST; the zone
-// recurring_schedule structurally pins)
+// Canonical civil-time + occurrence helpers: the SHARED derivation authority
+// (occurrence-authority.ts) — the same helpers credential issuance validates
+// with, so Calendar and check-in can never drift (docs/35 §28).
 // ---------------------------------------------------------------------------
+
+export { dubaiDateOf, dubaiInstant, dubaiWeekdayOf };
 
 const DUBAI_OFFSET_MS = 4 * 60 * 60 * 1000;
-
-/** The Asia/Dubai civil date (YYYY-MM-DD) of an instant. */
-export function dubaiDateOf(instant: Date): string {
-  return new Date(instant.getTime() + DUBAI_OFFSET_MS).toISOString().slice(0, 10);
-}
-
-/** The instant at which a Dubai civil date + HH:MM[:SS] time occurs. */
-export function dubaiInstant(date: string, time: string): Date {
-  const normalized = time.length === 5 ? `${time}:00` : time.slice(0, 8);
-  return new Date(new Date(`${date}T${normalized}.000Z`).getTime() - DUBAI_OFFSET_MS);
-}
-
-/** Dubai weekday (0 = Sunday … 6 = Saturday) of a civil date. */
-export function dubaiWeekdayOf(date: string): number {
-  return new Date(`${date}T00:00:00.000Z`).getUTCDay();
-}
-
-function* civilDates(fromDate: string, toDateExclusive: string): Generator<string> {
-  let cursor = new Date(`${fromDate}T00:00:00.000Z`);
-  const end = new Date(`${toDateExclusive}T00:00:00.000Z`);
-  while (cursor < end) {
-    yield cursor.toISOString().slice(0, 10);
-    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Passes & Memberships
@@ -516,7 +502,7 @@ export type CalendarEventContext = 'booked' | 'reservedWithPass' | 'includedSche
 export interface CalendarEventView {
   /** Stable server-derived identity from canonical source identity. */
   eventKey: string;
-  sourceType: 'sessionBooking' | 'campWeekBooking' | 'cohortOccurrence' | 'membershipOccurrence';
+  sourceType: 'sessionBooking' | 'campWeekOccurrence' | 'cohortOccurrence' | 'membershipOccurrence';
   context: CalendarEventContext;
   participant: { id: string; firstName: string };
   program: { id: string; titleEn: string };
@@ -524,7 +510,9 @@ export interface CalendarEventView {
   branch: { id: string; label: string } | null;
   startAt: string; // ISO instant
   endAt: string; // ISO instant
-  /** Multi-day span (CampWeek): civil date bounds + daily times. */
+  /** CampWeek presentation metadata: the overall span each daily occurrence
+   *  belongs to (never a REPLACEMENT for the occurrence truth — docs/35
+   *  §30). */
   span?: { startDate: string; endDate: string; dailyStartTime: string; dailyEndTime: string };
   bookingId?: string;
   entitlementId?: string;
@@ -665,51 +653,57 @@ export async function getCustomerCalendar(
             : {}),
         });
       } else if (row.camp_week_id !== null) {
-        // CampWeek: the CANONICAL temporal representation the model
-        // supports — the date span with its daily times. Individual
-        // per-day attendance occurrences are NOT invented (owner item 22;
-        // the S6-2 occurrence gate stands).
+        // CampWeek: one derived event per CANONICAL DAILY OCCURRENCE (the
+        // ratified §30 correction) — each day is independently attended
+        // and independently real; the overall span rides every event as
+        // presentation metadata, never as a replacement for the
+        // occurrence truth. Identity converges with attendance:
+        // booking:<id>:<date>:<HH:MM daily start>.
         const startDate = row.cw_start!;
         const endDate = row.cw_end!;
         const dailyStart = row.cw_daily_start!.slice(0, 5);
         const dailyEnd = row.cw_daily_end!.slice(0, 5);
-        events.push({
-          eventKey: `booking:${row.id}`,
-          sourceType: 'campWeekBooking',
-          context: 'booked',
-          ...base,
-          startAt: dubaiInstant(startDate, dailyStart).toISOString(),
-          endAt: dubaiInstant(endDate, dailyEnd).toISOString(),
-          span: { startDate, endDate, dailyStartTime: dailyStart, dailyEndTime: dailyEnd },
-        });
-      } else if (row.cohort_id !== null) {
-        // Cohort: expansion ONLY from the canonical meeting-pattern truth
-        // (enrolment_cohort_schedule → recurring_schedule ∩ cohort window
-        // ∩ range, minus exception dates).
-        const cohortStart = row.ec_start!;
-        const cohortEnd = row.ec_end!;
-        for (const schedule of cohortSchedules.filter(
-          (candidate) => candidate.cohort_id === row.cohort_id,
+        const span = {
+          startDate,
+          endDate,
+          dailyStartTime: dailyStart,
+          dailyEndTime: dailyEnd,
+        };
+        for (const occurrence of expandCampOccurrences(
+          { startDate, endDate, dailyStartTime: dailyStart, dailyEndTime: dailyEnd },
+          input.from,
+          toDateExclusive,
         )) {
-          const scheduleStart = schedule.effective_start;
-          const scheduleEnd = schedule.effective_end;
-          const exceptions = new Set(schedule.exception_dates);
-          const startTime = schedule.start_time.slice(0, 5);
-          for (const date of civilDates(input.from, toDateExclusive)) {
-            if (date < cohortStart || date > cohortEnd) continue;
-            if (date < scheduleStart) continue;
-            if (scheduleEnd !== null && date > scheduleEnd) continue;
-            if (!schedule.weekdays.includes(dubaiWeekdayOf(date))) continue;
-            if (exceptions.has(date)) continue;
-            events.push({
-              eventKey: `booking:${row.id}:${date}:${startTime}`,
-              sourceType: 'cohortOccurrence',
-              context: 'booked',
-              ...base,
-              startAt: dubaiInstant(date, startTime).toISOString(),
-              endAt: dubaiInstant(date, schedule.end_time).toISOString(),
-            });
-          }
+          events.push({
+            eventKey: `booking:${row.id}:${occurrence.date}:${occurrence.startTime}`,
+            sourceType: 'campWeekOccurrence',
+            context: 'booked',
+            ...base,
+            startAt: dubaiInstant(occurrence.date, occurrence.startTime).toISOString(),
+            endAt: dubaiInstant(occurrence.date, occurrence.endTime).toISOString(),
+            span,
+          });
+        }
+      } else if (row.cohort_id !== null) {
+        // Cohort: expansion ONLY through the SHARED canonical derivation
+        // (occurrence-authority.ts — the same authority credential
+        // issuance validates against; docs/35 §28): active associations →
+        // active recurring_schedule ∩ cohort window ∩ range, minus
+        // exception dates.
+        for (const occurrence of expandCohortOccurrences(
+          cohortSchedules.filter((candidate) => candidate.cohort_id === row.cohort_id),
+          { effectiveStart: row.ec_start!, effectiveEnd: row.ec_end! },
+          input.from,
+          toDateExclusive,
+        )) {
+          events.push({
+            eventKey: `booking:${row.id}:${occurrence.date}:${occurrence.startTime}`,
+            sourceType: 'cohortOccurrence',
+            context: 'booked',
+            ...base,
+            startAt: dubaiInstant(occurrence.date, occurrence.startTime).toISOString(),
+            endAt: dubaiInstant(occurrence.date, occurrence.endTime).toISOString(),
+          });
         }
       }
     }

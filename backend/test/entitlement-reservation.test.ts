@@ -159,6 +159,19 @@ async function futureSession(minutesFromNow = 24 * 60): Promise<string> {
   });
 }
 
+/** The next FUTURE instant (≥ 1 day ahead) falling on the given Dubai
+ *  weekday at the given UTC time — keeps schedule-matched proofs
+ *  independent of the wall-clock date. */
+function nextDubaiWeekdayInstant(weekday: number, utcTime: string): Date {
+  for (let daysAhead = 1; ; daysAhead += 1) {
+    const candidate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+    const dubaiDate = new Date(candidate.getTime() + 4 * 60 * 60 * 1000);
+    if (dubaiDate.getUTCDay() === weekday) {
+      return new Date(`${dubaiDate.toISOString().slice(0, 10)}T${utcTime}:00.000Z`);
+    }
+  }
+}
+
 /** quote → hold, ready for confirmation. */
 async function reservationHold(
   customer: Customer,
@@ -380,8 +393,9 @@ describe('reservation quote (docs/35 §4/§38)', () => {
              (${newId()}, ${revisionId}, 3, '19:00', '20:00')`.execute(testDb.db);
     const entitlementId = await makeEntitlement(customer, optionId);
 
-    // A Monday 19:00 Dubai session (2026-08-31 is a Monday) at branch A.
-    const monday = new Date('2026-08-31T15:00:00.000Z'); // 19:00 Asia/Dubai
+    // The NEXT future Monday 19:00 Dubai (15:00Z) at branch A — computed
+    // dynamically so the proof never depends on the wall-clock date.
+    const monday = nextDubaiWeekdayInstant(1, '15:00');
     const eligible = await createSession(f, {
       start_at: monday,
       end_at: new Date(monday.getTime() + 60 * 60 * 1000),
@@ -391,16 +405,13 @@ describe('reservation quote (docs/35 §4/§38)', () => {
     const quoted = await requestEntitlementReservationQuote(deps(), {
       accountId: customer.accountId,
     }, { entitlementId, sessionId: eligible });
-    // The fully ELIGIBLE occurrence passes every purchased-terms gate and
-    // reaches the LAST check — the recorded membership-kind gap (0013
-    // ck_booking_option_kind; the gate is deliberately ordered after
-    // branch/schedule/temporal so this refusal PROVES eligibility passed).
-    // The schedule-matched POSITIVE issuance is membership-only product
-    // territory and awaits the owner-authorized widening.
-    expect(quoted.kind).toBe('membershipReservationUnavailable');
+    // D-S6-5 CLOSED (0020): the fully ELIGIBLE membership occurrence
+    // passes every purchased-terms gate and now QUOTES — the schedule-
+    // matched positive membership issuance the pre-0020 gap refused.
+    expect(quoted.kind).toBe('quoteIssued');
 
-    // Tuesday same time → outside the purchased snapshot.
-    const tuesday = new Date('2026-09-01T15:00:00.000Z');
+    // The following Tuesday same time → outside the purchased snapshot.
+    const tuesday = new Date(monday.getTime() + 24 * 60 * 60 * 1000);
     const offPattern = await createSession(f, {
       start_at: tuesday,
       end_at: new Date(tuesday.getTime() + 60 * 60 * 1000),
@@ -918,6 +929,218 @@ describe('reservation lifecycle (items 10–11; journeys A–D)', () => {
       reservedUpcoming: 1,
       availableToReserve: 2,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-S6-5 CLOSED — membership reservation (0020; owner items 2, 18, 24)
+// ---------------------------------------------------------------------------
+
+describe('membership reservation (D-S6-5, 0020)', () => {
+  it('MEMBERSHIP E2E (item 18): PAID membership acquisition → reservation quote → hold → confirm → membership-kind Booking + EntitlementReservation with ZERO new financial artifacts; credential → redeem consumes exactly once', async () => {
+    const activeTerm = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM organization_commission_term
+      WHERE organization_id = ${f.org.orgId} AND state = 'active'`.execute(testDb.db);
+    if (activeTerm.rows[0]!.n === '0') {
+      await createCommissionTerm(testDb.db, f.org.orgId, 1200);
+    }
+    const membershipOption = await createPriceOption(f, {
+      kind: 'membership',
+      amountFils: 30_000,
+    });
+    await createFulfillmentRevision(f, membershipOption, {
+      usageKind: 'finite',
+      usesTotal: 8,
+      validityKind: 'daysFromConfirmation',
+      validityDays: 30,
+      reservationRequired: true,
+      walkInAllowed: true,
+    });
+    const customer = await createCustomer(testDb.db);
+    const quote = await requestEntitlementQuote(deps(), { accountId: customer.accountId }, {
+      programId: f.programId,
+      priceOptionId: membershipOption,
+      participantId: customer.participantId,
+    });
+    if (quote.kind !== 'quoteIssued') throw new Error(quote.kind);
+    const orchestration = { db: testDb.db, provider: { kind: 'configured' as const, provider } };
+    const started = await startPaidEntitlementCheckout(orchestration, {
+      accountId: customer.accountId,
+    }, {
+      quoteId: quote.quote.quoteId,
+      idempotencyKey: newId(),
+      returnUrl: SUCCESS_URL,
+      cancelUrl: CANCEL_URL,
+    });
+    if (started.kind !== 'checkoutStarted') throw new Error(started.kind);
+    provider.completeCheckout(started.gatewayRef);
+    eventCounter += 1;
+    const delivery = provider.buildWebhookDelivery({
+      gatewayEventId: `evt-s63m-${eventCounter}`,
+      eventType: 'payment.captured',
+      gatewayRef: started.gatewayRef,
+    });
+    const webhookDeps = { db: testDb.db, provider };
+    const accepted = await ingestGatewayDelivery(webhookDeps, delivery.rawBody, delivery.headers);
+    if (accepted.kind !== 'accepted') throw new Error(accepted.kind);
+    await processPendingGatewayEvents(webhookDeps);
+    await processTrustedPaymentResults({ db: testDb.db, provider });
+    const entitlement = await sql<{ id: string }>`
+      SELECT e.id FROM entitlement e
+      JOIN entitlement_purchase p ON p.id = e.purchase_id
+      WHERE p.quote_id = ${quote.quote.quoteId}`.execute(testDb.db);
+    const entitlementId = entitlement.rows[0]!.id;
+
+    const globalFinancials = async () =>
+      sql<Record<string, string>>`
+        SELECT (SELECT count(*) FROM payment_intent) AS intents,
+               (SELECT count(*) FROM payment_transaction) AS transactions,
+               (SELECT count(*) FROM payment_intent_economics) AS economics`.execute(testDb.db);
+    const before = (await globalFinancials()).rows[0]!;
+
+    // Reservation: quote → the UNCHANGED certified S5 hold → confirm.
+    const sessionId = await futureSession(30);
+    const { quoteId, holdId } = await reservationHold(customer, entitlementId, sessionId);
+    const reservationQuoteKind = await sql<{ option_kind: string; total_fils: string }>`
+      SELECT option_kind, total_fils::text FROM price_quote WHERE id = ${quoteId}`.execute(
+      testDb.db,
+    );
+    // The reservation quote carries the membership kind at total 0.
+    expect(reservationQuoteKind.rows[0]).toEqual({ option_kind: 'membership', total_fils: '0' });
+    const run = await confirmEntitlementReservation(deps(), { accountId: customer.accountId }, {
+      holdId,
+      idempotencyKey: newId(),
+    });
+    if (run.outcome.kind !== 'reservationConfirmed') throw new Error(run.outcome.kind);
+    const bookingId = run.outcome.reservation.bookingId;
+
+    // The MEMBERSHIP-kind confirmed Booking + its EntitlementReservation.
+    const truths = await sql<Record<string, string>>`
+      SELECT (SELECT option_kind FROM booking WHERE id = ${bookingId}) AS booking_kind,
+             (SELECT state FROM booking WHERE id = ${bookingId}) AS booking_state,
+             (SELECT count(*) FROM entitlement_reservation
+               WHERE booking_id = ${bookingId}
+                 AND entitlement_id = ${entitlementId}) AS commitments`.execute(testDb.db);
+    expect(truths.rows[0]).toEqual({
+      booking_kind: 'membership',
+      booking_state: 'confirmed',
+      commitments: '1',
+    });
+    // ZERO new financial artifacts anywhere: no PaymentIntent, no
+    // transaction, no economics — the ONE acquisition set stands alone
+    // (commission captured once, at sale).
+    expect((await globalFinancials()).rows[0]).toEqual(before);
+
+    // Credential → provider redeem → finite membership usage consumed once.
+    const desk = await frontDeskScope();
+    const credential = await issueCredential(customer, { kind: 'booking', bookingId });
+    const redeemed = await redeemCredential(deps(), desk.scope, { userId: desk.userId }, {
+      code: credential.displayCode!,
+      credentialId: credential.credentialId,
+      idempotencyKey: newId(),
+    });
+    expect(redeemed.outcome.kind).toBe('attendanceRecorded');
+    expect(await projectionOf(entitlementId, 8)).toEqual({
+      usesTotal: 8,
+      used: 1,
+      remaining: 7,
+      reservedUpcoming: 0,
+      availableToReserve: 7,
+    });
+    expect((await globalFinancials()).rows[0]).toEqual(before);
+  });
+
+  it('PROOF 11 on a MEMBERSHIP entitlement: the final-credit two-transaction race serializes identically', async () => {
+    const membershipOption = await createPriceOption(f, { kind: 'membership', amountFils: 0 });
+    await createFulfillmentRevision(f, membershipOption, {
+      usageKind: 'finite',
+      usesTotal: 1,
+      validityKind: 'daysFromConfirmation',
+      validityDays: 30,
+      reservationRequired: true,
+      walkInAllowed: false,
+    });
+    const customer = await createCustomer(testDb.db);
+    const entitlementId = await makeEntitlement(customer, membershipOption);
+    const sessionA = await futureSession(60);
+    const sessionB = await futureSession(120);
+    const holdA = await reservationHold(customer, entitlementId, sessionA);
+    const holdB = await reservationHold(customer, entitlementId, sessionB);
+    const outcomes = await race([
+      () =>
+        confirmEntitlementReservation({ db: racePool.db }, { accountId: customer.accountId }, {
+          holdId: holdA.holdId,
+          idempotencyKey: newId(),
+        }),
+      () =>
+        confirmEntitlementReservation({ db: racePool.db }, { accountId: customer.accountId }, {
+          holdId: holdB.holdId,
+          idempotencyKey: newId(),
+        }),
+    ]);
+    expect(outcomes.map((run) => run.outcome.kind).sort()).toEqual([
+      'entitlementFullyCommitted',
+      'reservationConfirmed',
+    ]);
+    const truths = await sql<Record<string, string>>`
+      SELECT (SELECT count(*) FROM booking
+               WHERE session_id IN (${sessionA}, ${sessionB})) AS bookings,
+             (SELECT min(option_kind) FROM booking
+               WHERE session_id IN (${sessionA}, ${sessionB})) AS kind,
+             (SELECT count(*) FROM entitlement_reservation
+               WHERE entitlement_id = ${entitlementId}) AS commitments`.execute(testDb.db);
+    expect(truths.rows[0]).toEqual({ bookings: '1', kind: 'membership', commitments: '1' });
+  });
+
+  it('COMMERCIAL-TRAIL LOCKS (item 24): capacityPurchase+membership impossible; membership acquisition unit-less; a reservation quote never gains a PaymentIntent', async () => {
+    // (a) A capacityPurchase quote can never carry `membership` — the 0017
+    // shape CHECK, unchanged by 0020.
+    const sessionId = await futureSession();
+    const customer = await createCustomer(testDb.db);
+    await expect(
+      sql`INSERT INTO price_quote (id, organization_id, program_id, account_id, participant_id,
+                                   option_kind, session_id, total_fils, price_kind, expires_at)
+          VALUES (${newId()}, ${f.org.orgId}, ${f.programId}, ${customer.accountId},
+                  ${customer.participantId}, 'membership', ${sessionId}, 30000, 'oneOff',
+                  now() + interval '15 minutes')`.execute(testDb.db),
+    ).rejects.toThrow(/ck_price_quote_shape/);
+    // (b) A membership ACQUISITION quote is unit-less by CHECK — and a
+    // unit-less quote is structurally unholdable (hence unbookable).
+    const membershipOption = await createPriceOption(f, { kind: 'membership', amountFils: 0 });
+    await createFulfillmentRevision(f, membershipOption, {
+      usageKind: 'finite',
+      usesTotal: 2,
+      validityKind: 'daysFromConfirmation',
+      validityDays: 30,
+      reservationRequired: true,
+      walkInAllowed: false,
+    });
+    const acquisition = await requestEntitlementQuote(deps(), {
+      accountId: customer.accountId,
+    }, {
+      programId: f.programId,
+      priceOptionId: membershipOption,
+      participantId: customer.participantId,
+    });
+    if (acquisition.kind !== 'quoteIssued') throw new Error(acquisition.kind);
+    await expect(
+      sql`INSERT INTO capacity_hold (id, organization_id, session_id, account_id,
+                                     participant_id, quote_id, expires_at)
+          VALUES (${newId()}, ${f.org.orgId}, ${sessionId}, ${customer.accountId},
+                  ${customer.participantId}, ${acquisition.quote.quoteId},
+                  now() + interval '10 minutes')`.execute(testDb.db),
+    ).rejects.toThrow(/fk_capacity_hold_quote_session/);
+    // (c) A membership RESERVATION quote is zero-total — the payment-intent
+    // amount trigger refuses it at the row level: no PaymentIntent, ever.
+    const entitlementId = await makeEntitlement(customer, membershipOption);
+    const reservable = await futureSession();
+    const { quoteId } = await reservationHold(customer, entitlementId, reservable);
+    await expect(
+      sql`INSERT INTO payment_intent (id, account_id, quote_id, amount_fils, currency,
+                                      idempotency_key, expires_at)
+          VALUES (${newId()}, ${customer.accountId}, ${quoteId}, 0, 'AED',
+                  ${`trail-lock-${quoteId}`}, now() + interval '30 minutes')`.execute(testDb.db),
+    ).rejects.toThrow(/zero-total quote/);
   });
 });
 

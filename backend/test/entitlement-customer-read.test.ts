@@ -495,7 +495,7 @@ describe('reservable occurrences (item 16)', () => {
     expect(stillListed.availability).toBe('full');
   });
 
-  it('RECORDED GAP: a membership-kind reservation quote refuses typed — 0013 ck_booking_option_kind predates membership (migration awaits the owner)', async () => {
+  it('D-S6-5 CLOSED (0020): a membership-kind entitlement reserves through the ordinary wire — quote → confirm → membership-kind Booking, with walk-in accounting beside it', async () => {
     const optionId = await createPriceOption(f, { kind: 'membership', amountFils: 0 });
     await createFulfillmentRevision(f, optionId, {
       usageKind: 'finite',
@@ -508,22 +508,30 @@ describe('reservable occurrences (item 16)', () => {
     const customer = await httpCustomer();
     const entitlementId = await acquire(customer, optionId);
     const sessionId = await futureSession();
-    const refused = await inject(
+    const quoted = await inject(
       'POST',
       `/customer/entitlements/${entitlementId}/reservation-quote`,
       customer.bearer,
       { sessionId },
     );
-    expect(refused.statusCode).toBe(409);
-    expect(refused.json().code).toBe('membershipReservationUnavailable');
-    // The membership pass itself stays fully alive: walk-in consumes.
+    expect(quoted.statusCode).toBe(201);
+    expect(quoted.json().quote).toMatchObject({ entitlementId, sessionId, totalFils: 0 });
+    const bookingId = await reserve(customer, entitlementId, sessionId);
+    const bookingKind = await sql<{ option_kind: string }>`
+      SELECT option_kind FROM booking WHERE id = ${bookingId}`.execute(testDb.db);
+    expect(bookingKind.rows[0]!.option_kind).toBe('membership');
+    // Walk-in consumption rides beside the commitment (finite truths).
     await attendWalkIn(customer, entitlementId);
     const detail = await inject(
       'GET',
       `/customer/entitlements/${entitlementId}`,
       customer.bearer,
     );
-    expect(detail.json().entitlement.finite).toMatchObject({ used: 1, availableToReserve: 3 });
+    expect(detail.json().entitlement.finite).toMatchObject({
+      used: 1,
+      reservedUpcoming: 1,
+      availableToReserve: 2,
+    });
   });
 
   it('walk-in-only products refuse the reservable projection typed', async () => {

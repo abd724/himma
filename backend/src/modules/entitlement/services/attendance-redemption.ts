@@ -68,6 +68,10 @@ interface CredentialRow {
   entitlement_id: string | null;
   booking_id: string | null;
   session_id: string | null;
+  /** The frozen canonical occurrence (camp/cohort credentials — docs/35
+   *  §28): the SCHEDULED identity, never the redemption instant. */
+  occurrence_date: string | null;
+  occurrence_start_time: string | null;
   account_id: string;
   participant_id: string;
   organization_id: string;
@@ -124,8 +128,13 @@ async function recordFailedLookup(
 // Shared resolution + scope
 // ---------------------------------------------------------------------------
 
-/** Coach authority (owner item 13): assigned-session check-ins ONLY — a
- *  coach never redeems walk-in entitlements or unassigned occurrences. */
+/** Coach authority (owner item 13; re-ratified at the 0020 correction):
+ *  assigned-session check-ins ONLY — a coach never redeems walk-in
+ *  entitlements, unassigned sessions, or ANY CampWeek/Cohort occurrence
+ *  (no occurrence-level assignment proof exists — `camp_week` has no
+ *  instructor column and `recurring_schedule.instructor_staff_id` is
+ *  schedule-level, optional, and mutable; coach occurrence assignment is
+ *  recorded DEFERRED, docs/35 §31). */
 async function coachAssignmentDenied(
   trx: Trx,
   scope: OrgScope,
@@ -145,11 +154,21 @@ function branchDenied(scope: OrgScope, credential: CredentialRow): boolean {
   return credential.branch_id !== null && !branchInScope(scope, credential.branch_id);
 }
 
+export type RedemptionTargetKind =
+  | 'session'
+  | 'reservedEntitlementUse'
+  | 'walkIn'
+  | 'campWeekOccurrence'
+  | 'cohortOccurrence';
+
 interface TargetContext {
   participantFirstName: string;
   programTitle: string;
-  targetKind: 'session' | 'reservedEntitlementUse' | 'walkIn';
+  targetKind: RedemptionTargetKind;
   sessionStartAt?: string;
+  /** The credential's frozen canonical occurrence (camp/cohort). */
+  occurrenceDate?: string;
+  occurrenceStartTime?: string;
   branchLabel?: string;
   /** The consuming entitlement (walk-in or reserved use), if any. */
   consumingEntitlementId: string | null;
@@ -170,29 +189,48 @@ async function loadTargetContext(
   let targetKind: TargetContext['targetKind'];
   let consumingEntitlementId: string | null = null;
   let sessionStartAt: string | undefined;
+  let occurrenceDate: string | undefined;
+  let occurrenceStartTime: string | undefined;
   let branchLabel: string | undefined;
   if (credential.booking_id !== null) {
     const booking = await trx
       .selectFrom('booking')
-      .select(['program_id'])
+      .select(['program_id', 'camp_week_id', 'cohort_id'])
       .where('id', '=', credential.booking_id)
       .executeTakeFirstOrThrow();
     programId = booking.program_id;
-    const reservation = await trx
-      .selectFrom('entitlement_reservation')
-      .select('entitlement_id')
-      .where('booking_id', '=', credential.booking_id)
-      .executeTakeFirst();
-    consumingEntitlementId = reservation?.entitlement_id ?? null;
-    targetKind = reservation !== undefined ? 'reservedEntitlementUse' : 'session';
-    const session = await trx
-      .selectFrom('session')
-      .leftJoin('branch', 'branch.id', 'session.branch_id')
-      .select(['session.start_at', 'branch.label'])
-      .where('session.id', '=', credential.session_id!)
-      .executeTakeFirst();
-    sessionStartAt = session?.start_at.toISOString();
-    branchLabel = session?.label ?? undefined;
+    if (credential.session_id !== null) {
+      const reservation = await trx
+        .selectFrom('entitlement_reservation')
+        .select('entitlement_id')
+        .where('booking_id', '=', credential.booking_id)
+        .executeTakeFirst();
+      consumingEntitlementId = reservation?.entitlement_id ?? null;
+      targetKind = reservation !== undefined ? 'reservedEntitlementUse' : 'session';
+      const session = await trx
+        .selectFrom('session')
+        .leftJoin('branch', 'branch.id', 'session.branch_id')
+        .select(['session.start_at', 'branch.label'])
+        .where('session.id', '=', credential.session_id)
+        .executeTakeFirst();
+      sessionStartAt = session?.start_at.toISOString();
+      branchLabel = session?.label ?? undefined;
+    } else {
+      // Multi-occurrence (camp/cohort) Booking credential: the context is
+      // the credential's FROZEN canonical occurrence — the provider can
+      // never choose or change the occurrence at the desk (docs/35 §28).
+      targetKind = booking.camp_week_id !== null ? 'campWeekOccurrence' : 'cohortOccurrence';
+      occurrenceDate = credential.occurrence_date!;
+      occurrenceStartTime = credential.occurrence_start_time!.slice(0, 5);
+      if (credential.branch_id !== null) {
+        const branch = await trx
+          .selectFrom('branch')
+          .select('label')
+          .where('id', '=', credential.branch_id)
+          .executeTakeFirst();
+        branchLabel = branch?.label;
+      }
+    }
   } else {
     const entitlement = await trx
       .selectFrom('entitlement')
@@ -250,6 +288,8 @@ async function loadTargetContext(
     programTitle: program.title_en,
     targetKind,
     ...(sessionStartAt !== undefined ? { sessionStartAt } : {}),
+    ...(occurrenceDate !== undefined ? { occurrenceDate } : {}),
+    ...(occurrenceStartTime !== undefined ? { occurrenceStartTime } : {}),
     ...(branchLabel !== undefined ? { branchLabel } : {}),
     consumingEntitlementId,
     ...(usage !== undefined ? { usage } : {}),
@@ -269,7 +309,8 @@ async function resolveCredentialByCode(
   // codes never resolve (the digest is org-scoped by construction).
   const rows = await sql<CredentialRow>`
     SELECT id, state, (expires_at <= now()) AS lapsed, entitlement_id, booking_id,
-           session_id, account_id, participant_id, organization_id, branch_id, expires_at
+           session_id, occurrence_date::text, occurrence_start_time::text,
+           account_id, participant_id, organization_id, branch_id, expires_at
     FROM redemption_credential
     WHERE organization_id = ${scope.organizationId} AND alias_digest = ${digest}
       AND state = 'live'
@@ -286,8 +327,11 @@ export interface RedemptionPreviewView {
   expiresAt: string;
   participantFirstName: string;
   programTitle: string;
-  targetKind: 'session' | 'reservedEntitlementUse' | 'walkIn';
+  targetKind: RedemptionTargetKind;
   sessionStartAt?: string;
+  /** The credential's frozen canonical occurrence (camp/cohort). */
+  occurrenceDate?: string;
+  occurrenceStartTime?: string;
   branchLabel?: string;
   usage?: { usageKind: 'finite' | 'unlimited'; usesTotal?: number; used?: number; remaining?: number };
   validity?: { validFrom: string; validUntil?: string };
@@ -332,6 +376,12 @@ export async function previewRedemption(
         ...(context.sessionStartAt !== undefined
           ? { sessionStartAt: context.sessionStartAt }
           : {}),
+        ...(context.occurrenceDate !== undefined
+          ? { occurrenceDate: context.occurrenceDate }
+          : {}),
+        ...(context.occurrenceStartTime !== undefined
+          ? { occurrenceStartTime: context.occurrenceStartTime }
+          : {}),
         ...(context.branchLabel !== undefined ? { branchLabel: context.branchLabel } : {}),
         ...(context.usage !== undefined ? { usage: context.usage } : {}),
         ...(context.validity !== undefined ? { validity: context.validity } : {}),
@@ -349,8 +399,12 @@ export interface AttendanceView {
   credentialId: string;
   participantFirstName: string;
   programTitle: string;
-  targetKind: 'session' | 'reservedEntitlementUse' | 'walkIn';
+  targetKind: RedemptionTargetKind;
   occurredAt: string;
+  /** The scheduled canonical occurrence this attendance fulfilled
+   *  (camp/cohort) — distinct from `occurredAt`, the redemption instant. */
+  occurrenceDate?: string;
+  occurrenceStartTime?: string;
   /** Post-consumption remaining for finite entitlements. */
   remaining?: number;
   entitlementExhausted?: boolean;
@@ -484,15 +538,21 @@ export async function redeemCredential(
     }
     deps.onRedeemPhase?.('credentialConsumed');
 
+    // The attendance row copies the credential's FROZEN occurrence pair —
+    // the scheduled identity, never derived from the redemption instant
+    // (`occurred_at`): a cross-midnight redemption stays bound to its
+    // scheduled occurrence date/time (docs/35 §28).
     const attendanceId = newId();
     const occurred = await sql<{ occurred_at: Date }>`
       INSERT INTO attendance_record
         (id, organization_id, branch_id, account_id, participant_id, entitlement_id,
-         booking_id, session_id, credential_id, validated_by_staff_membership_id, source)
+         booking_id, session_id, occurrence_date, occurrence_start_time,
+         credential_id, validated_by_staff_membership_id, source)
       VALUES (${attendanceId}, ${scope.organizationId}, ${credential.branch_id},
               ${credential.account_id}, ${credential.participant_id},
               ${context.consumingEntitlementId}, ${credential.booking_id},
-              ${credential.session_id}, ${credential.id}, ${scope.membershipId},
+              ${credential.session_id}, ${credential.occurrence_date},
+              ${credential.occurrence_start_time}, ${credential.id}, ${scope.membershipId},
               'numericCode')
       RETURNING occurred_at`.execute(trx);
     deps.onRedeemPhase?.('attendanceInserted');
@@ -544,6 +604,12 @@ export async function redeemCredential(
         programTitle: context.programTitle,
         targetKind: context.targetKind,
         occurredAt: occurred.rows[0]!.occurred_at.toISOString(),
+        ...(context.occurrenceDate !== undefined
+          ? { occurrenceDate: context.occurrenceDate }
+          : {}),
+        ...(context.occurrenceStartTime !== undefined
+          ? { occurrenceStartTime: context.occurrenceStartTime }
+          : {}),
         ...(remaining !== undefined ? { remaining } : {}),
         ...(exhaustedNow ? { entitlementExhausted: true } : {}),
       },

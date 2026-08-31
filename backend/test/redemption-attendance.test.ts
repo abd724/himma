@@ -300,7 +300,7 @@ describe('credential issuance', () => {
     expect(status.credential.state).toBe('superseded');
   });
 
-  it('refuses: outside the ±60-minute window, unconfirmed bookings, camp/cohort occurrences (fail-closed → S6-3), and foreign bookings', async () => {
+  it('refuses: outside the ±60-minute window, unconfirmed bookings, missing/misplaced occurrence selection (0020), and foreign bookings', async () => {
     const customer = await createCustomer(testDb.db);
     // FUTURE session (2026-09-01 fixture default) is outside the window.
     const future = await makeInWindowBookingAt(customer, new Date('2026-09-01T08:00:00.000Z'));
@@ -316,14 +316,24 @@ describe('credential issuance', () => {
       idempotencyKey: newId(),
     });
     expect(unconfirmed.outcome.kind).toBe('bookingNotConfirmed');
-    // Camp-week booking: NO canonical occurrence identity exists → fail
-    // closed (deliberate S6-3 completion work; never a fake occurrence).
+    // Camp-week booking WITHOUT an explicit occurrence selection (0020):
+    // the customer must name the canonical day/time — nearest-to-now
+    // inference never exists (docs/35 §29).
     const campBooking = await makeCampBooking(customer);
     const camp = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
       target: { kind: 'booking', bookingId: campBooking },
       idempotencyKey: newId(),
     });
-    expect(camp.outcome.kind).toBe('occurrenceUnsupported');
+    expect(camp.outcome.kind).toBe('occurrenceRequired');
+    // And a SESSION booking with an occurrence selection refuses — the
+    // Session IS its canonical occurrence (docs/35 §29).
+    const sessionBooking = await makeInWindowBooking(customer);
+    const misSelected = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
+      target: { kind: 'booking', bookingId: sessionBooking.bookingId },
+      occurrence: { date: '2026-09-07', startTime: '09:00' },
+      idempotencyKey: newId(),
+    });
+    expect(misSelected.outcome.kind).toBe('occurrenceNotApplicable');
     // Customer A cannot issue for B's booking (not-found-shaped).
     const stranger = await createCustomer(testDb.db);
     const inWindow = await makeInWindowBooking(customer);

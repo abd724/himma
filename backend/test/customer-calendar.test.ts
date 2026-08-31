@@ -381,7 +381,7 @@ describe('the item-44 deterministic calendar proof', () => {
 });
 
 describe('CampWeek and Cohort representation (items 21–23)', () => {
-  it('a CampWeek Booking is its canonical SPAN with daily times — per-day attendance occurrences are not invented', async () => {
+  it('a CampWeek Booking emits ONE derived event per canonical daily occurrence (ratified §30) — span rides as metadata, keys converge with attendance identity', async () => {
     const customer = await httpCustomer();
     const campOption = await createPriceOption(f, { kind: 'free' });
     const startDate = dubaiDateOf(new Date(Date.now() + 7 * DAY_MS));
@@ -403,21 +403,50 @@ describe('CampWeek and Cohort representation (items 21–23)', () => {
     const from = dubaiDateOf(new Date(Date.now() + 1 * DAY_MS));
     const to = dubaiDateOf(new Date(Date.now() + 20 * DAY_MS));
     const read = await inject(`/customer/calendar?from=${from}&to=${to}`, customer.bearer);
-    const campEvents = read
+    const campEvents: Array<{
+      eventKey: string;
+      startAt: string;
+      endAt: string;
+      span: Record<string, string>;
+    }> = read
       .json()
       .events.filter((event: { bookingId?: string }) => event.bookingId === bookingId);
-    expect(campEvents).toHaveLength(1);
-    expect(campEvents[0]).toMatchObject({
-      eventKey: `booking:${bookingId}`,
-      sourceType: 'campWeekBooking',
-      context: 'booked',
-      span: {
-        startDate,
-        endDate,
-        dailyStartTime: '09:00',
-        dailyEndTime: '13:00',
-      },
+    // Five span days → five independent daily occurrences, each carrying
+    // the overall span as presentation metadata (never replacing the
+    // occurrence truth), each keyed by the SAME identity attendance uses.
+    expect(campEvents).toHaveLength(5);
+    const expectedDates: string[] = [];
+    for (let day = 0; day < 5; day += 1) {
+      expectedDates.push(
+        dubaiDateOf(new Date(Date.now() + (7 + day) * DAY_MS)),
+      );
+    }
+    campEvents.forEach((event, index) => {
+      const date = expectedDates[index]!;
+      expect(event.eventKey).toBe(`booking:${bookingId}:${date}:09:00`);
+      expect(event).toMatchObject({
+        sourceType: 'campWeekOccurrence',
+        context: 'booked',
+        span: { startDate, endDate, dailyStartTime: '09:00', dailyEndTime: '13:00' },
+      });
+      expect(event.startAt).toBe(`${date}T05:00:00.000Z`); // 09:00 +04
+      expect(event.endAt).toBe(`${date}T09:00:00.000Z`); // 13:00 +04
     });
+    // A range covering only the first two days emits exactly those two —
+    // occurrences are independently range-bounded, not one span blob.
+    const narrow = await inject(
+      `/customer/calendar?from=${expectedDates[0]}&to=${expectedDates[1]}`,
+      customer.bearer,
+    );
+    const narrowEvents = narrow
+      .json()
+      .events.filter((event: { bookingId?: string }) => event.bookingId === bookingId);
+    expect(
+      narrowEvents.map((event: { eventKey: string }) => event.eventKey),
+    ).toEqual([
+      `booking:${bookingId}:${expectedDates[0]}:09:00`,
+      `booking:${bookingId}:${expectedDates[1]}:09:00`,
+    ]);
   });
 
   it('a Cohort Booking expands ONLY from its canonical meeting pattern (cohort ⇄ recurring_schedule) minus exception dates', async () => {

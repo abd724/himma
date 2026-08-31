@@ -47,10 +47,15 @@ let programA: string;
 let accountParent: string;
 let participantChild: string;
 
-const FUTURE = new Date('2026-09-01T08:00:00.000Z');
-const FUTURE_END = new Date('2026-09-01T09:00:00.000Z');
+// Future-relative fixture instants (calendar-rot repair, 2026-08-31): the
+// suite's meaning is "a session that has not started and a hold/quote that
+// is still live at checkout time" — pinned to the wall clock, never to a
+// date that silently lapses. The deterministic PROVIDER clock (NOW) stays
+// fixed: it feeds only the fake gateway's internal bookkeeping.
+const FUTURE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+const FUTURE_END = new Date(FUTURE.getTime() + 60 * 60 * 1000);
 const NOW = new Date('2026-08-21T12:00:00.000Z');
-const HOLD_EXPIRY = new Date('2026-08-30T12:00:00.000Z');
+const HOLD_EXPIRY = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
 let eventSerial = 0;
 const nextEventId = (): string => `evt_w53_${(eventSerial += 1)}`;

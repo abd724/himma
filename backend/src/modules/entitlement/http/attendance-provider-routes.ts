@@ -61,7 +61,13 @@ const TargetKind = Type.Union([
   Type.Literal('session'),
   Type.Literal('reservedEntitlementUse'),
   Type.Literal('walkIn'),
+  Type.Literal('campWeekOccurrence'),
+  Type.Literal('cohortOccurrence'),
 ]);
+/** The credential's FROZEN canonical occurrence (camp/cohort): scheduled
+ *  identity for the desk — never chooseable or changeable at redeem. */
+const OccurrenceDate = Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' });
+const OccurrenceStartTime = Type.String({ pattern: '^\\d{2}:\\d{2}$' });
 
 export interface AttendanceProviderRouteDeps {
   db: Db;
@@ -88,6 +94,8 @@ export function registerAttendanceProviderRoutes(
                 ? 'entitlementNotActive'
                 : kind === 'entitlementExhausted'
                   ? 'entitlementExhausted'
+                  : kind === 'entitlementFullyCommitted'
+                    ? 'entitlementFullyCommitted'
                   : kind === 'tooManyAttempts'
                     ? 'rateLimited'
                     : kind === 'idempotencyConflict'
@@ -117,6 +125,8 @@ export function registerAttendanceProviderRoutes(
               programTitle: Type.String(),
               targetKind: TargetKind,
               sessionStartAt: Type.Optional(Type.String()),
+              occurrenceDate: Type.Optional(OccurrenceDate),
+              occurrenceStartTime: Type.Optional(OccurrenceStartTime),
               branchLabel: Type.Optional(Type.String()),
               usage: Type.Optional(UsageSchema),
               validity: Type.Optional(ValiditySchema),
@@ -160,6 +170,8 @@ export function registerAttendanceProviderRoutes(
               programTitle: Type.String(),
               targetKind: TargetKind,
               occurredAt: Type.String(),
+              occurrenceDate: Type.Optional(OccurrenceDate),
+              occurrenceStartTime: Type.Optional(OccurrenceStartTime),
               remaining: Type.Optional(Type.Integer()),
               entitlementExhausted: Type.Optional(Type.Boolean()),
             }),

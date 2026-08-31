@@ -151,7 +151,7 @@ const CalendarEventSchema = Type.Object({
   eventKey: Type.String(),
   sourceType: Type.Union([
     Type.Literal('sessionBooking'),
-    Type.Literal('campWeekBooking'),
+    Type.Literal('campWeekOccurrence'),
     Type.Literal('cohortOccurrence'),
     Type.Literal('membershipOccurrence'),
   ]),
@@ -202,8 +202,6 @@ export function registerReservationCustomerRoutes(
             ? 'entitlementExhausted'
             : kind === 'entitlementFullyCommitted'
               ? 'entitlementFullyCommitted'
-              : kind === 'membershipReservationUnavailable'
-                ? 'membershipReservationUnavailable'
                 : kind === 'reservationNotPermitted'
                   ? 'reservationNotPermitted'
                 : kind === 'occurrenceNotEligible'

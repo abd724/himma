@@ -47,6 +47,15 @@ import { capabilitiesForRole } from '../src/modules/provider/provider-capabiliti
 import { confirmFreeEntitlementPurchase } from '../src/modules/entitlement/services/entitlement-acquisition';
 import { issueRedemptionCredential } from '../src/modules/entitlement/services/redemption-credential';
 import { requestEntitlementQuote } from '../src/modules/entitlement/services/entitlement-quote';
+import {
+  confirmEntitlementReservation,
+  requestEntitlementReservationQuote,
+} from '../src/modules/entitlement/services/entitlement-reservation';
+import { redeemCredential } from '../src/modules/entitlement/services/attendance-redemption';
+import { dubaiDateOf } from '../src/modules/entitlement/services/occurrence-authority';
+import type { OrgScope } from '../src/modules/provider/services/provider-principal';
+import { addMembership } from './helpers/provider-fixtures';
+import { createUser } from './helpers/identity-fixtures';
 import { DeterministicPaymentProvider } from '../src/modules/payment/deterministic-provider';
 import {
   startPaidCheckout,
@@ -185,6 +194,7 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
     '0017_commercial_target_and_entitlement_foundation',
     '0018_redemption_attendance_reservation',
     '0019_membership_program_revision_kind',
+    '0020_membership_booking_and_multi_occurrence_attendance',
   ]);
   const verified = await verifyMigrations(config);
   expect(verified.problems).toEqual([]);
@@ -218,10 +228,11 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
   });
   expect(postConfirm.outcome.kind).toBe('bookingConfirmed');
 
-  // ---- 5. DOWN (all three S6/W2-13 migrations — no S6-native data and no
-  // membership revisions exist, so every preflight passes) restores the
+  // ---- 5. DOWN (all four S6/W2-13/0020 migrations — no S6-native data,
+  // no membership revisions, no membership bookings, and no
+  // occurrence-stamped rows exist, so every preflight passes) restores the
   // exact legacy schema; rows survive.
-  await runMigrationsDown(config, { count: 3, quiet: true });
+  await runMigrationsDown(config, { count: 4, quiet: true });
   const legacyTables = await sql<{ table_name: string }>`
     SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public'
@@ -244,6 +255,7 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
     '0017_commercial_target_and_entitlement_foundation',
     '0018_redemption_attendance_reservation',
     '0019_membership_program_revision_kind',
+    '0020_membership_booking_and_multi_occurrence_attendance',
   ]);
   expect((await verifyMigrations(config)).problems).toEqual([]);
 });
@@ -314,10 +326,10 @@ it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails close
 
   // ---- The downgrade is REFUSED by the explicit 0017 preflight — the
   // FIRST statement of that down migration, not an accidental later FK
-  // failure. (0019 with no membership revisions and 0018 with no
-  // S6-2-native data legally revert first; their structure is restored
-  // below.)
-  await expect(runMigrationsDown(config, { count: 3, quiet: true })).rejects.toThrow(
+  // failure. (0020 with no membership bookings/occurrence rows, 0019 with
+  // no membership revisions, and 0018 with no S6-2-native data legally
+  // revert first; their structure is restored below.)
+  await expect(runMigrationsDown(config, { count: 4, quiet: true })).rejects.toThrow(
     /Downgrade of 0017 refused: S6-1-native data exists/,
   );
 
@@ -328,6 +340,7 @@ it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails close
   expect(verified.pending).toEqual([
     '0018_redemption_attendance_reservation',
     '0019_membership_program_revision_kind',
+    '0020_membership_booking_and_multi_occurrence_attendance',
   ]);
   expect(verified.problems).toEqual([]);
   // Restore head for the suite's remaining proofs.
@@ -384,16 +397,20 @@ it('S6-2-native downgrade REFUSAL: once credential/attendance state exists, 0018
   if (issued.outcome.kind !== 'credentialIssued') throw new Error(issued.outcome.kind);
   const credentialId = issued.outcome.credential.credentialId;
 
-  // The 0018 preflight refuses as the FIRST down statement (0019, with no
-  // membership revisions, legally reverts first and is restored below).
-  await expect(runMigrationsDown(config, { count: 2, quiet: true })).rejects.toThrow(
+  // The 0018 preflight refuses as the FIRST down statement (0020 and
+  // 0019, with no native state of their own, legally revert first and are
+  // restored below).
+  await expect(runMigrationsDown(config, { count: 3, quiet: true })).rejects.toThrow(
     /Downgrade of 0018 refused: S6-2-native data exists/,
   );
-  // Nothing partially destroyed: only the 0019 constraint widening
+  // Nothing partially destroyed: only the 0019/0020 constraint widenings
   // reverted; the credential and its entitlement remain queryable and
   // unchanged. Restore head for the remaining proofs.
   const verified = await verifyMigrations(config);
-  expect(verified.pending).toEqual(['0019_membership_program_revision_kind']);
+  expect(verified.pending).toEqual([
+    '0019_membership_program_revision_kind',
+    '0020_membership_booking_and_multi_occurrence_attendance',
+  ]);
   expect(verified.problems).toEqual([]);
   await runMigrationsUp(config, { quiet: true });
   const survivor = await sql<{ state: string; entitlement_id: string }>`
@@ -404,10 +421,14 @@ it('S6-2-native downgrade REFUSAL: once credential/attendance state exists, 0018
 
 it('0019 SAFE downgrade with no membership revision state; REFUSAL once a genuine membership ProgramRevision exists', async () => {
   // ---- Safe downgrade: no program_revision row carries `membership`, so
-  // the 0019 down restores the exact pre-correction constraint cleanly.
-  await runMigrationsDown(config, { count: 1, quiet: true });
+  // the 0019 down restores the exact pre-correction constraint cleanly
+  // (0020, with no membership bookings/occurrence rows, reverts first).
+  await runMigrationsDown(config, { count: 2, quiet: true });
   let verified = await verifyMigrations(config);
-  expect(verified.pending).toEqual(['0019_membership_program_revision_kind']);
+  expect(verified.pending).toEqual([
+    '0019_membership_program_revision_kind',
+    '0020_membership_booking_and_multi_occurrence_attendance',
+  ]);
   expect(verified.problems).toEqual([]);
   // The restored legacy CHECK genuinely refuses membership again.
   const f = await createBookingFixture(db);
@@ -438,14 +459,194 @@ it('0019 SAFE downgrade with no membership revision state; REFUSAL once a genuin
   if (added.kind !== 'revisionSubmitted') throw new Error(added.kind);
 
   // ---- The 0019 preflight refuses as the FIRST down statement — the
-  // membership review history is never deleted, rewritten, or discarded.
-  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+  // membership review history is never deleted, rewritten, or discarded
+  // (0020, still free of native state, legally reverts first and is
+  // restored below).
+  await expect(runMigrationsDown(config, { count: 2, quiet: true })).rejects.toThrow(
     /Downgrade of 0019 refused: .*membership/,
   );
+  verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual([
+    '0020_membership_booking_and_multi_occurrence_attendance',
+  ]);
+  expect(verified.problems).toEqual([]);
+  await runMigrationsUp(config, { quiet: true });
   verified = await verifyMigrations(config);
   expect(verified.pending).toEqual([]);
   expect(verified.problems).toEqual([]);
   const survivor = await sql<{ option_kind: string | null; state: string }>`
     SELECT option_kind, state FROM program_revision WHERE id = ${added.revisionId}`.execute(db);
   expect(survivor.rows[0]).toEqual({ option_kind: 'membership', state: 'submitted' });
+});
+
+it('0020 SAFE downgrade with no native state; REFUSAL once a membership Booking or occurrence-stamped credential/attendance exists — nothing destroyed either way', async () => {
+  // ---- Safe downgrade: no membership Booking and no occurrence-stamped
+  // rows exist, so the 0020 down restores the exact pre-correction
+  // objects cleanly.
+  await runMigrationsDown(config, { count: 1, quiet: true });
+  let verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual(['0020_membership_booking_and_multi_occurrence_attendance']);
+  expect(verified.problems).toEqual([]);
+  const legacyBookingCheck = await sql<{ def: string }>`
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conname = 'ck_booking_option_kind'`.execute(db);
+  expect(legacyBookingCheck.rows[0]!.def).not.toContain('membership');
+  const occurrenceColumns = await sql<{ n: string }>`
+    SELECT count(*) AS n FROM information_schema.columns
+    WHERE table_name IN ('redemption_credential', 'attendance_record')
+      AND column_name IN ('occurrence_date', 'occurrence_start_time')`.execute(db);
+  expect(occurrenceColumns.rows[0]!.n).toBe('0');
+  await runMigrationsUp(config, { quiet: true });
+
+  // ---- Genuine MEMBERSHIP-KIND reservation Booking through the REAL
+  // path: acquisition → reservation quote → certified hold → confirm.
+  const f = await createBookingFixture(db);
+  await publishProgram(f);
+  const membershipOption = await createPriceOption(f, { kind: 'membership', amountFils: 0 });
+  await createFulfillmentRevision(f, membershipOption, {
+    usageKind: 'finite',
+    usesTotal: 4,
+    validityKind: 'daysFromConfirmation',
+    validityDays: 30,
+    reservationRequired: true,
+    walkInAllowed: false,
+  });
+  const customer = await createCustomer(db);
+  const acquisition = await requestEntitlementQuote({ db }, { accountId: customer.accountId }, {
+    programId: f.programId,
+    priceOptionId: membershipOption,
+    participantId: customer.participantId,
+  });
+  if (acquisition.kind !== 'quoteIssued') throw new Error(acquisition.kind);
+  const confirmed = await confirmFreeEntitlementPurchase({ db }, {
+    accountId: customer.accountId,
+  }, {
+    quoteId: acquisition.quote.quoteId,
+    idempotencyKey: `compat-0020-${acquisition.quote.quoteId}`,
+  });
+  if (confirmed.outcome.kind !== 'purchaseConfirmed') throw new Error(confirmed.outcome.kind);
+  const entitlementId = confirmed.outcome.purchase.entitlement!.entitlementId;
+  const startAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const sessionId = await createSession(f, {
+    start_at: startAt,
+    end_at: new Date(startAt.getTime() + 60 * 60 * 1000),
+    registration_cutoff_at: startAt,
+  });
+  const reservationQuote = await requestEntitlementReservationQuote({ db }, {
+    accountId: customer.accountId,
+  }, { entitlementId, sessionId });
+  if (reservationQuote.kind !== 'quoteIssued') throw new Error(reservationQuote.kind);
+  const hold = await claimHold({ db }, { accountId: customer.accountId }, {
+    unit: { kind: 'session', id: sessionId },
+    participantId: customer.participantId,
+    quoteId: reservationQuote.quote.quoteId,
+    idempotencyKey: `compat-0020-hold-${sessionId}`,
+  });
+  if (hold.outcome.kind !== 'holdClaimed') throw new Error(hold.outcome.kind);
+  const reserved = await confirmEntitlementReservation({ db }, {
+    accountId: customer.accountId,
+  }, { holdId: hold.outcome.hold.holdId, idempotencyKey: `compat-0020-res-${sessionId}` });
+  if (reserved.outcome.kind !== 'reservationConfirmed') throw new Error(reserved.outcome.kind);
+  const membershipBookingId = reserved.outcome.reservation.bookingId;
+
+  // The 0020 preflight refuses as the FIRST down statement.
+  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+    /Downgrade of 0020 refused: 0020-native data exists .*membership bookings=1/,
+  );
+  verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual([]);
+  expect(verified.problems).toEqual([]);
+
+  // ---- Genuine OCCURRENCE-STAMPED credential + attendance through the
+  // REAL camp path (span day+1..day+3; issuance window widened via server
+  // config; redemption by real org staff).
+  const campOption = await createPriceOption(f, { kind: 'free' });
+  const dayMs = 24 * 60 * 60 * 1000;
+  const campStart = dubaiDateOf(new Date(Date.now() + 1 * dayMs));
+  const campEnd = dubaiDateOf(new Date(Date.now() + 3 * dayMs));
+  const campId = '00000000-0000-7000-8000-000000000200';
+  await sql`
+    INSERT INTO camp_week (id, program_id, organization_id, branch_id, start_date, end_date,
+                           daily_start_time, daily_end_time, capacity, registration_cutoff_at)
+    VALUES (${campId}, ${f.programId}, ${f.org.orgId}, ${f.org.branchIds[0]},
+            ${campStart}, ${campEnd}, '09:00', '13:00', 5,
+            now() + interval '10 days')`.execute(db);
+  const campQuote = await requestQuote({ db }, { accountId: customer.accountId }, {
+    programId: f.programId,
+    priceOptionId: campOption,
+    unit: { kind: 'campWeek', id: campId },
+    participantId: customer.participantId,
+  });
+  if (campQuote.kind !== 'quoteIssued') throw new Error(campQuote.kind);
+  const campHold = await claimHold({ db }, { accountId: customer.accountId }, {
+    unit: { kind: 'campWeek', id: campId },
+    participantId: customer.participantId,
+    quoteId: campQuote.quote.quoteId,
+    idempotencyKey: `compat-0020-camp-${campId}`,
+  });
+  if (campHold.outcome.kind !== 'holdClaimed') throw new Error(campHold.outcome.kind);
+  const campBooking = await confirmFreeBooking({ db }, { accountId: customer.accountId }, {
+    holdId: campHold.outcome.hold.holdId,
+    idempotencyKey: `compat-0020-campconfirm-${campId}`,
+  });
+  if (campBooking.outcome.kind !== 'bookingConfirmed') throw new Error(campBooking.outcome.kind);
+  const issued = await issueRedemptionCredential({
+    db,
+    checkInWindowBeforeMinutes: 60 * 24 * 30,
+    checkInWindowAfterMinutes: 60 * 24 * 30,
+  }, { accountId: customer.accountId }, {
+    target: { kind: 'booking', bookingId: campBooking.outcome.booking.bookingId },
+    occurrence: { date: campStart, startTime: '09:00' },
+    idempotencyKey: `compat-0020-cred-${campId}`,
+  });
+  if (issued.outcome.kind !== 'credentialIssued') throw new Error(issued.outcome.kind);
+  const staffUser = await createUser(db);
+  const membershipId = await addMembership(db, staffUser, f.org.orgId, 'front_desk');
+  const scope: OrgScope = {
+    organizationId: f.org.orgId,
+    membershipId,
+    role: 'front_desk',
+    capabilities: capabilitiesForRole('front_desk'),
+    branchScope: 'all',
+    organizationState: 'live',
+  };
+  const redeemed = await redeemCredential({ db }, scope, { userId: staffUser }, {
+    code: issued.outcome.credential.displayCode!,
+    credentialId: issued.outcome.credential.credentialId,
+    idempotencyKey: `compat-0020-redeem-${campId}`,
+  });
+  if (redeemed.outcome.kind !== 'attendanceRecorded') throw new Error(redeemed.outcome.kind);
+
+  const snapshotBefore = await sql<Record<string, string>>`
+    SELECT (SELECT count(*) FROM booking WHERE option_kind = 'membership') AS membership_bookings,
+           (SELECT count(*) FROM redemption_credential
+             WHERE occurrence_date IS NOT NULL) AS occurrence_credentials,
+           (SELECT count(*) FROM attendance_record
+             WHERE occurrence_date IS NOT NULL) AS occurrence_attendance,
+           (SELECT count(*) FROM entitlement_reservation) AS commitments,
+           (SELECT count(*) FROM booking) AS bookings`.execute(db);
+  expect(snapshotBefore.rows[0]!.membership_bookings).toBe('1');
+  expect(snapshotBefore.rows[0]!.occurrence_credentials).toBe('1');
+  expect(snapshotBefore.rows[0]!.occurrence_attendance).toBe('1');
+
+  // The preflight refuses with ALL 0020-native facts counted; NOTHING is
+  // destroyed or transformed; the schema rests at head.
+  await expect(runMigrationsDown(config, { count: 1, quiet: true })).rejects.toThrow(
+    /membership bookings=1, occurrence-stamped credentials=1, occurrence-stamped attendance=1/,
+  );
+  verified = await verifyMigrations(config);
+  expect(verified.pending).toEqual([]);
+  expect(verified.problems).toEqual([]);
+  const snapshotAfter = await sql<Record<string, string>>`
+    SELECT (SELECT count(*) FROM booking WHERE option_kind = 'membership') AS membership_bookings,
+           (SELECT count(*) FROM redemption_credential
+             WHERE occurrence_date IS NOT NULL) AS occurrence_credentials,
+           (SELECT count(*) FROM attendance_record
+             WHERE occurrence_date IS NOT NULL) AS occurrence_attendance,
+           (SELECT count(*) FROM entitlement_reservation) AS commitments,
+           (SELECT count(*) FROM booking) AS bookings`.execute(db);
+  expect(snapshotAfter.rows[0]).toEqual(snapshotBefore.rows[0]);
+  const membershipSurvivor = await sql<{ option_kind: string; state: string }>`
+    SELECT option_kind, state FROM booking WHERE id = ${membershipBookingId}`.execute(db);
+  expect(membershipSurvivor.rows[0]).toEqual({ option_kind: 'membership', state: 'confirmed' });
 });

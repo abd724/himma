@@ -175,8 +175,12 @@ export function registerEntitlementCustomerRoutes(
                                   ? 'checkoutPending'
                                   : kind === 'idempotencyConflict'
                                     ? 'idempotencyConflict'
-                                    : kind === 'occurrenceUnsupported'
-                                      ? 'checkInUnavailable'
+                                    : kind === 'occurrenceRequired'
+                                      ? 'occurrenceRequired'
+                                      : kind === 'occurrenceNotApplicable'
+                                        ? 'occurrenceNotApplicable'
+                                        : kind === 'occurrenceNotEligible'
+                                          ? 'occurrenceNotEligible'
                                       : kind === 'outsideCheckInWindow'
                                         ? 'outsideCheckInWindow'
                                         : kind === 'alreadyCheckedIn'
@@ -384,6 +388,20 @@ export function registerEntitlementCustomerRoutes(
     alreadyLive: Type.Literal(true),
   });
 
+  /** The canonical occurrence selection for multi-occurrence (CampWeek/
+   *  Cohort) Bookings — REQUIRED there, FORBIDDEN for Session Bookings
+   *  (the Session is its occurrence). The customer names ONLY the
+   *  scheduled day + start time; branch/participant/program/duration/
+   *  schedule identity is server-derived from the Booking (docs/35 §29),
+   *  and "whichever occurrence is closest to now" never exists. */
+  const OccurrenceSelectionSchema = Type.Object(
+    {
+      date: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
+      startTime: Type.String({ pattern: '^\\d{2}:\\d{2}$' }),
+    },
+    { additionalProperties: false },
+  );
+
   app.post(
     '/customer/bookings/:bookingId/credential',
     {
@@ -394,6 +412,9 @@ export function registerEntitlementCustomerRoutes(
         body: Type.Object(
           {
             idempotencyKey: IdempotencyKey,
+            /** REQUIRED for CampWeek/Cohort Bookings; forbidden for
+             *  Session Bookings. */
+            occurrence: Type.Optional(OccurrenceSelectionSchema),
             /** EXPLICIT regeneration: the current credential to replace. */
             regenerateCredentialId: Type.Optional(Uuid),
           },
@@ -412,6 +433,9 @@ export function registerEntitlementCustomerRoutes(
       const run = await issueRedemptionCredential(serviceDeps, { accountId }, {
         target: { kind: 'booking', bookingId: request.params.bookingId },
         idempotencyKey: request.body.idempotencyKey,
+        ...(request.body.occurrence !== undefined
+          ? { occurrence: request.body.occurrence }
+          : {}),
         ...(request.body.regenerateCredentialId !== undefined
           ? { regenerateCredentialId: request.body.regenerateCredentialId }
           : {}),
@@ -490,6 +514,8 @@ export function registerEntitlementCustomerRoutes(
               ]),
               expiresAt: Type.String(),
               redeemedAt: Type.Optional(Type.String()),
+              /** The frozen canonical occurrence (camp/cohort credentials). */
+              occurrence: Type.Optional(OccurrenceSelectionSchema),
             }),
           }),
           ...ERRORS,

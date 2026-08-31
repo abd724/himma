@@ -306,7 +306,8 @@ describe('the trusted end-to-end journey at the wire (W5-4)', () => {
           session_id: sessionId,
           total_fils: 5000,
           price_kind: 'oneOff',
-          expires_at: new Date('2026-09-01T08:00:00.000Z'),
+          // Calendar-rot repair (2026-08-31): a still-live quote, wall-clock-relative.
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         } as never)
         .execute();
       await trx
@@ -331,7 +332,8 @@ describe('the trusted end-to-end journey at the wire (W5-4)', () => {
         account_id: accountId,
         participant_id: participantId,
         quote_id: quoteId,
-        expires_at: new Date('2026-08-30T12:00:00.000Z'),
+        // Calendar-rot repair (2026-08-31): a still-live hold, wall-clock-relative.
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
       } as never)
       .execute();
 

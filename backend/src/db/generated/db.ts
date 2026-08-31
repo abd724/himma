@@ -100,6 +100,8 @@ export interface AttendanceRecord {
   entitlement_id: string | null;
   id: string;
   occurred_at: Generated<Timestamp>;
+  occurrence_date: Timestamp | null;
+  occurrence_start_time: string | null;
   organization_id: string;
   participant_id: string;
   session_id: string | null;
@@ -869,6 +871,8 @@ export interface RedemptionCredential {
   expires_at: Timestamp;
   id: string;
   issued_at: Generated<Timestamp>;
+  occurrence_date: Timestamp | null;
+  occurrence_start_time: string | null;
   organization_id: string;
   participant_id: string;
   redeemed_by_staff_membership_id: string | null;

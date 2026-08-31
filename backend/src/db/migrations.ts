@@ -345,6 +345,16 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
   '0019_membership_program_revision_kind': [
     { kind: 'constraint', name: 'ck_program_revision_option_kind' },
   ],
+  // 0020 redefines ck_booking_option_kind in place (+membership — the 0019
+  // convention keeps the canonical constraint name) and adds the canonical
+  // occurrence binding to redemption_credential/attendance_record; the
+  // occurrence-scoped partial uniques are indexes (asserted by the schema
+  // suite), the CHECKs below are the manifest-visible objects.
+  '0020_membership_booking_and_multi_occurrence_attendance': [
+    { kind: 'constraint', name: 'ck_booking_option_kind' },
+    { kind: 'constraint', name: 'ck_redemption_credential_occurrence' },
+    { kind: 'constraint', name: 'ck_attendance_record_occurrence' },
+  ],
 };
 
 export interface VerificationReport {
