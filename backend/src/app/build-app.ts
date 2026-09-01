@@ -10,12 +10,18 @@
  * tests and tooling.
  */
 import { Type } from '@sinclair/typebox';
+import { sql as kyselySql } from 'kysely';
 import Fastify from 'fastify';
-import type { FastifyError, FastifyInstance } from 'fastify';
+import type { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 
 import { isDbError } from '../db/errors';
 import type { Db } from '../db/kysely';
+import {
+  enterRequestContext,
+  newCorrelationId,
+  validClientRequestIdHint,
+} from '../observability/request-context';
 import type { NodeEnv } from '../config/env';
 import type { MailSender } from '../modules/identity/mail/mail-sender';
 import type { AuthProviderAdapter } from '../modules/identity/providers/adapter';
@@ -196,7 +202,29 @@ function adminProductionReady(readiness: AdminProductionReadiness | undefined): 
 }
 
 export interface BuildAppOptions {
-  logger?: boolean;
+  /**
+   * `true`/`false` keep the historical behavior; a pino options object
+   * (W6-1, docs/37 §24 — `buildLoggerOptions`) configures structured
+   * production logging. Passed straight to Fastify.
+   */
+  logger?: FastifyServerOptions['logger'];
+  /**
+   * W6-1 production runtime wiring (docs/37 §7/§23). Absent = historical
+   * behavior (no readiness route, correlation still active). When present:
+   * `/internal/ready` registers with DB/identity/migration-head checks and
+   * honors the shutdown drain signal.
+   */
+  runtime?: {
+    readiness: {
+      db: Db;
+      /** The migration head this build requires (expectedMigrationHead()). */
+      expectedMigrationHead?: string;
+      /** The DB login this runtime role must be connected as (docs/37 §28). */
+      expectedDbIdentity?: string;
+      /** Flipped by graceful shutdown — readiness fails while draining. */
+      drainSignal?: { draining: boolean };
+    };
+  };
   identity?: IdentityHttpOptions;
   /**
    * W5-3 payment webhook ingress + W5-5 customer paid checkout: both exist
@@ -238,9 +266,33 @@ const HealthResponse = Type.Object({
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: options.logger ?? false,
+    // W6-1 correlation (docs/37 §23): the canonical request id is ALWAYS
+    // server-generated; a client `x-request-id` is never adopted as the id
+    // (requestIdHeader:false) — a validated hint may ride in log bindings.
+    genReqId: () => newCorrelationId(),
+    requestIdHeader: false,
+    // W6-1 graceful shutdown (docs/37 §8): close() lets ACTIVE requests
+    // finish while idle keep-alive sockets are released — a drained
+    // shutdown never hangs on an idle connection.
+    forceCloseConnections: 'idle',
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   installRoutePolicyGuard(app);
+
+  app.addHook('onRequest', (request, reply, done) => {
+    const requestId = request.id as string;
+    void reply.header('x-request-id', requestId);
+    const clientHint = validClientRequestIdHint(request.headers['x-request-id']);
+    if (clientHint !== undefined) {
+      request.log = request.log.child({ clientRequestId: clientHint });
+    }
+    // als.run(store, done) carries the id through the remaining hooks,
+    // handler, and every await beneath them — the audit seam reads it.
+    enterRequestContext(
+      clientHint !== undefined ? { requestId, clientRequestId: clientHint } : { requestId },
+      done,
+    );
+  });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     // Database errors are translated at the db boundary (docs/25 §7); here
@@ -272,6 +324,83 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
     async () => ({ status: 'ok' as const }),
   );
+
+  // W6-1 liveness (docs/37 §7): process/event-loop aliveness ONLY — no
+  // dependency probes, so a third-party outage can never restart-loop the
+  // platform. `/internal/health` remains as the historical alias.
+  app.get(
+    '/internal/live',
+    {
+      config: { authPolicy: 'public' },
+      schema: { response: { 200: HealthResponse, 500: ErrorBody } },
+    },
+    async () => ({ status: 'ok' as const }),
+  );
+
+  // W6-1 readiness (docs/37 §7/§23): registers ONLY when the runtime
+  // wiring supplies its dependencies (the production bootstrap does; dev/
+  // test builds keep the historical surface). Checks are strictly
+  // platform-internal — database reachability, connected DB identity, and
+  // the migration head — never Stripe/Cognito/object-storage availability.
+  // Responses carry bounded machine codes only; no configuration leaks.
+  if (options.runtime !== undefined) {
+    const readiness = options.runtime.readiness;
+    const ReadyResponse = Type.Object({ status: Type.Literal('ready') });
+    const UnreadyResponse = Type.Object({
+      status: Type.Literal('unready'),
+      reasons: Type.Array(Type.String()),
+    });
+    let cache: { at: number; identity?: string; head?: string; dbOk: boolean } | undefined;
+    const PROBE_CACHE_MS = 2_000;
+    app.get(
+      '/internal/ready',
+      {
+        config: { authPolicy: 'public' },
+        schema: { response: { 200: ReadyResponse, 503: UnreadyResponse, 500: ErrorBody } },
+      },
+      async (_request, reply) => {
+        const reasons: string[] = [];
+        if (readiness.drainSignal?.draining === true) reasons.push('draining');
+        const now = Date.now();
+        if (cache === undefined || now - cache.at > PROBE_CACHE_MS) {
+          try {
+            const probe = await kyselySql<{ identity: string; head: string | null }>`
+              SELECT current_user AS identity,
+                     (SELECT name FROM pgmigrations ORDER BY id DESC LIMIT 1) AS head
+            `.execute(readiness.db);
+            const row = probe.rows[0];
+            cache = {
+              at: now,
+              dbOk: true,
+              ...(row?.identity !== undefined ? { identity: row.identity } : {}),
+              ...(row?.head != null ? { head: row.head } : {}),
+            };
+          } catch {
+            cache = { at: now, dbOk: false };
+          }
+        }
+        if (!cache.dbOk) reasons.push('databaseUnavailable');
+        if (
+          cache.dbOk &&
+          readiness.expectedDbIdentity !== undefined &&
+          cache.identity !== readiness.expectedDbIdentity
+        ) {
+          reasons.push('wrongDatabaseIdentity');
+        }
+        if (
+          cache.dbOk &&
+          readiness.expectedMigrationHead !== undefined &&
+          cache.head !== readiness.expectedMigrationHead
+        ) {
+          reasons.push('migrationHeadMismatch');
+        }
+        if (reasons.length > 0) {
+          return reply.status(503).send({ status: 'unready' as const, reasons });
+        }
+        return { status: 'ready' as const };
+      },
+    );
+  }
 
   if (options.identity !== undefined) {
     const identity = options.identity;

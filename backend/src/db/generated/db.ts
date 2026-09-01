@@ -841,6 +841,12 @@ export interface ProgramSearchDocument {
   version: Generated<number>;
 }
 
+export interface RateLimitWindow {
+  hits: Generated<number>;
+  limiter_key: string;
+  window_start: Timestamp;
+}
+
 export interface RecurringSchedule {
   created_at: Generated<Timestamp>;
   effective_end: Timestamp | null;
@@ -1103,6 +1109,7 @@ export interface DB {
   program_price_option: ProgramPriceOption;
   program_revision: ProgramRevision;
   program_search_document: ProgramSearchDocument;
+  rate_limit_window: RateLimitWindow;
   recurring_schedule: RecurringSchedule;
   redemption_credential: RedemptionCredential;
   redemption_lookup_attempt: RedemptionLookupAttempt;

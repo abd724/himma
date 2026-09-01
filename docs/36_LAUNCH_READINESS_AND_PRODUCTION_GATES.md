@@ -61,14 +61,14 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 | ID | Gate | Status | Pri | Depends on | Mile | Owner | Evidence · closure proof |
 |---|---|---|---|---|---|---|---|
 | IN-01 | Hosting region / data-residency ruling (docs/23 §18.3) | OWNER-DECISION | P0 | — | M1 | Owner + counsel | Blocks Cognito region, PG, S3, PDPL posture. Proof: recorded ruling |
-| IN-02 | **Production service entrypoint + composition.** VERIFIED: no `start` script exists; `buildApp` is composed ONLY by `scripts/dev-server.ts` (which refuses `NODE_ENV=production`) and tests. A production entrypoint must compose: Stripe driver seam, S3 evidence store, Cognito adapters, distributed rate-limit store, readiness flags, logger | IMPLEMENTATION-REQUIRED | P0 | IN-01 | M1 | Engineering (W6) | `backend/package.json` (no start); `dev-server.ts:45-49`. Proof: production-mode boot in staging topology |
+| IN-02 | **Production service entrypoint + composition.** **CLOSED by W6-1** (this commit — awaiting owner review): `npm run start:api` → the one canonical bootstrap (`src/app/production-runtime.ts`) composing canonical pool + restricted `himma_api` identity (asserted at startup), Cognito-or-unconfigured identity, PG rate-limit store, S3 evidence store when configured, absent-or-TEST payments, structured logging, liveness/readiness, graceful shutdown; two-process production boot proven on the local harness (docs/37 W6-1 record). Staging-topology boot rides IN-12 | CODE-COMPLETE | P0 | IN-01 | M1 | Engineering (W6) | docs/37 W6-1 record; `test/production-api-process.test.ts` |
 | IN-03 | Production API origin: DNS + TLS + the `himma.app` domain estate (also carries PA-05 bounce/universal links and LE-09 share-link resolution) | EXTERNAL-DEPENDENCY | P0 | IN-01 | M1 | Owner/company | App refuses production build without `EXPO_PUBLIC_API_URL` (docs/34). Proof: https origin serving `/internal/health` |
 | IN-04 | Secret management: managed store delivering env vars (backend is env-only by design; `loadConfig` fail-closed — production refuses missing `DATABASE_URL`) | CONFIGURATION-REQUIRED | P0 | IN-01 | M1 | Ops | `config/env.ts:123-132`. Proof: secrets sourced from the managed store, none in code/images |
 | IN-05 | Production PostgreSQL at the financial service class (docs/23 §10.11: RPO 0 committed transactions, quorum/PITR) | EXTERNAL-DEPENDENCY | P0 | IN-01 | M1 | Ops | Proof: provisioned instance + replication posture recorded |
 | IN-06 | Production object storage bucket + IAM (the S3 driver is CODE-COMPLETE and never composed anywhere — verified: only caller is its test) | CONFIGURATION-REQUIRED | P0 | IN-01 | M1 | Ops | `s3-evidence-store.ts:63` callers. Proof: composed in IN-02; VE-01 smoke |
-| IN-07 | **Distributed rate-limit store.** VERIFIED: the identity limiter is in-memory and `createRateLimiterStore` THROWS in production — production boot is refused with default wiring | IMPLEMENTATION-REQUIRED | P0 | IN-02 | M1 | Engineering (W6) | `identity/http/rate-limiter.ts:65-75`. Proof: approved distributed store passes the existing limiter contract tests |
+| IN-07 | **Distributed rate-limit store.** **CLOSED by W6-1** (this commit — awaiting owner review): `PgRateLimiterStore` behind the existing `consume` port over migration `0021_rate_limit_window` — atomic DB-clock windows, multi-connection/multi-pool/multi-PROCESS sharing proven, restart-durable, digest-bounded keys, in-memory store still refuses production | CODE-COMPLETE | P0 | IN-02 | M1 | Engineering (W6) | docs/37 W6-1 record; `test/pg-rate-limiter.test.ts` + the spawned two-process 429 proof |
 | IN-08 | Rate limiting on search/booking + signup bot controls (docs/23 §10.7 — currently only auth/provider routes are limited) | IMPLEMENTATION-REQUIRED | P1 | IN-07 | M4 | Engineering | rate-limiter call sites (8, all auth/provider). Proof: limits on the §10.7 surfaces |
-| IN-09 | Structured logging + request-id propagation. VERIFIED: logger defaults OFF (`build-app.ts` `logger?: boolean`), no `genReqId`/`x-request-id`, and `audit_event.request_id` is never populated by any caller | IMPLEMENTATION-REQUIRED | P0 | IN-02 | M1 | Engineering (W6) | `db/audit.ts:20,40` (writer exists, unwired). Proof: request ids end-to-end incl. audit rows |
+| IN-09 | Structured logging + request-id propagation. **CLOSED by W6-1** (this commit — awaiting owner review): server-generated canonical ids (client hints bounded, never adopted), AsyncLocalStorage context, the `appendAuditEvent` ambient seam populating `audit_event.request_id` end-to-end (customer/provider/admin mutations proven), structured pino with runtime-proven never-log redaction | CODE-COMPLETE | P0 | IN-02 | M1 | Engineering (W6) | docs/37 W6-1 record; `test/request-correlation.test.ts`, `test/logging-redaction.test.ts` |
 | IN-10 | Observability: metrics, traces, error tracking (all three frontends + API), uptime checks, alerting. VERIFIED: none exists (no otel/sentry/prometheus anywhere; 9 runtime deps) | IMPLEMENTATION-REQUIRED | P0 | IN-02 | M4 | Engineering (W6) | docs/23 §10.10. Proof: G8 monitoring live with alert routing |
 | IN-11 | CI/CD: typecheck/lint/unit/contract/E2E on merge, automated two-phase migrations, one-command deploy with **tested rollback** | IMPLEMENTATION-REQUIRED | P0 | — | M1 | Engineering (W6) | docs/23 §10.9 (today: local scripts only). Proof: rehearsed deploy+rollback in staging |
 | IN-12 | Staging environment, config-identical topology, seeded deterministic data (dev seed graduates) | CONFIGURATION-REQUIRED | P0 | IN-01…06 | M1 | Ops | docs/23 §10.8. Proof: staging serving all three frontends |
@@ -188,20 +188,20 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 
 ## 4. Tallies
 
-**Open gates: 89** (plus the 12 CODE-COMPLETE foundations of §1 and the 10 post-launch register items of §12).
+**Open gates: 86** — the LR-0 baseline was 89 (67 P0 · 22 P1); **W6-1 closed IN-02, IN-07, IN-09** (this commit — awaiting owner review). Plus the 12 CODE-COMPLETE foundations of §1 and the 10 post-launch register items of §12.
 
-| Status | Count |
+| Status | Count (LR-0 → now) |
 |---|---|
-| IMPLEMENTATION-REQUIRED | 35 |
+| IMPLEMENTATION-REQUIRED | 35 → 32 |
 | EXTERNAL-DEPENDENCY | 19 |
 | OWNER-DECISION | 14 |
 | CONFIGURATION-REQUIRED | 9 |
 | PRODUCTION-SMOKE-REQUIRED | 8 |
 | BLOCKED | 4 |
 
-| Priority | Count |
+| Priority | Count (LR-0 → now) |
 |---|---|
-| P0 launch blockers | 67 |
+| P0 launch blockers | 67 → 64 |
 | P1 launch hardening | 22 |
 | Post-launch (register, §12) | 10 |
 

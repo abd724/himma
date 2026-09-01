@@ -41,6 +41,8 @@ import { capabilitiesForRole } from '../src/modules/provider/provider-capabiliti
 import type { OrgScope } from '../src/modules/provider/services/provider-principal';
 import { parseStaffInvitationConfig } from '../src/modules/provider/staff-invitation-config';
 import {
+  CAMP_START_DATE,
+  FUTURE,
   createActivePolicyTemplate,
   createBookingFixture,
   createCampWeek,
@@ -302,8 +304,8 @@ describe('credential issuance', () => {
 
   it('refuses: outside the ±60-minute window, unconfirmed bookings, missing/misplaced occurrence selection (0020), and foreign bookings', async () => {
     const customer = await createCustomer(testDb.db);
-    // FUTURE session (2026-09-01 fixture default) is outside the window.
-    const future = await makeInWindowBookingAt(customer, new Date('2026-09-01T08:00:00.000Z'));
+    // The FUTURE fixture anchor (weeks ahead) is outside the ±60-min window.
+    const future = await makeInWindowBookingAt(customer, FUTURE);
     const early = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
       target: { kind: 'booking', bookingId: future.bookingId },
       idempotencyKey: newId(),
@@ -330,7 +332,7 @@ describe('credential issuance', () => {
     const sessionBooking = await makeInWindowBooking(customer);
     const misSelected = await issueRedemptionCredential(deps, { accountId: customer.accountId }, {
       target: { kind: 'booking', bookingId: sessionBooking.bookingId },
-      occurrence: { date: '2026-09-07', startTime: '09:00' },
+      occurrence: { date: CAMP_START_DATE, startTime: '09:00' },
       idempotencyKey: newId(),
     });
     expect(misSelected.outcome.kind).toBe('occurrenceNotApplicable');

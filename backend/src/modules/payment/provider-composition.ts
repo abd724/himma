@@ -31,11 +31,23 @@ export type PaymentProviderResolution =
 export interface PaymentProviderSelection {
   /**
    * Deterministic test provider, injectable in development/test ONLY
-   * (docs/33 §13.1). Injecting it in production is refused, not honored.
+   * (docs/33 §13.1). Injecting it in production is refused, not honored —
+   * including under the W6-1 `paymentsMode: 'test'` opt-in.
    */
   deterministic?: PaymentProviderPort;
   /** Stripe credentials from the typed config boundary (env.ts). */
   stripe?: StripeConfig;
+  /**
+   * W6-1 (docs/37 §33 — the ONE owner-approved production composition
+   * amendment): an EXPLICIT configuration mode, never inferred from a key
+   * prefix. `'test'` lets a production runtime compose the Stripe TEST
+   * driver for D-W5-6 certification (the driver still refuses non-TEST
+   * keys at construction — two independent walls). Anything else keeps the
+   * certified production refusal byte-for-byte. There is deliberately NO
+   * `'live'` value: live enablement remains a future reviewed change
+   * (docs/36 PA-06) with `productionChargingPossible` the literal false.
+   */
+  paymentsMode?: 'disabled' | 'test';
 }
 
 export function resolvePaymentProvider(
@@ -50,13 +62,35 @@ export function resolvePaymentProvider(
           'the deterministic test payment provider is never available in production (D-W5-6)',
       };
     }
-    // Even genuine Stripe configuration cannot open production in W5-2:
-    // live charging is gated on D-W5-3 + docs/23 §19 (a future reviewed
-    // change), and test-mode keys have no business in production at all.
+    if (selection.paymentsMode === 'test' && selection.stripe !== undefined) {
+      if (!isStripeTestModeKey(selection.stripe.secretKey)) {
+        return {
+          kind: 'unconfigured',
+          reason:
+            'PAYMENTS_MODE=test accepts Stripe TEST-mode keys only — live keys are refused (live enablement is the future PA-06 slice, not configuration)',
+        };
+      }
+      return {
+        kind: 'configured',
+        provider: new StripeDriver({
+          secretKey: selection.stripe.secretKey,
+          ...(selection.stripe.webhookSecret !== undefined
+            ? { webhookSecret: selection.stripe.webhookSecret }
+            : {}),
+          ...(selection.stripe.webhookSecretRetiring !== undefined
+            ? { retiringWebhookSecret: selection.stripe.webhookSecretRetiring }
+            : {}),
+        }),
+      };
+    }
+    // Without the explicit TEST opt-in, genuine Stripe configuration still
+    // composes NOTHING: live charging is gated on D-W5-3 + docs/23 §19 (a
+    // future reviewed change, docs/36 PA-06), and a key alone is never a
+    // mode (docs/37 §33).
     return {
       kind: 'unconfigured',
       reason:
-        'production payment capability does not exist in W5-2: live charging is gated on the D-W5-3 VAT posture ruling and the docs/23 §19 lift; the paid path stays fail-closed',
+        'production payment capability is disabled: set PAYMENTS_MODE=test with a Stripe TEST key for D-W5-6 certification; live charging remains gated on the D-W5-3 VAT posture ruling and the docs/23 §19 lift',
     };
   }
   if (selection.deterministic !== undefined) {

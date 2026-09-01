@@ -429,14 +429,23 @@ describe('reservable occurrences (item 16)', () => {
     // Monday 19:00 Dubai at branch A (eligible), Monday at a FULL session
     // (listed as full — seats and credits are separate), Tuesday (filtered),
     // other branch (filtered).
-    const monday = new Date('2026-08-31T15:00:00.000Z');
+    // Dynamic Monday anchor (19:00 Dubai): the NEXT Monday at least a full
+    // day ahead — both Mondays stay inside the 20-day validity window (the
+    // 2026-08-31 literal aged into the past and time-bombed this block).
+    const dayMs = 24 * 60 * 60 * 1000;
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const base = new Date(Date.parse(`${todayUtc}T15:00:00.000Z`) + dayMs);
+    const mondayDelta = (1 - base.getUTCDay() + 7) % 7;
+    const monday = new Date(base.getTime() + mondayDelta * dayMs);
+    const windowFrom = new Date(monday.getTime() - 3 * dayMs).toISOString().slice(0, 10);
+    const windowTo = new Date(monday.getTime() + 10 * dayMs).toISOString().slice(0, 10);
     const eligible = await createSession(f, {
       start_at: monday,
       end_at: new Date(monday.getTime() + 60 * 60 * 1000),
       registration_cutoff_at: monday,
       branch_id: branchA,
     });
-    const nextMonday = new Date('2026-09-07T15:00:00.000Z');
+    const nextMonday = new Date(monday.getTime() + 7 * dayMs);
     const fullSession = await createSession(f, {
       start_at: nextMonday,
       end_at: new Date(nextMonday.getTime() + 60 * 60 * 1000),
@@ -446,7 +455,7 @@ describe('reservable occurrences (item 16)', () => {
       booked_count: 1,
       state: 'full',
     });
-    const tuesday = new Date('2026-09-01T15:00:00.000Z');
+    const tuesday = new Date(monday.getTime() + 1 * dayMs);
     await createSession(f, {
       start_at: tuesday,
       end_at: new Date(tuesday.getTime() + 60 * 60 * 1000),
@@ -465,7 +474,7 @@ describe('reservable occurrences (item 16)', () => {
 
     const listed = await inject(
       'GET',
-      `/customer/entitlements/${entitlementId}/reservable-sessions?from=2026-08-28&to=2026-09-10`,
+      `/customer/entitlements/${entitlementId}/reservable-sessions?from=${windowFrom}&to=${windowTo}`,
       customer.bearer,
     );
     expect(listed.statusCode).toBe(200);
@@ -485,7 +494,7 @@ describe('reservable occurrences (item 16)', () => {
     await reserve(customer, entitlementId, eligible);
     const after = await inject(
       'GET',
-      `/customer/entitlements/${entitlementId}/reservable-sessions?from=2026-08-28&to=2026-09-10`,
+      `/customer/entitlements/${entitlementId}/reservable-sessions?from=${windowFrom}&to=${windowTo}`,
       customer.bearer,
     );
     expect(after.json().finite).toMatchObject({ reservedUpcoming: 1, availableToReserve: 0 });

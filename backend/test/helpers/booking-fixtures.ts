@@ -15,8 +15,44 @@ import type { OrgScope } from '../../src/modules/provider/services/provider-prin
 import { createAccount, createSelfParticipant, createUser } from './identity-fixtures';
 import { createProviderOrg } from './provider-fixtures';
 
-export const FUTURE = new Date('2026-09-01T08:00:00.000Z');
-export const FUTURE_END = new Date('2026-09-01T09:00:00.000Z');
+/**
+ * The fixture "future" anchor. Originally the LITERAL 2026-09-01T08:00Z —
+ * which became the PAST on 2026-09-01 and time-bombed the battery
+ * (quotes expired, cutoffs closed). Now computed at module load: always a
+ * TUESDAY 08:00Z two-to-three weeks ahead, preserving every relationship
+ * the literal had (Tuesday session · camp the following Mon–Fri ·
+ * cohort effective from the same civil day). Tests never depended on the
+ * absolute instant — only on it being safely in the future.
+ */
+function upcomingTuesday(extraWeeks: number): Date {
+  const now = new Date();
+  const d = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 8, 0, 0),
+  );
+  const TUESDAY = 2;
+  const delta = ((TUESDAY - d.getUTCDay() + 7) % 7) + 7 * extraWeeks;
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d;
+}
+
+function addDays(base: Date, days: number): Date {
+  const d = new Date(base.getTime());
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+}
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export const FUTURE = upcomingTuesday(2);
+export const FUTURE_END = new Date(FUTURE.getTime() + 3_600_000);
+/** The camp week: the Monday after FUTURE through that Friday. */
+export const CAMP_START_DATE = isoDate(addDays(FUTURE, 6));
+export const CAMP_END_DATE = isoDate(addDays(FUTURE, 10));
+/** The cohort: effective from FUTURE's civil day for ~3 months. */
+export const COHORT_START_DATE = isoDate(FUTURE);
+export const COHORT_END_DATE = isoDate(addDays(FUTURE, 91));
 
 export interface BookingFixture {
   db: Kysely<DB>;
@@ -78,7 +114,7 @@ export async function createCampWeek(f: BookingFixture, capacity = 5): Promise<s
                                    end_date, daily_start_time, daily_end_time, capacity,
                                    registration_cutoff_at)
             VALUES (${id}, ${f.programId}, ${f.org.orgId}, ${f.org.branchIds[0]},
-                    '2026-09-07', '2026-09-11', '09:00', '13:00', ${capacity},
+                    ${CAMP_START_DATE}, ${CAMP_END_DATE}, '09:00', '13:00', ${capacity},
                     ${FUTURE})`.execute(f.db);
   return id;
 }
@@ -89,7 +125,7 @@ export async function createCohort(f: BookingFixture, capacity = 5): Promise<str
                                           effective_start, effective_end, capacity,
                                           enrolment_cutoff_at)
             VALUES (${id}, ${f.programId}, ${f.org.orgId}, ${f.org.branchIds[0]},
-                    '2026-09-01', '2026-12-01', ${capacity}, ${FUTURE})`.execute(f.db);
+                    ${COHORT_START_DATE}, ${COHORT_END_DATE}, ${capacity}, ${FUTURE})`.execute(f.db);
   return id;
 }
 

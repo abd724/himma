@@ -47,6 +47,32 @@ export interface MigrationFile {
   sha256: string;
 }
 
+/**
+ * W6-1 (docs/37 §7/§23-readiness): the migration head THIS build requires —
+ * the last migration file shipped with the package. Production readiness
+ * compares the database's applied head against it; the API never runs
+ * migrations itself (the migration job owns that, docs/37 §27).
+ */
+export function expectedMigrationHead(dir: string = defaultMigrationsDir()): string {
+  const files = listMigrationFiles(dir);
+  const last = files[files.length - 1];
+  if (last === undefined) {
+    throw new MigrationPolicyError('no migration files found — cannot derive the expected head');
+  }
+  return last.name;
+}
+
+/** The database's currently applied migration head (or undefined when none). */
+export async function appliedMigrationHead(config: BackendConfig): Promise<string | undefined> {
+  const client = await connect(config.database);
+  try {
+    const applied = await appliedMigrations(client);
+    return applied[applied.length - 1];
+  } finally {
+    await client.end();
+  }
+}
+
 export function listMigrationFiles(dir: string = defaultMigrationsDir()): MigrationFile[] {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.sql'))
@@ -137,6 +163,12 @@ export async function runMigrationsUp(
   const files = listMigrationFiles(dir);
   const client = await connect(config.database);
   try {
+    // W6-1 (docs/37 §27): two accidental concurrent migration jobs
+    // serialize here instead of racing node-pg-migrate (which has no
+    // guard of its own). Session-scoped; released when the client ends.
+    await client.query(
+      `SELECT pg_advisory_lock(hashtextextended('himma:migrations', 42))`,
+    );
     await ensureChecksumTable(client);
     assertImmutableApplied(files, await recordedChecksums(client));
 
@@ -354,6 +386,11 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'constraint', name: 'ck_booking_option_kind' },
     { kind: 'constraint', name: 'ck_redemption_credential_occurrence' },
     { kind: 'constraint', name: 'ck_attendance_record_occurrence' },
+  ],
+  // 0021 — W6-1 shared production rate-limit store (docs/37 §9).
+  '0021_rate_limit_window': [
+    { kind: 'table', name: 'rate_limit_window' },
+    { kind: 'constraint', name: 'ck_rate_limit_window_key_shape' },
   ],
 };
 

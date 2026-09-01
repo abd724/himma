@@ -519,15 +519,48 @@ describe('W5-6 closeout — final route inventory and authority pins', () => {
     // No gateway-fee arithmetic anywhere (owner item 7: allocation is an
     // unresolved commercial decision) and no Stripe Tax logic (D-W5-3).
     expect(byPattern(/application_fee|processing_fee|automatic_tax|stripe\.tax/i)).toEqual([]);
-    // Production composition can never substitute the deterministic fake and
-    // can never produce a provider at all in W5 (re-pinned at closeout).
+    // Production composition can never substitute the deterministic fake —
+    // including under the W6-1 explicit TEST opt-in (re-pinned; amended by
+    // the owning W6-1 slice per the owner-approved docs/37 §33 seam).
     const deterministic = new DeterministicPaymentProvider({ now: NOW });
     expect(resolvePaymentProvider('production', { deterministic }).kind).toBe('unconfigured');
+    expect(
+      resolvePaymentProvider('production', { deterministic, paymentsMode: 'test' }).kind,
+    ).toBe('unconfigured');
+    // A Stripe key ALONE is never a mode: without the explicit
+    // PAYMENTS_MODE=test opt-in, production still composes NOTHING.
     expect(
       resolvePaymentProvider('production', {
         stripe: { secretKey: 'sk_test_fictional', webhookSecret: 'whsec_fictional' },
       }).kind,
     ).toBe('unconfigured');
+    // The W6-1 seam: explicit TEST opt-in + a TEST key composes the Stripe
+    // TEST driver (D-W5-6 certification pathway); a live key is refused
+    // even with the opt-in — LIVE remains structurally impossible (PA-06).
+    expect(
+      resolvePaymentProvider('production', {
+        stripe: { secretKey: 'sk_test_fictional', webhookSecret: 'whsec_fictional' },
+        paymentsMode: 'test',
+      }).kind,
+    ).toBe('configured');
+    expect(
+      resolvePaymentProvider('production', {
+        stripe: { secretKey: 'sk_live_fictional', webhookSecret: 'whsec_fictional' },
+        paymentsMode: 'test',
+      }).kind,
+    ).toBe('unconfigured');
+    // TEST composition does NOT imply live readiness: the capability report
+    // keeps productionChargingPossible as the literal false regardless.
+    const testModeReport = paymentCapabilityReport(
+      'production',
+      {
+        stripe: { secretKey: 'sk_test_fictional', webhookSecret: 'whsec_fictional' },
+        paymentsMode: 'test',
+      },
+      { successUrl: SUCCESS_URL, cancelUrl: CANCEL_URL },
+    );
+    expect(testModeReport.providerConfigured).toBe(true);
+    expect(testModeReport.productionChargingPossible).toBe(false);
   });
 });
 
