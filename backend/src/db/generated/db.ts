@@ -569,10 +569,22 @@ export interface OutboxEvent {
   aggregate_type: string;
   event_type: string;
   id: string;
+  /**
+   * W6-2 relay: bounded machine code of the last dispatch outcome (delivered | unhandledEventType | failed:<code> | quarantined:<code>).
+   */
+  last_outcome_code: string | null;
+  /**
+   * W6-2 relay: earliest instant the row may be re-claimed after a failed dispatch (server-side exponential backoff).
+   */
+  next_attempt_at: Timestamp | null;
   occurred_at: Generated<Timestamp>;
   payload: Json;
   publish_attempts: Generated<number>;
   published_at: Timestamp | null;
+  /**
+   * W6-2 relay: durable poison marker — the row left the claimable set after the attempt ceiling; explicit operator un-quarantine only (W6-3).
+   */
+  quarantined_at: Timestamp | null;
   schema_version: Generated<number>;
   sequence_no: Int8;
 }

@@ -53,6 +53,50 @@ export interface RuntimeConfig extends BackendConfig {
   checkoutUrls?: { successUrl: string; cancelUrl: string };
   /** W3-4 private evidence object storage; absent = fail-closed 404 surface. */
   evidenceStorage?: S3EvidenceStoreConfig;
+  /**
+   * W6-2 worker operational policy (docs/37 §13/§22 — engineering-owned,
+   * bounded env overrides with defaults). Only consumed by RUNTIME_ROLE=worker.
+   */
+  worker: {
+    /** Idle poll interval of the outbox dispatcher loop. */
+    outboxPollMs: number;
+    /** Rows claimed per dispatcher pass (FOR UPDATE SKIP LOCKED batch). */
+    outboxBatchSize: number;
+    /** Attempt ceiling before a row is durably quarantined. */
+    outboxMaxAttempts: number;
+    /** Cadence of the certified payment passes (pending events + trusted results). */
+    paymentPollMs: number;
+    /** Optional minimal liveness listener port (absent = none). */
+    statusPort?: number;
+  };
+}
+
+function parseBoundedInt(
+  name: string,
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new ConfigError(`${name} must be an integer in ${min}–${max} — received "${raw}"`);
+  }
+  return value;
+}
+
+function parseWorkerPolicy(env: NodeJS.ProcessEnv): RuntimeConfig['worker'] {
+  const policy: RuntimeConfig['worker'] = {
+    outboxPollMs: parseBoundedInt('WORKER_OUTBOX_POLL_MS', env.WORKER_OUTBOX_POLL_MS, 2_000, 100, 60_000),
+    outboxBatchSize: parseBoundedInt('WORKER_OUTBOX_BATCH', env.WORKER_OUTBOX_BATCH, 100, 1, 1_000),
+    outboxMaxAttempts: parseBoundedInt('WORKER_OUTBOX_MAX_ATTEMPTS', env.WORKER_OUTBOX_MAX_ATTEMPTS, 8, 1, 100),
+    paymentPollMs: parseBoundedInt('WORKER_PAYMENT_POLL_MS', env.WORKER_PAYMENT_POLL_MS, 30_000, 1_000, 600_000),
+  };
+  if ((env.WORKER_STATUS_PORT ?? '') !== '') {
+    policy.statusPort = parseBoundedInt('WORKER_STATUS_PORT', env.WORKER_STATUS_PORT, 0, 0, 65_535);
+  }
+  return policy;
 }
 
 function parseRole(raw: string | undefined): RuntimeRole {
@@ -181,14 +225,19 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   const base = loadConfig(env);
   const production = base.nodeEnv === 'production';
   const role = parseRole(env.RUNTIME_ROLE);
+  // The HTTP listener is the API's; the worker exposes at most an optional
+  // liveness port (WORKER_STATUS_PORT) — so HOST/PORT are mandatory only
+  // for RUNTIME_ROLE=api in production (docs/37 §6).
+  const listenerRequired = production && role === 'api';
   const config: RuntimeConfig = {
     ...base,
     role,
-    host: production ? parseHost(env.HOST) : (env.HOST ?? '127.0.0.1'),
-    port: production ? parseListenPort(env.PORT) : Number(env.PORT ?? 0),
+    host: listenerRequired ? parseHost(env.HOST) : (env.HOST ?? '127.0.0.1'),
+    port: listenerRequired ? parseListenPort(env.PORT) : Number(env.PORT ?? 0),
     logLevel: parseLogLevel(env.LOG_LEVEL),
     shutdownDrainMs: parseDrainMs(env.SHUTDOWN_DRAIN_MS),
     paymentsMode: parsePaymentsMode(env.PAYMENTS_MODE),
+    worker: parseWorkerPolicy(env),
   };
   const checkoutUrls = parseCheckoutUrls(env, production);
   if (checkoutUrls !== undefined) config.checkoutUrls = checkoutUrls;

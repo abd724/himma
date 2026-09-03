@@ -24,11 +24,11 @@ afterAll(async () => {
 
 describe('0021_rate_limit_window', () => {
   it('is the expected head, verifies clean, and survives up → down → up with zero domain-row rewrites', async () => {
-    expect(expectedMigrationHead()).toBe('0021_rate_limit_window');
+    expect(expectedMigrationHead()).toBe('0022_outbox_delivery_state');
 
     const before = await verifyMigrations(testDb.config);
     expect(before.ok).toBe(true);
-    expect(before.appliedCount).toBe(21);
+    expect(before.appliedCount).toBe(22);
     expect(before.pending).toEqual([]);
 
     const domainCount = async (): Promise<number> => {
@@ -38,7 +38,7 @@ describe('0021_rate_limit_window', () => {
     };
     const auditBefore = await domainCount();
 
-    await runMigrationsDown(testDb.config, { count: 1, quiet: true });
+    await runMigrationsDown(testDb.config, { count: 2, quiet: true });
     const gone = await sql<{ n: string }>`
       SELECT count(*) AS n FROM information_schema.tables WHERE table_name = 'rate_limit_window'
     `.execute(testDb.db);
@@ -47,7 +47,7 @@ describe('0021_rate_limit_window', () => {
     await runMigrationsUp(testDb.config, { quiet: true });
     const after = await verifyMigrations(testDb.config);
     expect(after.ok).toBe(true);
-    expect(after.appliedCount).toBe(21);
+    expect(after.appliedCount).toBe(22);
     expect(await domainCount()).toBe(auditBefore);
   });
 

@@ -20,6 +20,7 @@
     "stripe:smoke": "tsx scripts/stripe-sandbox-smoke.ts",
     "bootstrap:admins": "tsx scripts/db-bootstrap-admins.ts",
     "start:api": "tsx scripts/start-api.ts",
+    "start:worker": "tsx scripts/start-worker.ts",
     "db:provision-roles": "tsx scripts/db-provision-runtime-roles.ts",
     "dev:server": "tsx scripts/dev-server.ts",
     "dev:seed": "tsx scripts/dev-seed.ts"
@@ -32,6 +33,7 @@
     "kysely": "^0.28.0",
     "node-pg-migrate": "^8.0.0",
     "pg": "^8.16.0",
+    "pino": "^10.1.0",
     "stripe": "^22.5.0",
     "tsx": "^4.20.0",
     "uuid": "^13.0.0"

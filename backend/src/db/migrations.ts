@@ -392,6 +392,11 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'table', name: 'rate_limit_window' },
     { kind: 'constraint', name: 'ck_rate_limit_window_key_shape' },
   ],
+  // 0022 — W6-2 durable outbox delivery state (docs/37 §10/§22).
+  '0022_outbox_delivery_state': [
+    { kind: 'constraint', name: 'ck_outbox_event_quarantine_exclusive' },
+    { kind: 'constraint', name: 'ck_outbox_event_outcome_code_shape' },
+  ],
 };
 
 export interface VerificationReport {

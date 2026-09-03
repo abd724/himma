@@ -77,3 +77,50 @@ describe('the production graph (start-api → production-runtime → build-app) 
     expect(bootstrap).not.toContain('runMigrationsUp');
   });
 });
+
+describe('W6-2: the worker graph (start-worker → worker-runtime) is equally dev-free and holds no authority', () => {
+  const workerGraph = [
+    'scripts/start-worker.ts',
+    'src/worker/worker-runtime.ts',
+    'src/worker/outbox-dispatcher.ts',
+    'src/worker/search-projection-handler.ts',
+    'src/worker/payment-processing.ts',
+  ];
+
+  it('never imports the dev server, dev identity, fakes, dev actors, the deterministic provider, or the in-memory limiter, and carries no localhost fallback', () => {
+    for (const file of workerGraph) {
+      const source = sourceOf(file);
+      expect(source).not.toContain('dev-server');
+      expect(source).not.toContain('DevPasswordIdentityProvider');
+      expect(source).not.toContain('providers/dev/');
+      expect(source).not.toContain('providers/fake/');
+      expect(source).not.toContain('DeterministicPaymentProvider');
+      expect(source).not.toContain('deterministic-provider');
+      expect(source).not.toContain('dev-checkin-actor');
+      expect(source).not.toContain('dev-hosted-checkout');
+      expect(source).not.toContain('InMemoryRateLimiterStore');
+      expect(source).not.toMatch(/localhost|127\.0\.0\.1|0\.0\.0\.0/);
+    }
+  });
+
+  it('invokes certified authority only — no settlement/confirmation/commission logic, no Stripe driver, no migrations, no W6-3 sweeps', () => {
+    for (const file of workerGraph) {
+      const source = sourceOf(file);
+      expect(source).not.toContain('new StripeDriver');
+      expect(source).not.toContain('runMigrationsUp');
+      expect(source).not.toContain('confirmPaidBooking(');
+      expect(source).not.toContain('confirmPaidEntitlementPurchase(');
+      expect(source).not.toContain('computeCommissionSplit');
+      expect(source).not.toContain('sweepLapsedPaidCheckouts');
+      expect(source).not.toContain('sweepExpiredHolds');
+      expect(source).not.toContain('reconcileLedgerAgainstProvider');
+      expect(source).not.toContain('findStuckPaymentStates');
+      expect(source).not.toMatch(/DELETE FROM/);
+      expect(source).not.toContain('himma_maintenance');
+    }
+    const runtime = sourceOf('src/worker/worker-runtime.ts');
+    expect(runtime).toContain('resolvePaymentProvider');
+    expect(runtime).toContain("assertRuntimeDbIdentity(db, 'worker')");
+    expect(runtime).toMatch(/import { createPool } from '..\/db\/pool'/);
+  });
+});

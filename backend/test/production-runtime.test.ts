@@ -49,6 +49,7 @@ function runtimeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
     logLevel: 'error',
     shutdownDrainMs: 5_000,
     paymentsMode: 'disabled',
+    worker: { outboxPollMs: 200, outboxBatchSize: 100, outboxMaxAttempts: 8, paymentPollMs: 30_000 },
     ...overrides,
   };
 }

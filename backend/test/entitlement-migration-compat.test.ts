@@ -196,6 +196,7 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
     '0019_membership_program_revision_kind',
     '0020_membership_booking_and_multi_occurrence_attendance',
     '0021_rate_limit_window',
+    '0022_outbox_delivery_state',
   ]);
   const verified = await verifyMigrations(config);
   expect(verified.problems).toEqual([]);
@@ -233,7 +234,7 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
   // no membership revisions, no membership bookings, and no
   // occurrence-stamped rows exist, so every preflight passes) restores the
   // exact legacy schema; rows survive.
-  await runMigrationsDown(config, { count: 5, quiet: true });
+  await runMigrationsDown(config, { count: 6, quiet: true });
   const legacyTables = await sql<{ table_name: string }>`
     SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public'
@@ -258,6 +259,7 @@ it('0017 preserves every certified Booking/payment row; down restores the legacy
     '0019_membership_program_revision_kind',
     '0020_membership_booking_and_multi_occurrence_attendance',
     '0021_rate_limit_window',
+    '0022_outbox_delivery_state',
   ]);
   expect((await verifyMigrations(config)).problems).toEqual([]);
 });
@@ -331,7 +333,7 @@ it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails close
   // failure. (0020 with no membership bookings/occurrence rows, 0019 with
   // no membership revisions, and 0018 with no S6-2-native data legally
   // revert first; their structure is restored below.)
-  await expect(runMigrationsDown(config, { count: 5, quiet: true })).rejects.toThrow(
+  await expect(runMigrationsDown(config, { count: 6, quiet: true })).rejects.toThrow(
     /Downgrade of 0017 refused: S6-1-native data exists/,
   );
 
@@ -344,6 +346,7 @@ it('S6-native downgrade REFUSAL: once genuine S6-1 data exists, down fails close
     '0019_membership_program_revision_kind',
     '0020_membership_booking_and_multi_occurrence_attendance',
     '0021_rate_limit_window',
+    '0022_outbox_delivery_state',
   ]);
   expect(verified.problems).toEqual([]);
   // Restore head for the suite's remaining proofs.
@@ -403,7 +406,7 @@ it('S6-2-native downgrade REFUSAL: once credential/attendance state exists, 0018
   // The 0018 preflight refuses as the FIRST down statement (0020 and
   // 0019, with no native state of their own, legally revert first and are
   // restored below).
-  await expect(runMigrationsDown(config, { count: 4, quiet: true })).rejects.toThrow(
+  await expect(runMigrationsDown(config, { count: 5, quiet: true })).rejects.toThrow(
     /Downgrade of 0018 refused: S6-2-native data exists/,
   );
   // Nothing partially destroyed: only the 0019/0020 constraint widenings
@@ -414,6 +417,7 @@ it('S6-2-native downgrade REFUSAL: once credential/attendance state exists, 0018
     '0019_membership_program_revision_kind',
     '0020_membership_booking_and_multi_occurrence_attendance',
     '0021_rate_limit_window',
+    '0022_outbox_delivery_state',
   ]);
   expect(verified.problems).toEqual([]);
   await runMigrationsUp(config, { quiet: true });
@@ -427,12 +431,13 @@ it('0019 SAFE downgrade with no membership revision state; REFUSAL once a genuin
   // ---- Safe downgrade: no program_revision row carries `membership`, so
   // the 0019 down restores the exact pre-correction constraint cleanly
   // (0020, with no membership bookings/occurrence rows, reverts first).
-  await runMigrationsDown(config, { count: 3, quiet: true });
+  await runMigrationsDown(config, { count: 4, quiet: true });
   let verified = await verifyMigrations(config);
   expect(verified.pending).toEqual([
     '0019_membership_program_revision_kind',
     '0020_membership_booking_and_multi_occurrence_attendance',
     '0021_rate_limit_window',
+    '0022_outbox_delivery_state',
   ]);
   expect(verified.problems).toEqual([]);
   // The restored legacy CHECK genuinely refuses membership again.
@@ -467,13 +472,14 @@ it('0019 SAFE downgrade with no membership revision state; REFUSAL once a genuin
   // membership review history is never deleted, rewritten, or discarded
   // (0020, still free of native state, legally reverts first and is
   // restored below).
-  await expect(runMigrationsDown(config, { count: 3, quiet: true })).rejects.toThrow(
+  await expect(runMigrationsDown(config, { count: 4, quiet: true })).rejects.toThrow(
     /Downgrade of 0019 refused: .*membership/,
   );
   verified = await verifyMigrations(config);
   expect(verified.pending).toEqual([
     '0020_membership_booking_and_multi_occurrence_attendance',
     '0021_rate_limit_window',
+    '0022_outbox_delivery_state',
   ]);
   expect(verified.problems).toEqual([]);
   await runMigrationsUp(config, { quiet: true });
@@ -489,11 +495,12 @@ it('0020 SAFE downgrade with no native state; REFUSAL once a membership Booking 
   // ---- Safe downgrade: no membership Booking and no occurrence-stamped
   // rows exist, so the 0020 down restores the exact pre-correction
   // objects cleanly.
-  await runMigrationsDown(config, { count: 2, quiet: true });
+  await runMigrationsDown(config, { count: 3, quiet: true });
   let verified = await verifyMigrations(config);
   expect(verified.pending).toEqual([
     '0020_membership_booking_and_multi_occurrence_attendance',
     '0021_rate_limit_window',
+    '0022_outbox_delivery_state',
   ]);
   expect(verified.problems).toEqual([]);
   const legacyBookingCheck = await sql<{ def: string }>`
@@ -560,11 +567,11 @@ it('0020 SAFE downgrade with no native state; REFUSAL once a membership Booking 
 
   // The 0020 preflight refuses (0021, native-state-free, legally reverts
   // first and is restored below — the established safe-top pattern).
-  await expect(runMigrationsDown(config, { count: 2, quiet: true })).rejects.toThrow(
+  await expect(runMigrationsDown(config, { count: 3, quiet: true })).rejects.toThrow(
     /Downgrade of 0020 refused: 0020-native data exists .*membership bookings=1/,
   );
   verified = await verifyMigrations(config);
-  expect(verified.pending).toEqual(['0021_rate_limit_window']);
+  expect(verified.pending).toEqual(['0021_rate_limit_window', '0022_outbox_delivery_state']);
   await runMigrationsUp(config, { quiet: true });
   verified = await verifyMigrations(config);
   expect(verified.pending).toEqual([]);
@@ -645,11 +652,11 @@ it('0020 SAFE downgrade with no native state; REFUSAL once a membership Booking 
   // The preflight refuses with ALL 0020-native facts counted; NOTHING is
   // destroyed or transformed; the domain schema rests at head (0021, the
   // native-state-free top, legally reverts first and is restored).
-  await expect(runMigrationsDown(config, { count: 2, quiet: true })).rejects.toThrow(
+  await expect(runMigrationsDown(config, { count: 3, quiet: true })).rejects.toThrow(
     /membership bookings=1, occurrence-stamped credentials=1, occurrence-stamped attendance=1/,
   );
   verified = await verifyMigrations(config);
-  expect(verified.pending).toEqual(['0021_rate_limit_window']);
+  expect(verified.pending).toEqual(['0021_rate_limit_window', '0022_outbox_delivery_state']);
   await runMigrationsUp(config, { quiet: true });
   verified = await verifyMigrations(config);
   expect(verified.pending).toEqual([]);
