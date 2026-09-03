@@ -20,11 +20,12 @@
  * probe to withhold traffic behind, so it must not run at all. Cognito and
  * object storage are NOT worker dependencies and are never composed here.
  *
- * Correlation (docs/37 §23): every loop pass runs under a fresh run id in
- * the same AsyncLocalStorage seam the API uses, so audit rows written by
- * the certified services during a pass carry that run id; outbox/gateway
- * event ids ride in the structured log lines. No HTTP request id is ever
- * manufactured for background work.
+ * Correlation (docs/37 §23, W6-2 owner correction): every loop pass runs
+ * under a fresh run id in the SEPARATE background OPERATION context — it
+ * reaches structured log lines (`runId`, `loop`, event ids, counts) and
+ * NOTHING else. `audit_event.request_id` is request-origin correlation:
+ * audit rows written by the certified services during a pass are NULL
+ * there. No HTTP request id is ever manufactured for background work.
  */
 import { createServer, type Server } from 'node:http';
 
@@ -39,7 +40,7 @@ import { expectedMigrationHead } from '../db/migrations';
 import { createPool } from '../db/pool';
 import { resolvePaymentProvider } from '../modules/payment/provider-composition';
 import { buildLoggerOptions } from '../observability/logging';
-import { newCorrelationId, runWithRequestContext } from '../observability/request-context';
+import { newCorrelationId, runWithOperationContext } from '../observability/request-context';
 import { dispatchOutboxBatch, failureCode, type OutboxHandler } from './outbox-dispatcher';
 import { runPaymentPass } from './payment-processing';
 import { createSearchProjectionHandler } from './search-projection-handler';
@@ -208,7 +209,7 @@ function createLoopSupervisor(loops: WorkerLoopSpec[], log: pino.Logger): LoopSu
       const runId = newCorrelationId();
       let again = false;
       try {
-        again = await runWithRequestContext({ requestId: runId }, () => spec.run(runId));
+        again = await runWithOperationContext({ runId, operation: spec.name }, () => spec.run(runId));
       } catch (error) {
         log.error({ loop: spec.name, runId, errorCode: failureCode(error) }, 'loop pass failed');
       }

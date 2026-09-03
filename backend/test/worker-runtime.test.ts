@@ -2,7 +2,7 @@
  * W6-2 — the in-process worker runtime on real PostgreSQL (docs/37 §4/§8/
  * §15/§23): fail-closed composition (identity, migration head, role),
  * loop supervision (outbox convergence through the real supervisor, failure
- * isolation, correlation into audit rows), bounded graceful shutdown, and
+ * isolation, run-id log correlation kept OUT of audit request ids), bounded graceful shutdown, and
  * runtime log redaction — plus the `himma_worker` negative privilege
  * boundary re-asserted on its exact connection.
  */
@@ -17,6 +17,7 @@ import type { RuntimeConfig } from '../src/config/runtime';
 import { appendAuditEvent } from '../src/db/audit';
 import { withTransaction } from '../src/db/transaction';
 import { provisionRuntimeRoles } from '../src/db/provision-runtime-roles';
+import { runWithRequestContext } from '../src/observability/request-context';
 import { appendOutboxEvent, markInboxProcessed } from '../src/outbox/outbox';
 import type { OutboxHandler } from '../src/worker/outbox-dispatcher';
 import { composeWorkerRuntime, createWorkerShutdown } from '../src/worker/worker-runtime';
@@ -29,6 +30,7 @@ let testDb: TestDb;
 const apiPassword = `api-${randomBytes(18).toString('base64url')}`;
 const workerPassword = `worker-${randomBytes(18).toString('base64url')}`;
 const SECRET = 'w6-worker-secret-DO-NOT-LOG-9f2a';
+const ORIGIN_REQUEST_ID = '11111111-2222-4333-8444-555555555555';
 
 function workerConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
@@ -82,7 +84,8 @@ const probeHandler: OutboxHandler = {
       if (event.eventType === 'probe.explode') throw new Error(`boom ${SECRET}`);
       const first = await markInboxProcessed(trx, 'w6-runtime-probe', event.id);
       if (!first) return 'duplicate' as const;
-      // The certified audit helper — its ambient correlation seam records the worker RUN id.
+      // The certified audit helper — background work has NO originating request,
+      // so its request_id stays NULL (the worker run id is log correlation only).
       await appendAuditEvent(trx, {
         actorType: 'system',
         action: 'w6.runtime_effect',
@@ -145,9 +148,18 @@ describe('fail-closed composition (docs/37 §15)', () => {
 });
 
 describe('supervised loops, correlation, redaction, shutdown', () => {
-  it('drains the outbox continuously, isolates a poisoned event, carries a run id into audit rows, and never logs secrets', async () => {
+  it('drains the outbox continuously, isolates a poisoned event, keeps run ids OUT of audit_event.request_id (logs only), and never logs secrets', async () => {
     const good = await emitProbe('probe.created', { note: SECRET });
     const bad = await emitProbe('probe.explode', { note: SECRET });
+    // A request-originated audit row (the API pipeline's context) about the same entity.
+    await runWithRequestContext({ requestId: ORIGIN_REQUEST_ID }, () =>
+      appendAuditEvent(testDb.db, {
+        actorType: 'system',
+        action: 'w6.origin_probe',
+        entityType: 'outbox_event',
+        entityId: good,
+      }),
+    );
     const { stream, lines } = captured();
     const runtime = await composeWorkerRuntime(
       workerConfig({ worker: { outboxPollMs: 100, outboxBatchSize: 50, outboxMaxAttempts: 2, paymentPollMs: 30_000 } }),
@@ -163,8 +175,14 @@ describe('supervised loops, correlation, redaction, shutdown', () => {
       const effect = await sql<{ request_id: string | null }>`
         SELECT request_id FROM audit_event WHERE action = 'w6.runtime_effect' AND entity_id = ${good}`.execute(testDb.db);
       expect(effect.rows).toHaveLength(1);
-      // Background work carries a RUN id (canonical format) — never a fake HTTP request id.
-      expect(effect.rows[0]?.request_id).toMatch(/^[0-9a-f-]{36}$/);
+      // Pure background work: `audit_event.request_id IS NULL` — the worker
+      // run id is never written there (W6-2 owner correction).
+      expect(effect.rows[0]?.request_id).toBeNull();
+      // An audit row that DID originate from a request keeps its exact id —
+      // the worker never rewrites history and never substitutes its run id.
+      const origin = await sql<{ request_id: string | null }>`
+        SELECT request_id FROM audit_event WHERE action = 'w6.origin_probe' AND entity_id = ${good}`.execute(testDb.db);
+      expect(origin.rows[0]?.request_id).toBe(ORIGIN_REQUEST_ID);
       const poisoned = await sql<{ attempts: number; code: string | null; published: boolean }>`
         SELECT publish_attempts AS attempts, last_outcome_code AS code, published_at IS NOT NULL AS published
         FROM outbox_event WHERE id = ${bad}`.execute(testDb.db);

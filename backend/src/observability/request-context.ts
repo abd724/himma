@@ -11,6 +11,14 @@
  * The canonical id is ALWAYS server-generated (UUID). A client-supplied
  * `x-request-id` is never adopted as the canonical id — it may ride along
  * as a bounded, validated HINT for support correlation only.
+ *
+ * INVARIANT (W6-2 owner correction): `audit_event.request_id` is
+ * REQUEST-ORIGIN correlation, never a generic background-job correlation
+ * field. Background work (worker loop passes, claims, attempts) runs under
+ * the SEPARATE operation context below — a run id that reaches structured
+ * logs only. `currentRequestId()` reads the request context exclusively, so
+ * an audit row written by pure background work has `request_id = NULL`; a
+ * run id can never masquerade as a request id.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
@@ -56,7 +64,30 @@ export function enterRequestContext(context: RequestContext, done: () => void): 
   storage.run(context, done);
 }
 
-/** The ambient canonical id, or undefined outside any unit of work. */
+/** The ambient canonical REQUEST id, or undefined outside any HTTP request. */
 export function currentRequestId(): string | undefined {
   return storage.getStore()?.requestId;
+}
+
+// ---------------------------------------------------------------------------
+// Background OPERATION context — distinct type, distinct storage, distinct
+// reader. Deliberately NOT readable through `currentRequestId()`.
+// ---------------------------------------------------------------------------
+
+export interface OperationContext {
+  /** Worker run / pass id (canonical UUID format) — log correlation ONLY. */
+  runId: string;
+  /** Bounded operation family name (e.g. the worker loop). */
+  operation: string;
+}
+
+const operationStorage = new AsyncLocalStorage<OperationContext>();
+
+export function runWithOperationContext<T>(context: OperationContext, fn: () => T): T {
+  return operationStorage.run(context, fn);
+}
+
+/** The ambient background run id, or undefined outside any operation. */
+export function currentRunId(): string | undefined {
+  return operationStorage.getStore()?.runId;
 }

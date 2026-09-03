@@ -18,7 +18,13 @@ import { parseStaffInvitationConfig } from '../src/modules/provider/staff-invita
 import { InMemoryRateLimiterStore } from '../src/modules/identity/http/rate-limiter';
 import { FakeAccessTokenVerifier } from '../src/modules/identity/providers/fake/fake-access-token-verifier';
 import { FakeAuthProviderAdapter } from '../src/modules/identity/providers/fake/fake-adapter';
-import { isCanonicalCorrelationId } from '../src/observability/request-context';
+import {
+  currentRequestId,
+  currentRunId,
+  isCanonicalCorrelationId,
+  runWithOperationContext,
+  runWithRequestContext,
+} from '../src/observability/request-context';
 import {
   bootstrapAccessAdmins,
   createAccount,
@@ -179,6 +185,38 @@ describe('HTTP → domain mutation → audit_event.request_id (docs/37 §23)', (
       requestId: 'job-run-fixture-1',
     });
     expect((await auditRow('w6.correlation_explicit_probe')).request_id).toBe('job-run-fixture-1');
+  });
+
+  it('background OPERATION context never masquerades as request context: run ids stay out of audit_event.request_id (W6-2 owner correction)', async () => {
+    const runId = '99999999-8888-4777-8666-555555555555';
+    await runWithOperationContext({ runId, operation: 'test-loop' }, async () => {
+      // The run id is available to structured logging…
+      expect(currentRunId()).toBe(runId);
+      // …but is NOT request correlation.
+      expect(currentRequestId()).toBeUndefined();
+      await appendAuditEvent(testDb.db, {
+        actorType: 'system',
+        action: 'w6.background_probe',
+        entityType: 'w6',
+        entityId: 'background-probe',
+      });
+    });
+    expect((await auditRow('w6.background_probe')).request_id).toBeNull();
+
+    // A request-originated write nested inside a background operation keeps
+    // its EXACT originating request id — never the run id.
+    const originating = '12121212-3434-4565-8787-989898989898';
+    await runWithOperationContext({ runId, operation: 'test-loop' }, () =>
+      runWithRequestContext({ requestId: originating }, () =>
+        appendAuditEvent(testDb.db, {
+          actorType: 'system',
+          action: 'w6.nested_origin_probe',
+          entityType: 'w6',
+          entityId: 'nested-origin-probe',
+        }),
+      ),
+    );
+    expect((await auditRow('w6.nested_origin_probe')).request_id).toBe(originating);
   });
 
   it('a VALID bounded client hint is still never adopted as the canonical id', async () => {
