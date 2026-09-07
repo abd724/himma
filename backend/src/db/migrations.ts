@@ -22,6 +22,7 @@ import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
 
 import type { BackendConfig, DatabaseConfig } from '../config/env';
+import { clientOptionsFor } from './connection-options';
 import { assertSafeTestDatabase } from './safety';
 
 export const MIGRATIONS_TABLE = 'pgmigrations';
@@ -87,13 +88,9 @@ export function listMigrationFiles(dir: string = defaultMigrationsDir()): Migrat
 }
 
 async function connect(db: DatabaseConfig): Promise<Client> {
-  const client = new Client({
-    host: db.host,
-    port: db.port,
-    database: db.database,
-    user: db.user,
-    ...(db.password !== undefined ? { password: db.password } : {}),
-  });
+  // W6-4A: the migration job carries the same TLS posture as the runtime
+  // (no statement_timeout — index builds may legitimately run long).
+  const client = new Client(clientOptionsFor(db));
   await client.connect();
   return client;
 }

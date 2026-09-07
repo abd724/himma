@@ -11,6 +11,7 @@
  * - This module never loads dotenv; CLI entry points load `.env` explicitly
  *   for development convenience.
  */
+import { readFileSync } from 'node:fs';
 import os from 'node:os';
 
 import { assertSafeTestDatabase } from '../db/safety';
@@ -23,6 +24,138 @@ export interface DatabaseConfig {
   database: string;
   user: string;
   password?: string;
+  /**
+   * W6-4A transport security (docs/38 §2.6/§10). Absent = plain TCP, which
+   * `loadConfig` permits ONLY outside production or — the certification-
+   * harness exception — for a LOOPBACK host under an explicit
+   * `DATABASE_SSL_MODE=disable`. Production against any non-loopback host
+   * (every RDS endpoint) REQUIRES `verify-full` with a CA bundle.
+   */
+  ssl?: DatabaseSslConfig;
+  /** W6-4A explicit bounded pool policy; absent = the documented defaults. */
+  pool?: DatabasePoolConfig;
+}
+
+export type DatabaseSslConfig =
+  | { mode: 'disable' }
+  | {
+      /** TLS + server certificate chain AND hostname verification (libpq `verify-full`). */
+      mode: 'verify-full';
+      /** Path the CA bundle was read from (for diagnostics; never a secret). */
+      caFile: string;
+      /** PEM CA bundle (e.g. the AWS RDS global bundle baked into the image). */
+      ca: string;
+    };
+
+export interface DatabasePoolConfig {
+  /** Max clients per process (`pg` `max`). */
+  max: number;
+  /** `connectionTimeoutMillis` — a stuck connect fails, never hangs. */
+  connectionTimeoutMs: number;
+  /** `idleTimeoutMillis` — idle clients are released back to the server. */
+  idleTimeoutMs: number;
+  /** Session `statement_timeout` (ms); absent = server default (no limit). */
+  statementTimeoutMs?: number;
+}
+
+export const DEFAULT_POOL_CONFIG: Readonly<DatabasePoolConfig> = {
+  max: 10,
+  connectionTimeoutMs: 5_000,
+  idleTimeoutMs: 30_000,
+};
+
+const SSL_MODES = ['disable', 'verify-full'] as const;
+
+/** Loopback = the local certification harness (docs/37 §36); never an RDS endpoint. */
+function isLoopbackHost(host: string): boolean {
+  const bare = host.replace(/^\[|\]$/g, '').toLowerCase();
+  return bare === 'localhost' || bare === '127.0.0.1' || bare === '::1';
+}
+
+function parseSslConfig(
+  env: NodeJS.ProcessEnv,
+  nodeEnv: NodeEnv,
+  host: string,
+  readFile: (path: string) => string,
+): DatabaseSslConfig | undefined {
+  const rawMode = env.DATABASE_SSL_MODE?.trim();
+  const caFile = env.DATABASE_SSL_CA_FILE?.trim();
+  if (rawMode !== undefined && rawMode !== '' && !(SSL_MODES as readonly string[]).includes(rawMode)) {
+    throw new ConfigError(
+      `DATABASE_SSL_MODE must be one of ${SSL_MODES.join(', ')} — received "${rawMode}" (certificate verification is never relaxed: there is no "require" or "no-verify" mode)`,
+    );
+  }
+  const mode = rawMode === undefined || rawMode === '' ? undefined : (rawMode as 'disable' | 'verify-full');
+  if (nodeEnv === 'production') {
+    if (mode === undefined) {
+      throw new ConfigError(
+        'DATABASE_SSL_MODE is required in production (verify-full for every managed/RDS endpoint; disable is accepted ONLY for a loopback certification-harness database)',
+      );
+    }
+    if (mode === 'disable' && !isLoopbackHost(host)) {
+      throw new ConfigError(
+        `DATABASE_SSL_MODE=disable is refused in production for the non-loopback database host "${host}" — TLS with certificate verification is mandatory (DATABASE_SSL_MODE=verify-full + DATABASE_SSL_CA_FILE)`,
+      );
+    }
+  }
+  if (mode === undefined || mode === 'disable') {
+    if (caFile !== undefined && caFile !== '' && mode === 'disable') {
+      throw new ConfigError('DATABASE_SSL_CA_FILE is set but DATABASE_SSL_MODE=disable — remove one of them');
+    }
+    return mode === undefined ? undefined : { mode: 'disable' };
+  }
+  if (caFile === undefined || caFile === '') {
+    throw new ConfigError('DATABASE_SSL_MODE=verify-full requires DATABASE_SSL_CA_FILE (the CA bundle path, e.g. the AWS RDS global bundle)');
+  }
+  let ca: string;
+  try {
+    ca = readFile(caFile);
+  } catch {
+    throw new ConfigError(`DATABASE_SSL_CA_FILE cannot be read (${caFile})`);
+  }
+  if (!ca.includes('-----BEGIN CERTIFICATE-----')) {
+    throw new ConfigError(`DATABASE_SSL_CA_FILE does not contain a PEM certificate bundle (${caFile})`);
+  }
+  return { mode: 'verify-full', caFile, ca };
+}
+
+/**
+ * W6-4A (infrastructure-required, docs/38 §10): a managed secret store hands
+ * a task the PASSWORD as its own value (the RDS-managed master secret, the
+ * per-role runtime secrets) — passwords are not guaranteed URL-safe, so the
+ * URL may omit it and `DATABASE_PASSWORD` supplies it. Never both.
+ */
+function applyPasswordEnv(database: DatabaseConfig, env: NodeJS.ProcessEnv): void {
+  const password = env.DATABASE_PASSWORD;
+  if (password === undefined || password === '') return;
+  if (database.password !== undefined) {
+    throw new ConfigError('DATABASE_URL carries a password AND DATABASE_PASSWORD is set — supply exactly one');
+  }
+  database.password = password;
+}
+
+function parseBoundedIntEnv(name: string, raw: string | undefined, fallback: number, min: number, max: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new ConfigError(`${name} must be an integer in ${min}–${max} — received "${raw}"`);
+  }
+  return value;
+}
+
+/** Bounded pool policy from the environment (operational policy, docs/37 §32). */
+export function parsePoolConfig(env: NodeJS.ProcessEnv): DatabasePoolConfig {
+  const pool: DatabasePoolConfig = {
+    max: parseBoundedIntEnv('DB_POOL_MAX', env.DB_POOL_MAX, DEFAULT_POOL_CONFIG.max, 1, 200),
+    connectionTimeoutMs: parseBoundedIntEnv(
+      'DB_CONNECT_TIMEOUT_MS', env.DB_CONNECT_TIMEOUT_MS, DEFAULT_POOL_CONFIG.connectionTimeoutMs, 500, 60_000),
+    idleTimeoutMs: parseBoundedIntEnv('DB_IDLE_TIMEOUT_MS', env.DB_IDLE_TIMEOUT_MS, DEFAULT_POOL_CONFIG.idleTimeoutMs, 1_000, 600_000),
+  };
+  const statement = env.DB_STATEMENT_TIMEOUT_MS;
+  if (statement !== undefined && statement.trim() !== '') {
+    pool.statementTimeoutMs = parseBoundedIntEnv('DB_STATEMENT_TIMEOUT_MS', statement, 0, 1_000, 3_600_000);
+  }
+  return pool;
 }
 
 /**
@@ -95,6 +228,11 @@ export function parseDatabaseUrl(url: string): DatabaseConfig {
   if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
     throw new ConfigError('DATABASE_URL must use the postgres:// scheme');
   }
+  // Transport security is configured through the typed DATABASE_SSL_* contract
+  // only — a libpq-style query parameter would silently mean something else.
+  if (parsed.searchParams.has('sslmode') || parsed.searchParams.has('ssl') || parsed.searchParams.has('sslrootcert')) {
+    throw new ConfigError('DATABASE_URL must not carry sslmode/ssl/sslrootcert — use DATABASE_SSL_MODE and DATABASE_SSL_CA_FILE');
+  }
   const database = parsed.pathname.replace(/^\//, '');
   if (database.length === 0) {
     throw new ConfigError('DATABASE_URL must name a database');
@@ -120,8 +258,12 @@ function parsePort(raw: string | undefined): number {
   return port;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig {
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  io: { readFile?: (path: string) => string } = {},
+): BackendConfig {
   const nodeEnv = parseNodeEnv(env.NODE_ENV);
+  const readFile = io.readFile ?? ((path: string) => readFileSync(path, 'utf8'));
 
   if (nodeEnv === 'production') {
     // Fail closed: no defaults, no PG* fallback assembly in production.
@@ -130,9 +272,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
         'Production requires an explicit DATABASE_URL from the secret store; refusing to assemble a connection from defaults.',
       );
     }
+    const database = parseDatabaseUrl(env.DATABASE_URL);
+    applyPasswordEnv(database, env);
+    const ssl = parseSslConfig(env, nodeEnv, database.host, readFile);
+    if (ssl !== undefined) database.ssl = ssl;
+    database.pool = parsePoolConfig(env);
     const production: BackendConfig = {
       nodeEnv,
-      database: parseDatabaseUrl(env.DATABASE_URL),
+      database,
     };
     const productionStripe = stripeConfigFrom(env);
     if (productionStripe !== undefined) {
@@ -155,6 +302,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
   if (nodeEnv === 'test') {
     assertSafeTestDatabase(database);
   }
+  // Development/test: TLS is opt-in (a TLS-enabled local server), the pool
+  // policy is the same bounded contract.
+  const ssl = parseSslConfig(env, nodeEnv, database.host, readFile);
+  if (ssl !== undefined) database.ssl = ssl;
+  database.pool = parsePoolConfig(env);
 
   const config: BackendConfig = { nodeEnv, database };
   const stripe = stripeConfigFrom(env);

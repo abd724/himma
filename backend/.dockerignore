@@ -1,0 +1,31 @@
+# Himma backend image context — production artifact only (docs/38 §8).
+# Everything not explicitly needed by the runtime stays out of the image.
+node_modules
+.env
+.env.*
+!.env.example
+.env.example
+test
+test-results
+coverage
+dist
+*.log
+*.tsbuildinfo
+.git
+.gitignore
+.DS_Store
+README.md
+eslint.config.mjs
+jest.config.cjs
+Dockerfile
+.dockerignore
+# Development-only executables never ship (the production graph is source-locked dev-free).
+scripts/dev-server.ts
+scripts/dev-seed.ts
+scripts/dev-checkin-actor.ts
+scripts/dev-fulfillment-actor.ts
+scripts/dev-hosted-checkout.ts
+scripts/stripe-sandbox-smoke.ts
+scripts/db-down.ts
+scripts/db-new-migration.ts
+scripts/db-codegen.ts

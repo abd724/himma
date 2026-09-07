@@ -1,0 +1,175 @@
+# Himma — local production-like container harness (docs/37 §36; docs/38 §15 item 1).
+#
+# Proves the ONE backend image in the production topology WITHOUT AWS:
+# PostgreSQL over TLS (self-signed CA, verify-full from every process) →
+# migration job → role provisioning → api ×N → worker ×N → maintenance
+# invocation. NODE_ENV=production everywhere; there is no dev identity, no
+# deterministic payment provider, no fixture storage in this topology — the
+# image cannot compose them (production source locks), and no such env is set.
+#
+# Drive it with `infra/local/harness.sh` (generates certs + passwords into the
+# gitignored `.harness.env`, brings the stack up, runs every check, tears down).
+#   docker compose -f infra/local/docker-compose.yml --env-file infra/local/.harness.env up -d --scale api=2 --scale worker=2
+#
+# Secrets: the harness generates random passwords into `.harness.env` (never
+# committed). Nothing here is a production value.
+
+name: himma-harness
+
+x-backend-image: &backend-image
+  image: ${HIMMA_IMAGE:-himma-backend:harness}
+  build:
+    context: ../../backend
+    dockerfile: Dockerfile
+
+x-runtime-env: &runtime-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  # TLS to the harness PostgreSQL over the compose network (a NON-loopback
+  # host → verify-full is mandatory; the CA is the harness CA, mounted read-only).
+  DATABASE_SSL_MODE: verify-full
+  DATABASE_SSL_CA_FILE: /certs/ca.pem
+  PAYMENTS_MODE: disabled
+
+services:
+  postgres:
+    image: postgres:16
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/server.pem
+      - -c
+      - ssl_key_file=/certs/server.key
+      - -c
+      - ssl_ca_file=/certs/ca.pem
+      - -c
+      - max_connections=200
+    environment:
+      POSTGRES_USER: himma_owner
+      POSTGRES_PASSWORD: ${HARNESS_OWNER_PASSWORD:?run infra/local/harness.sh}
+      POSTGRES_DB: himma
+    volumes:
+      - ./certs/generated:/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U himma_owner -d himma"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [himma]
+
+  # One-shot: schema migrations + verify under the schema-owner credential
+  # (the API/worker never migrate — source-locked).
+  migrate:
+    <<: *backend-image
+    command: ["scripts/db-migrate.ts"]
+    environment:
+      <<: *runtime-env
+      RUNTIME_ROLE: migrate
+      DATABASE_URL: postgres://himma_owner:${HARNESS_OWNER_PASSWORD}@postgres:5432/himma
+    volumes:
+      - ./certs/generated/ca.pem:/certs/ca.pem:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [himma]
+    restart: "no"
+
+  verify:
+    <<: *backend-image
+    command: ["scripts/db-verify.ts"]
+    environment:
+      <<: *runtime-env
+      RUNTIME_ROLE: migrate
+      DATABASE_URL: postgres://himma_owner:${HARNESS_OWNER_PASSWORD}@postgres:5432/himma
+    volumes:
+      - ./certs/generated/ca.pem:/certs/ca.pem:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [himma]
+    restart: "no"
+
+  # One-shot: the W6-1/W6-3 provisioning boundary — LOGIN roles with
+  # INJECTED passwords (himma_api, himma_worker, himma_maintenance_runner).
+  provision-roles:
+    <<: *backend-image
+    command: ["scripts/db-provision-runtime-roles.ts"]
+    environment:
+      <<: *runtime-env
+      RUNTIME_ROLE: migrate
+      DATABASE_URL: postgres://himma_owner:${HARNESS_OWNER_PASSWORD}@postgres:5432/himma
+      HIMMA_API_DB_PASSWORD: ${HARNESS_API_PASSWORD}
+      HIMMA_WORKER_DB_PASSWORD: ${HARNESS_WORKER_PASSWORD}
+      HIMMA_MAINTENANCE_DB_PASSWORD: ${HARNESS_MAINTENANCE_PASSWORD}
+    volumes:
+      - ./certs/generated/ca.pem:/certs/ca.pem:ro
+    depends_on:
+      verify:
+        condition: service_completed_successfully
+    networks: [himma]
+    restart: "no"
+
+  api:
+    <<: *backend-image
+    command: ["scripts/start-api.ts"]
+    environment:
+      <<: *runtime-env
+      RUNTIME_ROLE: api
+      HOST: 0.0.0.0
+      PORT: 8080
+      DATABASE_URL: postgres://himma_api:${HARNESS_API_PASSWORD}@postgres:5432/himma
+      SHUTDOWN_DRAIN_MS: 10000
+    volumes:
+      - ./certs/generated/ca.pem:/certs/ca.pem:ro
+    ports:
+      - "8080-8081:8080"
+    depends_on:
+      provision-roles:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/internal/ready').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 15s
+    networks: [himma]
+
+  worker:
+    <<: *backend-image
+    command: ["scripts/start-worker.ts"]
+    environment:
+      <<: *runtime-env
+      RUNTIME_ROLE: worker
+      DATABASE_URL: postgres://himma_worker:${HARNESS_WORKER_PASSWORD}@postgres:5432/himma
+      WORKER_STATUS_PORT: 8090
+      SCHEDULER_TICK_MS: 1000
+      SCHEDULER_INTERVALS: booking.hold-sweep=5000,payment.stuck-state=5000,identity.role-expiry=5000,provider.invitation-expiry=5000
+      SHUTDOWN_DRAIN_MS: 10000
+    volumes:
+      - ./certs/generated/ca.pem:/certs/ca.pem:ro
+    depends_on:
+      provision-roles:
+        condition: service_completed_successfully
+    stop_grace_period: 15s
+    networks: [himma]
+
+  # Short-lived maintenance invocation (profile: run explicitly, never resident):
+  #   docker compose ... run --rm maintenance scripts/start-maintenance.ts retention.all
+  maintenance:
+    <<: *backend-image
+    profiles: [maintenance]
+    command: ["scripts/start-maintenance.ts", "retention.all"]
+    environment:
+      <<: *runtime-env
+      RUNTIME_ROLE: maintenance
+      DATABASE_URL: postgres://himma_maintenance_runner:${HARNESS_MAINTENANCE_PASSWORD}@postgres:5432/himma
+    volumes:
+      - ./certs/generated/ca.pem:/certs/ca.pem:ro
+    networks: [himma]
+    restart: "no"
+
+networks:
+  himma:
+    driver: bridge

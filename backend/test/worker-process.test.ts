@@ -56,6 +56,7 @@ function spawnWorker(env: Record<string, string>): WorkerProcess {
 function startWorker(extra: Record<string, string> = {}): WorkerProcess {
   return spawnWorker({
     NODE_ENV: 'production',
+    DATABASE_SSL_MODE: 'disable', // W6-4A: the loopback certification-harness exception (explicit; refused for any non-loopback host)
     RUNTIME_ROLE: 'worker',
     DATABASE_URL: databaseUrlFor('himma_worker', workerPassword),
     LOG_LEVEL: 'info',

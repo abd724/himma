@@ -336,8 +336,11 @@ function parseDrainMs(raw: string | undefined): number {
  * development/test keep their certified ergonomics (the dev server does not
  * use this module).
  */
-export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
-  const base = loadConfig(env);
+export function loadRuntimeConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  io: { readFile?: (path: string) => string } = {},
+): RuntimeConfig {
+  const base = loadConfig(env, io);
   const production = base.nodeEnv === 'production';
   const role = parseRole(env.RUNTIME_ROLE);
   // The HTTP listener is the API's; the worker exposes at most an optional
@@ -356,6 +359,12 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     scheduler: parseSchedulerPolicy(env),
     maintenance: parseMaintenancePolicy(env),
   };
+  // W6-4A: bounded statement_timeout per runtime role when not configured
+  // explicitly (operational policy; the migration job never gets one).
+  if (config.database.pool !== undefined && config.database.pool.statementTimeoutMs === undefined) {
+    const roleDefault = { api: 15_000, worker: 60_000, maintenance: 300_000, migrate: undefined }[role];
+    if (roleDefault !== undefined) config.database.pool.statementTimeoutMs = roleDefault;
+  }
   const checkoutUrls = parseCheckoutUrls(env, production);
   if (checkoutUrls !== undefined) config.checkoutUrls = checkoutUrls;
   const evidenceStorage = parseEvidenceStorage(env);

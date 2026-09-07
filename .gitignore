@@ -48,3 +48,13 @@ example
 # Playwright outputs
 test-results/
 playwright-report/
+
+# Infrastructure (W6-4A) — never commit state, generated harness material, or filled var files.
+infra/local/.harness.env
+infra/local/certs/generated/
+infra/terraform/**/.terraform/
+infra/terraform/**/*.tfstate
+infra/terraform/**/*.tfstate.*
+infra/terraform/**/.terraform.lock.hcl
+infra/terraform/envs/*/terraform.tfvars
+infra/terraform/envs/*/backend.hcl

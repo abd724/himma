@@ -16,6 +16,7 @@ import { Client, Pool } from 'pg';
 import pino from 'pino';
 
 import { appendAuditEvent } from '../src/db/audit';
+import { clientOptionsFor } from '../src/db/connection-options';
 import { provisionRuntimeRoles } from '../src/db/provision-runtime-roles';
 import { createAlertEmitter } from '../src/observability/alerts';
 import { buildLoggerOptions } from '../src/observability/logging';
@@ -223,7 +224,7 @@ describe('crash injection (docs/37 §38)', () => {
     expect(counts.get('probe.die-early')).toBeUndefined();
     expect((await runsOf('probe.die-early')).map((r) => r.outcome)).toEqual(['running']);
     // The lock is free again (nothing to repair).
-    const probeClient = new Client({ ...testDb.config.database });
+    const probeClient = new Client(clientOptionsFor(testDb.config.database));
     await probeClient.connect();
     try {
       const free = await probeClient.query<{ ok: boolean }>(
@@ -312,7 +313,7 @@ describe('failure isolation and alerting', () => {
     const deps = depsFor(workerPool);
     const first = await runSchedulerTick(deps, [job]);
     expect(first.outcomes[0]?.outcome).toBe('ran');
-    const holder = new Client({ ...testDb.config.database });
+    const holder = new Client(clientOptionsFor(testDb.config.database));
     await holder.connect();
     try {
       await holder.query(`SELECT pg_advisory_lock(hashtextextended($1, 42))`, [lockKeyFor('probe.held')]);

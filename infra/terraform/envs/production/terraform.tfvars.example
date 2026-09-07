@@ -1,0 +1,27 @@
+# Himma PRODUCTION — non-secret configuration. Production apply is REFUSED by
+# infra/scripts/tf-preflight.sh until W6-4B staging certification and owner review.
+environment                 = "production"
+expected_account_id         = "000000000000" # the PRODUCTION workload account id (never the management account)
+region                      = "me-central-1"
+root_domain                 = "example.invalid"
+hostname_prefix             = ""
+create_hosted_zone          = false
+hosted_zone_id              = ""
+github_repository           = "owner/himma"
+image_tag                   = "bootstrap"
+image_repository_url        = "" # set to the staging account's ECR URL to promote the SAME immutable image
+payments_mode               = "disabled" # TEST only until PA-06; live does not exist
+api_desired_count           = 2
+worker_desired_count        = 2
+tasks_in_public_subnets     = false
+nat_gateway_count           = 2  # one per AZ
+enable_interface_endpoints  = true
+db_instance_class           = "db.t4g.medium"
+db_multi_az                 = true
+db_backup_retention_days    = 35
+db_deletion_protection      = true
+db_skip_final_snapshot      = false
+cognito_deletion_protection = true
+log_retention_days          = 30
+alert_email                 = ""
+create_build_role           = false # production never builds; it promotes staging-built images

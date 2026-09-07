@@ -65,16 +65,28 @@ describe('configuration separation', () => {
     expect(() =>
       loadConfig({ NODE_ENV: 'production', DATABASE_URL: 'mysql://a@b/c' }),
     ).toThrow(ConfigError);
-    const config = loadConfig({
-      NODE_ENV: 'production',
-      DATABASE_URL: 'postgres://app:secret@db.internal:6432/himma',
-    });
+    // W6-4A: production additionally requires the TLS contract for a non-loopback host.
+    expect(() =>
+      loadConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgres://app:secret@db.internal:6432/himma' }),
+    ).toThrow(/DATABASE_SSL_MODE is required/);
+    const PEM = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+    const config = loadConfig(
+      {
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgres://app:secret@db.internal:6432/himma',
+        DATABASE_SSL_MODE: 'verify-full',
+        DATABASE_SSL_CA_FILE: '/etc/himma/certs/rds-global-bundle.pem',
+      },
+      { readFile: () => PEM },
+    );
     expect(config.database).toEqual({
       host: 'db.internal',
       port: 6432,
       database: 'himma',
       user: 'app',
       password: 'secret',
+      ssl: { mode: 'verify-full', caFile: '/etc/himma/certs/rds-global-bundle.pem', ca: PEM },
+      pool: { max: 10, connectionTimeoutMs: 5_000, idleTimeoutMs: 30_000 },
     });
   });
 

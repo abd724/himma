@@ -36,6 +36,7 @@
 import { Client } from 'pg';
 
 import type { DatabaseConfig } from '../config/env';
+import { clientOptionsFor } from './connection-options';
 
 export const RUNTIME_LOGIN_ROLES = ['himma_api', 'himma_worker'] as const;
 export type RuntimeLoginRole = (typeof RUNTIME_LOGIN_ROLES)[number];
@@ -82,13 +83,7 @@ export async function provisionRuntimeRoles(
       );
     }
   }
-  const client = new Client({
-    host: input.admin.host,
-    port: input.admin.port,
-    database: input.admin.database,
-    user: input.admin.user,
-    ...(input.admin.password !== undefined ? { password: input.admin.password } : {}),
-  });
+  const client = new Client(clientOptionsFor(input.admin));
   await client.connect();
   const created: ProvisionedLoginRole[] = [];
   const updated: ProvisionedLoginRole[] = [];

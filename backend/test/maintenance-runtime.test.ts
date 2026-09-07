@@ -18,6 +18,7 @@ import { ProductionRuntimeError } from '../src/app/production-runtime';
 import type { RuntimeConfig } from '../src/config/runtime';
 import { DEFAULT_MAINTENANCE_POLICY, DEFAULT_SCHEDULER_POLICY } from '../src/config/runtime';
 import { newId } from '../src/db/ids';
+import { clientOptionsFor } from '../src/db/connection-options';
 import { provisionRuntimeRoles } from '../src/db/provision-runtime-roles';
 import {
   composeMaintenanceRuntime,
@@ -463,7 +464,7 @@ describe('interruption, crash, and concurrency', () => {
 
   it('a concurrent invocation of the same job is skipped (lock held) with exit 0 and deletes nothing', async () => {
     await seedRateLimitWindows(3, 0, 'held');
-    const holder = new Client({ ...testDb.config.database });
+    const holder = new Client(clientOptionsFor(testDb.config.database));
     await holder.connect();
     const runtime = await compose();
     try {

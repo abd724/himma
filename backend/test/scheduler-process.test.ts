@@ -61,6 +61,7 @@ function spawnScript(script: string, args: string[], env: Record<string, string>
 function startWorker(extra: Record<string, string> = {}): Proc {
   return spawnScript('scripts/start-worker.ts', [], {
     NODE_ENV: 'production',
+    DATABASE_SSL_MODE: 'disable', // W6-4A: the loopback certification-harness exception (explicit; refused for any non-loopback host)
     RUNTIME_ROLE: 'worker',
     DATABASE_URL: databaseUrlFor('himma_worker', workerPassword),
     LOG_LEVEL: 'info',
@@ -75,6 +76,7 @@ function startWorker(extra: Record<string, string> = {}): Proc {
 function startMaintenance(args: string[], extra: Record<string, string> = {}): Proc {
   return spawnScript('scripts/start-maintenance.ts', args, {
     NODE_ENV: 'production',
+    DATABASE_SSL_MODE: 'disable', // W6-4A: the loopback certification-harness exception (explicit; refused for any non-loopback host)
     RUNTIME_ROLE: 'maintenance',
     DATABASE_URL: databaseUrlFor('himma_maintenance_runner', maintenancePassword),
     LOG_LEVEL: 'info',

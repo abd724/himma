@@ -1,0 +1,6 @@
+# Remote state for the staging WORKLOAD account (created by infra/terraform/bootstrap in that account).
+bucket       = "himma-staging-tfstate-000000000000"
+key          = "stacks/himma/terraform.tfstate"
+region       = "me-central-1"
+encrypt      = true
+use_lockfile = true   # Terraform ≥ 1.10 S3-native state locking (no DynamoDB table)

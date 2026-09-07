@@ -62,6 +62,7 @@ function spawnApi(env: Record<string, string>): {
 async function startReadyApi(): Promise<ApiProcess> {
   const spawned = spawnApi({
     NODE_ENV: 'production',
+    DATABASE_SSL_MODE: 'disable', // W6-4A: the loopback certification-harness exception (explicit; refused for any non-loopback host)
     RUNTIME_ROLE: 'api',
     DATABASE_URL: databaseUrlFor('himma_api', apiPassword),
     HOST: '127.0.0.1',
@@ -198,6 +199,7 @@ describe('startup refusals (docs/37 §6/§28)', () => {
   it('a role/credential mismatch refuses startup with a bounded message (worker credential under RUNTIME_ROLE=api)', async () => {
     const spawned = spawnApi({
       NODE_ENV: 'production',
+    DATABASE_SSL_MODE: 'disable', // W6-4A: the loopback certification-harness exception (explicit; refused for any non-loopback host)
       RUNTIME_ROLE: 'api',
       DATABASE_URL: databaseUrlFor('himma_worker', workerPassword),
       HOST: '127.0.0.1',
@@ -213,6 +215,7 @@ describe('startup refusals (docs/37 §6/§28)', () => {
   it('missing mandatory production configuration refuses with the variable name', async () => {
     const spawned = spawnApi({
       NODE_ENV: 'production',
+    DATABASE_SSL_MODE: 'disable', // W6-4A: the loopback certification-harness exception (explicit; refused for any non-loopback host)
       RUNTIME_ROLE: 'api',
       DATABASE_URL: databaseUrlFor('himma_api', apiPassword),
       PORT: '0',

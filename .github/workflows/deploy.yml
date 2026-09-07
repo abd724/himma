@@ -1,0 +1,151 @@
+# Himma — deployment pipeline (docs/38 §11; docs/36 IN-11): GitHub OIDC →
+# AWS (no long-lived keys). Deploy-DISABLED by construction until the
+# repository variables that name the workload accounts exist:
+#   vars.HIMMA_STAGING_ACCOUNT_ID, vars.HIMMA_STAGING_DEPLOY_ROLE_ARN,
+#   vars.HIMMA_BUILD_ROLE_ARN, vars.HIMMA_ECR_REPOSITORY, vars.HIMMA_ROOT_DOMAIN
+#   (production adds vars.HIMMA_PRODUCTION_ACCOUNT_ID / _DEPLOY_ROLE_ARN).
+# Stages: build+push immutable image (git SHA) → staging migration task →
+# staging rollout (api, worker) → readiness/smoke → [manual approval on the
+# GitHub `production` environment] → production migration task → rollout →
+# readiness/smoke. Never a `db:down`; never PAYMENTS_MODE=live (the
+# application has no such value); secrets are never pipeline inputs — the
+# tasks read them from Secrets Manager at start.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Existing immutable image tag (git SHA) to roll out — used for ROLLBACK to a previous image"
+        required: false
+        default: ""
+      target:
+        description: "staging | production (production requires the environment approval)"
+        required: true
+        default: staging
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.event.inputs.target || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: me-central-1
+
+jobs:
+  gate:
+    name: deployment enabled?
+    runs-on: ubuntu-latest
+    outputs:
+      staging: ${{ steps.check.outputs.staging }}
+      production: ${{ steps.check.outputs.production }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - id: check
+        env:
+          STAGING_ACCOUNT: ${{ vars.HIMMA_STAGING_ACCOUNT_ID }}
+          STAGING_ROLE: ${{ vars.HIMMA_STAGING_DEPLOY_ROLE_ARN }}
+          BUILD_ROLE: ${{ vars.HIMMA_BUILD_ROLE_ARN }}
+          ECR: ${{ vars.HIMMA_ECR_REPOSITORY }}
+          PROD_ACCOUNT: ${{ vars.HIMMA_PRODUCTION_ACCOUNT_ID }}
+          PROD_ROLE: ${{ vars.HIMMA_PRODUCTION_DEPLOY_ROLE_ARN }}
+          TARGET: ${{ github.event.inputs.target || 'staging' }}
+          INPUT_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          if [[ -n "$STAGING_ACCOUNT" && -n "$STAGING_ROLE" && -n "$BUILD_ROLE" && -n "$ECR" ]]; then
+            echo "staging=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "staging=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::deployment is DISABLED — the staging account/role variables are not configured (W6-4B bootstrap pending)"
+          fi
+          if [[ "$TARGET" == "production" && -n "$PROD_ACCOUNT" && -n "$PROD_ROLE" ]]; then
+            echo "production=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "production=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=${INPUT_TAG:-$GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build + push immutable image
+    needs: [gate]
+    if: needs.gate.outputs.staging == 'true' && github.event.inputs.image_tag == ''
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.HIMMA_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ vars.HIMMA_ECR_REPOSITORY }}:${{ github.sha }}
+          build-args: |
+            HIMMA_GIT_SHA=${{ github.sha }}
+            HIMMA_BUILD_DATE=${{ github.event.head_commit.timestamp || '' }}
+          provenance: false
+
+  deploy-staging:
+    name: staging — migrate → roll out → readiness → smoke
+    needs: [gate, build]
+    if: always() && needs.gate.outputs.staging == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      ENVIRONMENT: staging
+      IMAGE_TAG: ${{ needs.gate.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.HIMMA_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: preflight — the authenticated account must be the staging workload account
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "account=$account region=$AWS_REGION environment=$ENVIRONMENT"
+          [[ "$account" == "${{ vars.HIMMA_STAGING_ACCOUNT_ID }}" ]]
+      - name: migration task (schema-owner authority; db:migrate then db:verify) — the rollout waits for it
+        run: infra/scripts/ecs-deploy.sh migrate
+      - name: roll out api + worker to the immutable image
+        run: infra/scripts/ecs-deploy.sh rollout
+      - name: readiness + smoke
+        run: infra/scripts/ecs-deploy.sh smoke
+        env:
+          API_URL: https://api.staging.${{ vars.HIMMA_ROOT_DOMAIN }}
+
+  deploy-production:
+    name: production — approval → migrate → roll out → readiness → smoke
+    needs: [gate, deploy-staging]
+    if: needs.gate.outputs.production == 'true' && needs.deploy-staging.result == 'success'
+    runs-on: ubuntu-latest
+    environment: production # manual reviewers required on this GitHub environment
+    env:
+      ENVIRONMENT: production
+      IMAGE_TAG: ${{ needs.gate.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.HIMMA_PRODUCTION_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: preflight — the authenticated account must be the production workload account
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "account=$account region=$AWS_REGION environment=$ENVIRONMENT"
+          [[ "$account" == "${{ vars.HIMMA_PRODUCTION_ACCOUNT_ID }}" ]]
+      - run: infra/scripts/ecs-deploy.sh migrate
+      - run: infra/scripts/ecs-deploy.sh rollout
+      - run: infra/scripts/ecs-deploy.sh smoke
+        env:
+          API_URL: https://api.${{ vars.HIMMA_ROOT_DOMAIN }}
