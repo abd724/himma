@@ -60,7 +60,7 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 
 | ID | Gate | Status | Pri | Depends on | Mile | Owner | Evidence · closure proof |
 |---|---|---|---|---|---|---|---|
-| IN-01 | Hosting region / data-residency ruling (docs/23 §18.3) | OWNER-DECISION | P0 | — | M1 | Owner + counsel | Blocks Cognito region, PG, S3, PDPL posture. Proof: recorded ruling |
+| IN-01 | Hosting region / data-residency ruling (docs/23 §18.3). **RULED (this commit — owner decision 2026-09-07 on docs/38):** AWS, primary region `me-central-1` (UAE), separate Staging and Production workload accounts under AWS Organizations (no workloads in the management account); Cognito User Pools, ECS/Fargate and RDS PostgreSQL Multi-AZ/PITR confirmed available in the region; RDS PostgreSQL Multi-AZ is the production database direction. Counsel receives this ruling for SE-04 | CLOSED (owner ruling recorded) | P0 | — | M1 | Owner + counsel | docs/38 §13/§14; this commit. The ruling unblocks IN-03/04/05/06/12, ID-01, ID-08, SE-04's residency input (each still needs its own action) |
 | IN-02 | **Production service entrypoint + composition.** **CLOSED by W6-1** (OWNER-APPROVED at `e01af85`): `npm run start:api` → the one canonical bootstrap (`src/app/production-runtime.ts`) composing canonical pool + restricted `himma_api` identity (asserted at startup), Cognito-or-unconfigured identity, PG rate-limit store, S3 evidence store when configured, absent-or-TEST payments, structured logging, liveness/readiness, graceful shutdown; two-process production boot proven on the local harness (docs/37 W6-1 record). Staging-topology boot rides IN-12 | CODE-COMPLETE | P0 | IN-01 | M1 | Engineering (W6) | docs/37 W6-1 record; `test/production-api-process.test.ts` |
 | IN-03 | Production API origin: DNS + TLS + the `himma.app` domain estate (also carries PA-05 bounce/universal links and LE-09 share-link resolution) | EXTERNAL-DEPENDENCY | P0 | IN-01 | M1 | Owner/company | App refuses production build without `EXPO_PUBLIC_API_URL` (docs/34). Proof: https origin serving `/internal/health` |
 | IN-04 | Secret management: managed store delivering env vars (backend is env-only by design; `loadConfig` fail-closed — production refuses missing `DATABASE_URL`) | CONFIGURATION-REQUIRED | P0 | IN-01 | M1 | Ops | `config/env.ts:123-132`. Proof: secrets sourced from the managed store, none in code/images |
@@ -188,20 +188,20 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 
 ## 4. Tallies
 
-**Open gates: 80** — the LR-0 baseline was 89 (67 P0 · 22 P1); **W6-1 closed IN-02, IN-07, IN-09** (OWNER-APPROVED at `e01af85`); **W6-2 closed OP-03** (OWNER-APPROVED at `8eb8b08`); **W6-3 closed OP-01, OP-02, OP-04, OP-05, OP-07** (OWNER-APPROVED at `d5ef107`; OP-06, PA-09, PA-10, SE-05 advanced, not closed). Plus the 12 CODE-COMPLETE foundations of §1 and the 10 post-launch register items of §12.
+**Open gates: 79** — the LR-0 baseline was 89 (67 P0 · 22 P1); **W6-1 closed IN-02, IN-07, IN-09** (OWNER-APPROVED at `e01af85`); **W6-2 closed OP-03** (OWNER-APPROVED at `8eb8b08`); **W6-3 closed OP-01, OP-02, OP-04, OP-05, OP-07** (OWNER-APPROVED at `d5ef107`; OP-06, PA-09, PA-10, SE-05 advanced, not closed); **the owner's infrastructure ruling closed IN-01** (this commit — AWS `me-central-1`, separate staging/production workload accounts; docs/38). Plus the 12 CODE-COMPLETE foundations of §1 and the 10 post-launch register items of §12.
 
 | Status | Count (LR-0 → now) |
 |---|---|
 | IMPLEMENTATION-REQUIRED | 35 → 32 → 31 → 26 |
+| OWNER-DECISION | 14 → 13 |
 | EXTERNAL-DEPENDENCY | 19 |
-| OWNER-DECISION | 14 |
 | CONFIGURATION-REQUIRED | 9 |
 | PRODUCTION-SMOKE-REQUIRED | 8 |
 | BLOCKED | 4 |
 
 | Priority | Count (LR-0 → now) |
 |---|---|
-| P0 launch blockers | 67 → 64 → 63 → 60 |
+| P0 launch blockers | 67 → 64 → 63 → 60 → 59 |
 | P1 launch hardening | 22 → 20 |
 | Post-launch (register, §12) | 10 |
 
