@@ -22,6 +22,11 @@
  * - defensively REVOKES any maintenance-role membership if such a role
  *   exists (the API/worker logins must be structurally unable to assume
  *   maintenance authority — the W6-0 owner correction);
+ * - W6-3: when a maintenance password is injected, creates/updates
+ *   `himma_maintenance_runner` as the ONLY member of the `himma_maintenance`
+ *   privilege role (migration 0023) and REVOKES `himma_app` from it — the
+ *   maintenance login holds the bounded retention/repair authority and no
+ *   general application DML;
  * - never logs or returns password material.
  *
  * Driven by an ADMIN-capable connection (the same authority that runs
@@ -35,17 +40,23 @@ import type { DatabaseConfig } from '../config/env';
 export const RUNTIME_LOGIN_ROLES = ['himma_api', 'himma_worker'] as const;
 export type RuntimeLoginRole = (typeof RUNTIME_LOGIN_ROLES)[number];
 
-/** Roles the runtime logins must NEVER be members of (defense in depth). */
-const FORBIDDEN_MEMBERSHIPS = ['himma_maintenance'] as const;
+/** W6-3: the maintenance LOGIN (sole member of the maintenance privilege role). */
+export const MAINTENANCE_LOGIN_ROLE = 'himma_maintenance_runner' as const;
+export const MAINTENANCE_PRIVILEGE_ROLE = 'himma_maintenance' as const;
+
+export type ProvisionedLoginRole = RuntimeLoginRole | typeof MAINTENANCE_LOGIN_ROLE;
+
+/** Roles the API/worker logins must NEVER be members of (defense in depth). */
+const FORBIDDEN_MEMBERSHIPS = [MAINTENANCE_PRIVILEGE_ROLE] as const;
 
 export interface ProvisionRuntimeRolesInput {
   admin: DatabaseConfig;
-  passwords: Record<RuntimeLoginRole, string>;
+  passwords: Record<RuntimeLoginRole, string> & { [MAINTENANCE_LOGIN_ROLE]?: string };
 }
 
 export interface ProvisionRuntimeRolesResult {
-  created: RuntimeLoginRole[];
-  updated: RuntimeLoginRole[];
+  created: ProvisionedLoginRole[];
+  updated: ProvisionedLoginRole[];
 }
 
 const IDENTIFIER_PATTERN = /^[a-z_][a-z0-9_]*$/;
@@ -60,7 +71,10 @@ function quoteIdentifier(name: string): string {
 export async function provisionRuntimeRoles(
   input: ProvisionRuntimeRolesInput,
 ): Promise<ProvisionRuntimeRolesResult> {
-  for (const role of RUNTIME_LOGIN_ROLES) {
+  const maintenancePassword = input.passwords[MAINTENANCE_LOGIN_ROLE];
+  const roles: ProvisionedLoginRole[] =
+    maintenancePassword !== undefined ? [...RUNTIME_LOGIN_ROLES, MAINTENANCE_LOGIN_ROLE] : [...RUNTIME_LOGIN_ROLES];
+  for (const role of roles) {
     const password = input.passwords[role];
     if (typeof password !== 'string' || password.length < 16) {
       throw new Error(
@@ -76,8 +90,8 @@ export async function provisionRuntimeRoles(
     ...(input.admin.password !== undefined ? { password: input.admin.password } : {}),
   });
   await client.connect();
-  const created: RuntimeLoginRole[] = [];
-  const updated: RuntimeLoginRole[] = [];
+  const created: ProvisionedLoginRole[] = [];
+  const updated: ProvisionedLoginRole[] = [];
   try {
     // Serialize concurrent provisioning runs (idempotency under overlap).
     await client.query(
@@ -89,9 +103,16 @@ export async function provisionRuntimeRoles(
         'himma_app does not exist — run migrations before provisioning runtime logins',
       );
     }
-    for (const role of RUNTIME_LOGIN_ROLES) {
+    const maintenanceRoleExists =
+      ((await client.query(`SELECT 1 FROM pg_roles WHERE rolname = $1`, [MAINTENANCE_PRIVILEGE_ROLE])).rowCount ?? 0) > 0;
+    if (maintenancePassword !== undefined && !maintenanceRoleExists) {
+      throw new Error(
+        `${MAINTENANCE_PRIVILEGE_ROLE} does not exist — run migrations (0023) before provisioning the maintenance login`,
+      );
+    }
+    for (const role of roles) {
       const ident = quoteIdentifier(role);
-      const literal = client.escapeLiteral(input.passwords[role]);
+      const literal = client.escapeLiteral(input.passwords[role] as string);
       const exists = await client.query(`SELECT 1 FROM pg_roles WHERE rolname = $1`, [role]);
       if (exists.rowCount === 0) {
         await client.query(
@@ -103,6 +124,13 @@ export async function provisionRuntimeRoles(
           `ALTER ROLE ${ident} LOGIN PASSWORD ${literal} NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT`,
         );
         updated.push(role);
+      }
+      if (role === MAINTENANCE_LOGIN_ROLE) {
+        // The maintenance login: bounded authority ONLY — never the
+        // application DML set (docs/37 §28).
+        await client.query(`GRANT ${quoteIdentifier(MAINTENANCE_PRIVILEGE_ROLE)} TO ${ident}`);
+        await client.query(`REVOKE himma_app FROM ${ident}`);
+        continue;
       }
       await client.query(`GRANT himma_app TO ${ident}`);
       for (const forbidden of FORBIDDEN_MEMBERSHIPS) {

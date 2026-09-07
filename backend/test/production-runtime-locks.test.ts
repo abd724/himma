@@ -103,7 +103,7 @@ describe('W6-2: the worker graph (start-worker → worker-runtime) is equally de
     }
   });
 
-  it('invokes certified authority only — no settlement/confirmation/commission logic, no Stripe driver, no migrations, no W6-3 sweeps', () => {
+  it('invokes certified authority only — no settlement/confirmation/commission logic, no Stripe driver, no migrations; the W6-3 sweeps live ONLY in scheduled-jobs.ts', () => {
     for (const file of workerGraph) {
       const source = sourceOf(file);
       expect(source).not.toContain('new StripeDriver');
@@ -122,5 +122,94 @@ describe('W6-2: the worker graph (start-worker → worker-runtime) is equally de
     expect(runtime).toContain('resolvePaymentProvider');
     expect(runtime).toContain("assertRuntimeDbIdentity(db, 'worker')");
     expect(runtime).toMatch(/import { createPool } from '..\/db\/pool'/);
+  });
+});
+
+describe('W6-3: the scheduler graph is non-destructive and the maintenance graph is bounded', () => {
+  const schedulerGraph = ['src/worker/scheduler.ts', 'src/worker/scheduled-jobs.ts', 'src/observability/alerts.ts'];
+  const maintenanceGraph = ['scripts/start-maintenance.ts', 'src/maintenance/maintenance-runtime.ts'];
+
+  it('scheduler/scheduled-jobs/alerts: dev-free, no DELETE, no maintenance authority, no settlement/commission logic, no Stripe driver, no migrations', () => {
+    for (const file of schedulerGraph) {
+      const source = sourceOf(file);
+      expect(source).not.toContain('dev-server');
+      expect(source).not.toContain('providers/dev/');
+      expect(source).not.toContain('providers/fake/');
+      expect(source).not.toContain('DeterministicPaymentProvider');
+      expect(source).not.toContain('deterministic-provider');
+      expect(source).not.toContain('InMemoryRateLimiterStore');
+      expect(source).not.toMatch(/localhost|127\.0\.0\.1|0\.0\.0\.0/);
+      expect(source).not.toMatch(/DELETE FROM/i);
+      expect(source).not.toContain('himma_maintenance');
+      expect(source).not.toContain('maintenance_prune');
+      expect(source).not.toContain('new StripeDriver');
+      expect(source).not.toContain('runMigrationsUp');
+      expect(source).not.toContain('confirmPaidBooking(');
+      expect(source).not.toContain('confirmPaidEntitlementPurchase(');
+      expect(source).not.toContain('computeCommissionSplit');
+      // Background correlation never touches the audit request seam.
+      expect(source).not.toContain('runWithRequestContext');
+      expect(source).not.toContain('appendAuditEvent');
+    }
+  });
+
+  it('scheduled-jobs.ts calls exactly the certified services and nothing writes payment/booking state directly', () => {
+    const source = sourceOf('src/worker/scheduled-jobs.ts');
+    for (const service of [
+      'sweepLapsedPaidCheckouts(',
+      'reconcileLedgerAgainstProvider(',
+      'findStuckPaymentStates(',
+      'sweepExpiredHolds(',
+      'processExpiredAssignments(',
+      'expireDueStaffInvitations(',
+    ]) {
+      expect(source).toContain(service);
+    }
+    expect(source).not.toMatch(/UPDATE\s+(payment_intent|payment_attempt|booking|capacity_hold|entitlement)/i);
+    expect(source).not.toMatch(/INSERT\s+INTO/i);
+    expect(source).not.toContain('updateTable(');
+    expect(source).not.toContain('insertInto(');
+  });
+
+  it('the maintenance graph holds no DELETE statement of its own (the bounded database functions are the only destructive authority), never composes payments/identity, and is dev-free', () => {
+    for (const file of maintenanceGraph) {
+      const source = sourceOf(file);
+      expect(source).not.toMatch(/DELETE FROM/i);
+      expect(source).not.toContain('deleteFrom(');
+      expect(source).not.toContain('dev-server');
+      expect(source).not.toContain('providers/dev/');
+      expect(source).not.toContain('providers/fake/');
+      expect(source).not.toContain('DeterministicPaymentProvider');
+      expect(source).not.toContain('resolvePaymentProvider');
+      expect(source).not.toContain('new StripeDriver');
+      expect(source).not.toContain('runMigrationsUp');
+      expect(source).not.toContain('confirmPaidBooking(');
+      expect(source).not.toContain('computeCommissionSplit');
+      expect(source).not.toContain('sweepLapsedPaidCheckouts');
+      expect(source).not.toMatch(/localhost|127\.0\.0\.1|0\.0\.0\.0/);
+    }
+    const runtime = sourceOf('src/maintenance/maintenance-runtime.ts');
+    expect(runtime).toContain("assertRuntimeDbIdentity(db, 'maintenance')");
+    expect(runtime).toMatch(/import { createPool } from '..\/db\/pool'/);
+    // Only the enumerated bounded functions are ever invoked.
+    const invoked = [...runtime.matchAll(/maintenance_[a-z_]+/g)].map((m) => m[0]);
+    expect(new Set(invoked)).toEqual(
+      new Set([
+        'maintenance_prune_rate_limit_windows',
+        'maintenance_prune_redemption_lookup_attempts',
+        'maintenance_prune_idempotency_keys',
+        'maintenance_prune_published_outbox',
+        'maintenance_prune_job_runs',
+        'maintenance_unquarantine_outbox',
+      ]),
+    );
+  });
+
+  it('the payment capability truth is untouched by W6-3: productionChargingPossible stays the literal false and no live mode exists', () => {
+    const composition = sourceOf('src/modules/payment/provider-composition.ts');
+    expect(composition).toMatch(/productionChargingPossible:\s*false/);
+    const config = sourceOf('src/config/runtime.ts');
+    expect(config).toContain('There is no "live" value');
+    expect(config).not.toMatch(/'live'\s*\|/);
   });
 });

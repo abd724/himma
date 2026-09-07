@@ -14,6 +14,7 @@ import { Pool } from 'pg';
 
 import { ProductionRuntimeError } from '../src/app/production-runtime';
 import type { RuntimeConfig } from '../src/config/runtime';
+import { DEFAULT_MAINTENANCE_POLICY, DEFAULT_SCHEDULER_POLICY } from '../src/config/runtime';
 import { appendAuditEvent } from '../src/db/audit';
 import { withTransaction } from '../src/db/transaction';
 import { provisionRuntimeRoles } from '../src/db/provision-runtime-roles';
@@ -49,6 +50,8 @@ function workerConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
     shutdownDrainMs: 5_000,
     paymentsMode: 'disabled',
     worker: { outboxPollMs: 100, outboxBatchSize: 50, outboxMaxAttempts: 3, paymentPollMs: 30_000 },
+    scheduler: { ...DEFAULT_SCHEDULER_POLICY, disabledJobs: [] },
+    maintenance: { ...DEFAULT_MAINTENANCE_POLICY },
     ...overrides,
   };
 }
@@ -135,10 +138,22 @@ describe('fail-closed composition (docs/37 §15)', () => {
     const { stream, lines } = captured();
     const runtime = await composeWorkerRuntime(workerConfig(), { logDestination: stream });
     try {
-      expect(runtime.loops.map((loop) => loop.name)).toEqual(['outbox']);
+      expect(runtime.loops.map((loop) => loop.name)).toEqual(['outbox', 'scheduler']);
       expect(runtime.paymentAvailable).toBe(false);
-      expect(runtime.requiredMigrationHead).toBe('0022_outbox_delivery_state');
+      expect(runtime.requiredMigrationHead).toBe('0023_job_run_and_maintenance_authority');
       expect(lines.join('')).toContain('payment processing unavailable');
+      // W6-3: provider-dependent jobs are explicitly UNAVAILABLE without a
+      // composed provider; the pure-read/hygiene jobs compose regardless.
+      expect(runtime.unavailableJobs.map((job) => job.name).sort()).toEqual([
+        'payment.checkout-sweep',
+        'payment.reconciliation',
+      ]);
+      expect(runtime.scheduledJobs.map((job) => job.name).sort()).toEqual([
+        'booking.hold-sweep',
+        'identity.role-expiry',
+        'payment.stuck-state',
+        'provider.invitation-expiry',
+      ]);
       const who = await sql<{ u: string }>`SELECT current_user AS u`.execute(runtime.db);
       expect(who.rows[0]?.u).toBe('himma_worker');
     } finally {
@@ -163,7 +178,7 @@ describe('supervised loops, correlation, redaction, shutdown', () => {
     const { stream, lines } = captured();
     const runtime = await composeWorkerRuntime(
       workerConfig({ worker: { outboxPollMs: 100, outboxBatchSize: 50, outboxMaxAttempts: 2, paymentPollMs: 30_000 } }),
-      { handlers: [probeHandler], logDestination: stream },
+      { handlers: [probeHandler], logDestination: stream, scheduledJobs: [] },
     );
     runtime.start();
     try {
@@ -221,7 +236,10 @@ describe('supervised loops, correlation, redaction, shutdown', () => {
       await expect(pool.query('CREATE TABLE w6_worker_rogue (id int)')).rejects.toMatchObject({ code: '42501' });
       await expect(pool.query('DELETE FROM outbox_event')).rejects.toMatchObject({ code: '42501' });
       await expect(pool.query('DELETE FROM rate_limit_window')).rejects.toMatchObject({ code: '42501' });
-      await expect(pool.query('SET ROLE himma_maintenance')).rejects.toBeTruthy();
+      await expect(pool.query('SET ROLE himma_maintenance')).rejects.toMatchObject({ code: '42501' });
+      await expect(
+        pool.query(`SELECT maintenance_prune_idempotency_keys(interval '90 days', 10)`),
+      ).rejects.toMatchObject({ code: '42501' });
       // The relay bookkeeping columns ARE updatable (0022 column grant); payload is not.
       const inserted = await pool.query(
         `INSERT INTO outbox_event (id, aggregate_type, aggregate_id, sequence_no, event_type, payload)

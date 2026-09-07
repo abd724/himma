@@ -397,6 +397,19 @@ const SCHEMA_CHECKS: Record<string, SchemaCheck[]> = {
     { kind: 'constraint', name: 'ck_outbox_event_quarantine_exclusive' },
     { kind: 'constraint', name: 'ck_outbox_event_outcome_code_shape' },
   ],
+  // 0023 — W6-3 scheduler run bookkeeping + bounded maintenance authority
+  // (docs/37 §18/§19/§20): every retention statement is a function.
+  '0023_job_run_and_maintenance_authority': [
+    { kind: 'table', name: 'job_run' },
+    { kind: 'constraint', name: 'ck_job_run_outcome' },
+    { kind: 'constraint', name: 'ck_job_run_finished' },
+    { kind: 'function', name: 'maintenance_prune_rate_limit_windows' },
+    { kind: 'function', name: 'maintenance_prune_redemption_lookup_attempts' },
+    { kind: 'function', name: 'maintenance_prune_idempotency_keys' },
+    { kind: 'function', name: 'maintenance_prune_published_outbox' },
+    { kind: 'function', name: 'maintenance_prune_job_runs' },
+    { kind: 'function', name: 'maintenance_unquarantine_outbox' },
+  ],
 };
 
 export interface VerificationReport {

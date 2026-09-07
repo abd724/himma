@@ -1,5 +1,7 @@
 /**
  * W6-1 — the production runtime configuration contract (docs/37 §6).
+ * W6-3 adds the scheduler and maintenance operational policy (bounded,
+ * engineering-defaulted; never a correctness input).
  *
  * Builds on the certified `loadConfig` (env.ts) and adds the runtime-role
  * layer: role, listener, logging, payment mode, checkout URLs, evidence
@@ -68,6 +70,119 @@ export interface RuntimeConfig extends BackendConfig {
     paymentPollMs: number;
     /** Optional minimal liveness listener port (absent = none). */
     statusPort?: number;
+  };
+  /**
+   * W6-3 worker-hosted scheduler policy (docs/37 §13/§20 — engineering-owned).
+   * Cadences are per-job engineering defaults (scheduled-jobs.ts); the
+   * tick only decides how often DUE-ness is evaluated on the DATABASE clock.
+   */
+  scheduler: {
+    /** How often the worker evaluates due jobs (never a correctness input). */
+    tickMs: number;
+    /** Job names switched off for this deployment (operational choice). */
+    disabledJobs: string[];
+    /** Per-job cadence overrides in ms (`SCHEDULER_INTERVALS=name=ms,…`). */
+    intervalOverridesMs: Record<string, number>;
+  };
+  /**
+   * W6-3 maintenance-mode policy (docs/37 §18/§19 — engineering-scoped
+   * retention horizons and batch bounds; floors are ALSO enforced inside the
+   * database functions, so a shorter value cannot delete more).
+   */
+  maintenance: {
+    batchSize: number;
+    maxBatches: number;
+    retentionDays: {
+      rateLimitWindows: number;
+      redemptionLookupAttempts: number;
+      idempotencyKeys: number;
+      publishedOutbox: number;
+      jobRuns: number;
+    };
+  };
+}
+
+const JOB_NAME_PATTERN = /^[a-z][a-z0-9.-]{0,63}$/;
+
+function parseJobNameList(name: string, raw: string | undefined): string[] {
+  if (raw === undefined || raw.trim() === '') return [];
+  const names = raw.split(',').map((part) => part.trim()).filter((part) => part !== '');
+  for (const job of names) {
+    if (!JOB_NAME_PATTERN.test(job)) {
+      throw new ConfigError(`${name} contains an invalid job name "${job}"`);
+    }
+  }
+  return [...new Set(names)];
+}
+
+function parseIntervalOverrides(raw: string | undefined): Record<string, number> {
+  const overrides: Record<string, number> = {};
+  if (raw === undefined || raw.trim() === '') return overrides;
+  for (const part of raw.split(',')) {
+    const entry = part.trim();
+    if (entry === '') continue;
+    const [job, value, ...rest] = entry.split('=');
+    if (job === undefined || value === undefined || rest.length > 0 || !JOB_NAME_PATTERN.test(job.trim())) {
+      throw new ConfigError(`SCHEDULER_INTERVALS entries must be "<job>=<ms>" — received "${entry}"`);
+    }
+    overrides[job.trim()] = parseBoundedInt(
+      `SCHEDULER_INTERVALS[${job.trim()}]`,
+      value.trim(),
+      0,
+      1_000,
+      7 * 24 * 3_600_000,
+    );
+  }
+  return overrides;
+}
+
+export const DEFAULT_SCHEDULER_POLICY: Readonly<RuntimeConfig['scheduler']> = {
+  tickMs: 5_000,
+  disabledJobs: [],
+  intervalOverridesMs: {},
+};
+
+function parseSchedulerPolicy(env: NodeJS.ProcessEnv): RuntimeConfig['scheduler'] {
+  return {
+    tickMs: parseBoundedInt('SCHEDULER_TICK_MS', env.SCHEDULER_TICK_MS, DEFAULT_SCHEDULER_POLICY.tickMs, 250, 60_000),
+    disabledJobs: parseJobNameList('SCHEDULER_DISABLED_JOBS', env.SCHEDULER_DISABLED_JOBS),
+    intervalOverridesMs: parseIntervalOverrides(env.SCHEDULER_INTERVALS),
+  };
+}
+
+/**
+ * Engineering-scoped retention horizons (docs/37 §18). The database
+ * functions refuse anything below their floors (1 d / 1 d / 30 d / 7 d / 7 d)
+ * regardless of what configuration says.
+ */
+export const DEFAULT_MAINTENANCE_POLICY: Readonly<RuntimeConfig['maintenance']> = {
+  batchSize: 1_000,
+  maxBatches: 100,
+  retentionDays: {
+    rateLimitWindows: 7,
+    redemptionLookupAttempts: 7,
+    idempotencyKeys: 90,
+    publishedOutbox: 30,
+    jobRuns: 30,
+  },
+};
+
+function parseMaintenancePolicy(env: NodeJS.ProcessEnv): RuntimeConfig['maintenance'] {
+  const d = DEFAULT_MAINTENANCE_POLICY;
+  return {
+    batchSize: parseBoundedInt('MAINTENANCE_BATCH', env.MAINTENANCE_BATCH, d.batchSize, 1, 10_000),
+    maxBatches: parseBoundedInt('MAINTENANCE_MAX_BATCHES', env.MAINTENANCE_MAX_BATCHES, d.maxBatches, 1, 100_000),
+    retentionDays: {
+      rateLimitWindows: parseBoundedInt(
+        'RETENTION_RATE_LIMIT_WINDOW_DAYS', env.RETENTION_RATE_LIMIT_WINDOW_DAYS, d.retentionDays.rateLimitWindows, 1, 3_650),
+      redemptionLookupAttempts: parseBoundedInt(
+        'RETENTION_REDEMPTION_LOOKUP_DAYS', env.RETENTION_REDEMPTION_LOOKUP_DAYS, d.retentionDays.redemptionLookupAttempts, 1, 3_650),
+      idempotencyKeys: parseBoundedInt(
+        'RETENTION_IDEMPOTENCY_KEY_DAYS', env.RETENTION_IDEMPOTENCY_KEY_DAYS, d.retentionDays.idempotencyKeys, 30, 3_650),
+      publishedOutbox: parseBoundedInt(
+        'RETENTION_OUTBOX_PUBLISHED_DAYS', env.RETENTION_OUTBOX_PUBLISHED_DAYS, d.retentionDays.publishedOutbox, 7, 3_650),
+      jobRuns: parseBoundedInt('RETENTION_JOB_RUN_DAYS', env.RETENTION_JOB_RUN_DAYS, d.retentionDays.jobRuns, 7, 3_650),
+    },
   };
 }
 
@@ -238,6 +353,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     shutdownDrainMs: parseDrainMs(env.SHUTDOWN_DRAIN_MS),
     paymentsMode: parsePaymentsMode(env.PAYMENTS_MODE),
     worker: parseWorkerPolicy(env),
+    scheduler: parseSchedulerPolicy(env),
+    maintenance: parseMaintenancePolicy(env),
   };
   const checkoutUrls = parseCheckoutUrls(env, production);
   if (checkoutUrls !== undefined) config.checkoutUrls = checkoutUrls;

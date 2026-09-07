@@ -21,6 +21,7 @@
     "bootstrap:admins": "tsx scripts/db-bootstrap-admins.ts",
     "start:api": "tsx scripts/start-api.ts",
     "start:worker": "tsx scripts/start-worker.ts",
+    "start:maintenance": "tsx scripts/start-maintenance.ts",
     "db:provision-roles": "tsx scripts/db-provision-runtime-roles.ts",
     "dev:server": "tsx scripts/dev-server.ts",
     "dev:seed": "tsx scripts/dev-seed.ts"

@@ -5,9 +5,10 @@
  * connections, readiness semantics (identity/migration-head/drain), and
  * graceful shutdown that never loses committed work.
  *
- * The maintenance PRODUCTION authority does not exist in W6-1 (docs/37
- * §37 — W6-3 owns it). A test-only fixture role proves API/worker
- * NON-membership without introducing any production grant.
+ * W6-3 made the maintenance authority REAL (migration 0023 — the
+ * `himma_maintenance` privilege role + bounded SECURITY DEFINER retention
+ * functions); the API/worker negative proofs below therefore run against
+ * the genuine grants, including EXECUTE refusal on the retention functions.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -16,6 +17,7 @@ import { Pool } from 'pg';
 
 import { composeProductionRuntime, createShutdown, ProductionRuntimeError } from '../src/app/production-runtime';
 import type { RuntimeConfig } from '../src/config/runtime';
+import { DEFAULT_MAINTENANCE_POLICY, DEFAULT_SCHEDULER_POLICY } from '../src/config/runtime';
 import { createDb } from '../src/db/kysely';
 import { expectedMigrationHead } from '../src/db/migrations';
 import { provisionRuntimeRoles } from '../src/db/provision-runtime-roles';
@@ -50,6 +52,8 @@ function runtimeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
     shutdownDrainMs: 5_000,
     paymentsMode: 'disabled',
     worker: { outboxPollMs: 200, outboxBatchSize: 100, outboxMaxAttempts: 8, paymentPollMs: 30_000 },
+    scheduler: { ...DEFAULT_SCHEDULER_POLICY },
+    maintenance: { ...DEFAULT_MAINTENANCE_POLICY },
     ...overrides,
   };
 }
@@ -79,15 +83,12 @@ beforeAll(async () => {
   });
   expect(again.created).toEqual([]);
   expect(again.updated.sort()).toEqual(['himma_api', 'himma_worker']);
-  // Test-only maintenance FIXTURE (never a production grant): proves the
-  // runtime logins cannot assume maintenance authority once it exists.
-  await sql`
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'himma_maintenance') THEN
-        CREATE ROLE himma_maintenance NOLOGIN;
-      END IF;
-    END $$;`.execute(testDb.db);
-  await sql`GRANT SELECT, DELETE ON rate_limit_window TO himma_maintenance`.execute(testDb.db);
+  // W6-3: the maintenance privilege role is REAL now (migration 0023) — the
+  // negative proofs below run against the genuine production grants, not a
+  // fixture (docs/37 §38: re-run of the W6-1 negatives once the grants exist).
+  const maintenanceRole = await sql<{ n: string }>`
+    SELECT count(*) AS n FROM pg_roles WHERE rolname = 'himma_maintenance'`.execute(testDb.db);
+  expect(Number(maintenanceRole.rows[0]?.n)).toBe(1);
 });
 
 afterAll(async () => {
@@ -148,6 +149,16 @@ describe('API negative privilege proofs on the EXACT runtime connection (docs/37
     });
   });
 
+  it('W6-3: the bounded retention functions are not executable by the API login', async () => {
+    await expect(
+      apiPool.query(`SELECT maintenance_prune_rate_limit_windows(interval '7 days', 10)`),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      apiPool.query(`SELECT maintenance_prune_published_outbox(interval '30 days', 10)`),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(apiPool.query('DELETE FROM job_run')).rejects.toMatchObject({ code: '42501' });
+  });
+
   it('arbitrary DDL fails and schema ownership is absent', async () => {
     await expect(apiPool.query('CREATE TABLE w6_rogue (id int)')).rejects.toMatchObject({
       code: '42501',
@@ -200,6 +211,12 @@ describe('worker login foundation (docs/37 §28; owner item 10)', () => {
     await expect(workerPool.query('CREATE TABLE w6_rogue2 (id int)')).rejects.toMatchObject({
       code: '42501',
     });
+    // W6-3: the worker records job runs but can neither delete them nor
+    // execute the maintenance retention functions.
+    await expect(
+      workerPool.query(`SELECT maintenance_prune_job_runs(interval '30 days', 10)`),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(workerPool.query('DELETE FROM job_run')).rejects.toMatchObject({ code: '42501' });
   });
 });
 

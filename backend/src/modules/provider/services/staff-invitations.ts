@@ -535,7 +535,10 @@ export async function revokeStaffInvitation(
  * once per invitation, idempotent under concurrent sweeps.
  */
 export async function expireDueStaffInvitations(
-  deps: StaffInvitationDeps,
+  // W6-3: the sweep reads ONLY the database — the parameter type names that
+  // exactly, so the worker composing it never has to hold the invitation
+  // pepper/mail dependencies (least privilege; zero behavior change).
+  deps: Pick<StaffInvitationDeps, 'db'>,
 ): Promise<{ expiredCount: number }> {
   return withTransaction(deps.db, async (trx) => {
     const expired = await expireDueInvitations(trx);

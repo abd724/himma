@@ -419,6 +419,26 @@ export interface InboxEvent {
   processed_at: Generated<Timestamp>;
 }
 
+export interface JobRun {
+  duration_ms: number | null;
+  error_code: string | null;
+  /**
+   * Bounded machine facts (counts, ids, alert keys) — never payloads, messages, or secrets.
+   */
+  facts: Generated<Json>;
+  finished_at: Timestamp | null;
+  id: string;
+  items: Generated<number>;
+  job_name: string;
+  outcome: Generated<string>;
+  /**
+   * Background OPERATION run id (log correlation). Deliberately not audit_event.request_id.
+   */
+  run_id: string;
+  runtime_role: string;
+  started_at: Generated<Timestamp>;
+}
+
 export interface ListingModerationFeedback {
   created_at: Generated<Timestamp>;
   decided_at: Generated<Timestamp>;
@@ -1095,6 +1115,7 @@ export interface DB {
   gateway_event: GatewayEvent;
   idempotency_key: IdempotencyKey;
   inbox_event: InboxEvent;
+  job_run: JobRun;
   listing_moderation_feedback: ListingModerationFeedback;
   login_session: LoginSession;
   mfa_challenge: MfaChallenge;

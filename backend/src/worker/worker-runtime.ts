@@ -12,7 +12,11 @@
  *   payment  — the certified W5 passes on cadence (docs/37 §12/§13), only
  *              when a payment provider composes (absent or TEST; the
  *              deterministic provider cannot compose in production and no
- *              LIVE mode exists — docs/37 §33).
+ *              LIVE mode exists — docs/37 §33);
+ *   scheduler — W6-3: the advisory-lock-guarded ticks over the NON-
+ *              DESTRUCTIVE scheduled jobs (scheduled-jobs.ts; docs/37 §20),
+ *              multi-replica safe by construction; destructive retention is
+ *              NOT here (the separate maintenance mode, docs/37 §19).
  *
  * Fail-closed startup (docs/37 §15): a credential that is not
  * `himma_worker`, or a database whose applied migration head differs from
@@ -39,10 +43,13 @@ import { createDb, type Db } from '../db/kysely';
 import { expectedMigrationHead } from '../db/migrations';
 import { createPool } from '../db/pool';
 import { resolvePaymentProvider } from '../modules/payment/provider-composition';
+import { createAlertEmitter } from '../observability/alerts';
 import { buildLoggerOptions } from '../observability/logging';
 import { newCorrelationId, runWithOperationContext } from '../observability/request-context';
 import { dispatchOutboxBatch, failureCode, type OutboxHandler } from './outbox-dispatcher';
 import { runPaymentPass } from './payment-processing';
+import { createScheduledJobs } from './scheduled-jobs';
+import { runSchedulerTick, type ScheduledJobSpec } from './scheduler';
 import { createSearchProjectionHandler } from './search-projection-handler';
 
 export interface WorkerLoopSpec {
@@ -50,7 +57,7 @@ export interface WorkerLoopSpec {
   /** Idle wait between passes. A pass that did full-batch work re-runs at once. */
   intervalMs: number;
   /** Returns true when the pass did a full batch and should run again immediately. */
-  run: (runId: string) => Promise<boolean>;
+  run: (runId: string, isStopping: () => boolean) => Promise<boolean>;
 }
 
 export interface WorkerRuntime {
@@ -60,6 +67,12 @@ export interface WorkerRuntime {
   loops: WorkerLoopSpec[];
   /** Present only when a payment provider composed (absent or TEST). */
   paymentAvailable: boolean;
+  /** W6-3 scheduled jobs composed on this worker (name + cadence). */
+  scheduledJobs: Array<{ name: string; intervalMs: number }>;
+  /** W6-3 jobs explicitly unavailable (e.g. no payment provider composed). */
+  unavailableJobs: Array<{ name: string; reason: string }>;
+  /** W6-3 jobs switched off by SCHEDULER_DISABLED_JOBS. */
+  disabledJobs: string[];
   requiredMigrationHead: string;
   start: () => void;
   /** Stop claiming new work; resolves when in-flight passes settle. */
@@ -84,7 +97,12 @@ async function assertMigrationHead(db: Db, required: string): Promise<void> {
  */
 export async function composeWorkerRuntime(
   config: RuntimeConfig,
-  options: { handlers?: OutboxHandler[]; logDestination?: pino.DestinationStream } = {},
+  options: {
+    handlers?: OutboxHandler[];
+    logDestination?: pino.DestinationStream;
+    /** TEST-ONLY: replace the scheduled-job set (probe jobs). */
+    scheduledJobs?: ScheduledJobSpec[];
+  } = {},
 ): Promise<WorkerRuntime> {
   if (config.role !== 'worker') {
     throw new ProductionRuntimeError(
@@ -113,6 +131,17 @@ export async function composeWorkerRuntime(
   });
   if (payment.kind === 'unconfigured') {
     log.warn({ reason: payment.reason }, 'payment processing unavailable — outbox/search loops run; payment loop disabled');
+  }
+  const alerts = createAlertEmitter(log);
+  const scheduled =
+    options.scheduledJobs !== undefined
+      ? { jobs: options.scheduledJobs, unavailable: [], disabled: [] }
+      : createScheduledJobs({ db, log, alerts, payment }, config.scheduler);
+  for (const job of scheduled.unavailable) {
+    log.warn({ job: job.name, reason: job.reason }, 'scheduled job unavailable on this worker');
+  }
+  for (const job of scheduled.disabled) {
+    log.warn({ job }, 'scheduled job disabled by configuration');
   }
 
   const loops: WorkerLoopSpec[] = [
@@ -144,6 +173,24 @@ export async function composeWorkerRuntime(
     });
   }
 
+  if (scheduled.jobs.length > 0) {
+    loops.push({
+      name: 'scheduler',
+      intervalMs: config.scheduler.tickMs,
+      run: async (runId, isStopping) => {
+        const tick = await runSchedulerTick(
+          { pool, log, runtimeRole: 'worker', alerts, isStopping },
+          scheduled.jobs,
+        );
+        const ran = tick.outcomes.filter((outcome) => outcome.outcome === 'ran' || outcome.outcome === 'failed');
+        if (ran.length > 0) {
+          log.info({ loop: 'scheduler', runId, attempted: ran.map((outcome) => outcome.job) }, 'scheduler tick');
+        }
+        return false;
+      },
+    });
+  }
+
   const supervisor = createLoopSupervisor(loops, log);
   let statusServer: Server | undefined;
   const runtime: WorkerRuntime = {
@@ -152,6 +199,9 @@ export async function composeWorkerRuntime(
     log,
     loops,
     paymentAvailable: payment.kind === 'configured',
+    scheduledJobs: scheduled.jobs.map((job) => ({ name: job.name, intervalMs: job.intervalMs })),
+    unavailableJobs: scheduled.unavailable,
+    disabledJobs: scheduled.disabled,
     requiredMigrationHead,
     start: () => {
       supervisor.start();
@@ -209,7 +259,9 @@ function createLoopSupervisor(loops: WorkerLoopSpec[], log: pino.Logger): LoopSu
       const runId = newCorrelationId();
       let again = false;
       try {
-        again = await runWithOperationContext({ runId, operation: spec.name }, () => spec.run(runId));
+        again = await runWithOperationContext({ runId, operation: spec.name }, () =>
+          spec.run(runId, () => stopping),
+        );
       } catch (error) {
         log.error({ loop: spec.name, runId, errorCode: failureCode(error) }, 'loop pass failed');
       }

@@ -116,3 +116,48 @@ describe('W6-1 production configuration contract', () => {
     );
   });
 });
+
+describe('W6-3 scheduler and maintenance policy (bounded, engineering-defaulted)', () => {
+  const WORKER = { NODE_ENV: 'production', RUNTIME_ROLE: 'worker', DATABASE_URL: 'postgres://himma_worker:pw@db.internal:5432/himma' };
+
+  it('defaults compose without any variable set', () => {
+    const config = loadRuntimeConfig({ ...WORKER });
+    expect(config.scheduler).toEqual({ tickMs: 5_000, disabledJobs: [], intervalOverridesMs: {} });
+    expect(config.maintenance).toEqual({
+      batchSize: 1_000,
+      maxBatches: 100,
+      retentionDays: { rateLimitWindows: 7, redemptionLookupAttempts: 7, idempotencyKeys: 90, publishedOutbox: 30, jobRuns: 30 },
+    });
+  });
+
+  it('parses overrides and refuses malformed or out-of-bound values naming the variable', () => {
+    const config = loadRuntimeConfig({
+      ...WORKER,
+      SCHEDULER_TICK_MS: '1000',
+      SCHEDULER_DISABLED_JOBS: 'booking.hold-sweep, identity.role-expiry',
+      SCHEDULER_INTERVALS: 'payment.checkout-sweep=30000,payment.stuck-state=60000',
+      MAINTENANCE_BATCH: '250',
+      RETENTION_IDEMPOTENCY_KEY_DAYS: '120',
+    });
+    expect(config.scheduler.tickMs).toBe(1_000);
+    expect(config.scheduler.disabledJobs).toEqual(['booking.hold-sweep', 'identity.role-expiry']);
+    expect(config.scheduler.intervalOverridesMs).toEqual({ 'payment.checkout-sweep': 30_000, 'payment.stuck-state': 60_000 });
+    expect(config.maintenance.batchSize).toBe(250);
+    expect(config.maintenance.retentionDays.idempotencyKeys).toBe(120);
+
+    expect(() => loadRuntimeConfig({ ...WORKER, SCHEDULER_TICK_MS: '10' })).toThrow(/SCHEDULER_TICK_MS/);
+    expect(() => loadRuntimeConfig({ ...WORKER, SCHEDULER_DISABLED_JOBS: 'DROP TABLE' })).toThrow(/SCHEDULER_DISABLED_JOBS/);
+    expect(() => loadRuntimeConfig({ ...WORKER, SCHEDULER_INTERVALS: 'payment.checkout-sweep=1' })).toThrow(/SCHEDULER_INTERVALS/);
+    expect(() => loadRuntimeConfig({ ...WORKER, SCHEDULER_INTERVALS: 'nonsense' })).toThrow(/SCHEDULER_INTERVALS/);
+    // Retention horizons cannot be configured below their engineering floors.
+    expect(() => loadRuntimeConfig({ ...WORKER, RETENTION_IDEMPOTENCY_KEY_DAYS: '5' })).toThrow(/RETENTION_IDEMPOTENCY_KEY_DAYS/);
+    expect(() => loadRuntimeConfig({ ...WORKER, RETENTION_OUTBOX_PUBLISHED_DAYS: '1' })).toThrow(/RETENTION_OUTBOX_PUBLISHED_DAYS/);
+    expect(() => loadRuntimeConfig({ ...WORKER, MAINTENANCE_BATCH: '0' })).toThrow(/MAINTENANCE_BATCH/);
+  });
+
+  it('the maintenance role pins its own login', () => {
+    expect(EXPECTED_DB_LOGIN.maintenance).toBe('himma_maintenance_runner');
+    const config = loadRuntimeConfig({ NODE_ENV: 'production', RUNTIME_ROLE: 'maintenance', DATABASE_URL: 'postgres://himma_maintenance_runner:pw@db.internal:5432/himma' });
+    expect(config.role).toBe('maintenance');
+  });
+});
