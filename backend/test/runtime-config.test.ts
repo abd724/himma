@@ -63,6 +63,32 @@ describe('W6-1 production configuration contract', () => {
     expect(test.paymentsMode).toBe('test');
   });
 
+  it('a production process never starts with a non-TEST-mode Stripe secret — in test mode or disabled mode (W6-4A container certification)', () => {
+    for (const key of ['sk_live_fictional', 'rk_live_fictional', 'whatever']) {
+      expect(() =>
+        loadRuntimeConfig({ ...PROD_BASE, PAYMENTS_MODE: 'test', STRIPE_SECRET_KEY: key }, IO),
+      ).toThrow(/TEST-mode key .* live-mode key is refused/);
+      expect(() =>
+        loadRuntimeConfig({ ...PROD_BASE, PAYMENTS_MODE: 'disabled', STRIPE_SECRET_KEY: key }, IO),
+      ).toThrow(/TEST-mode key .* live-mode key is refused/);
+    }
+    // The message names the variable, never the value.
+    let thrown: unknown;
+    try {
+      loadRuntimeConfig({ ...PROD_BASE, PAYMENTS_MODE: 'test', STRIPE_SECRET_KEY: 'sk_live_fictional' }, IO);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ConfigError);
+    expect((thrown as Error).message).toContain('STRIPE_SECRET_KEY');
+    expect((thrown as Error).message).not.toContain('fictional');
+    // TEST-mode restricted keys are accepted like secret keys.
+    expect(
+      loadRuntimeConfig({ ...PROD_BASE, PAYMENTS_MODE: 'test', STRIPE_SECRET_KEY: 'rk_test_fictional' }, IO)
+        .paymentsMode,
+    ).toBe('test');
+  });
+
   it('public checkout return URLs must be https and never local in production', () => {
     expect(() =>
       loadRuntimeConfig({

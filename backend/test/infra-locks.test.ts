@@ -41,7 +41,13 @@ describe('Dockerfile — the ONE production artifact', () => {
     expect(dockerfile).toContain('node:24-');
     expect(dockerfile).toContain('npm ci --omit=dev');
     expect(dockerfile).toMatch(/^USER himma:himma$/m);
-    expect(dockerfile).toContain('ENTRYPOINT ["node", "/app/node_modules/tsx/dist/cli.mjs"]');
+    // In-process loader (the tsx CLI forks a child and needs a writable /tmp
+    // IPC socket): the application is PID 1 and needs no writable path.
+    expect(dockerfile).toContain('ENTRYPOINT ["node", "--import", "/app/node_modules/tsx/dist/loader.mjs"]');
+    expect(dockerfile).not.toContain('tsx/dist/cli.mjs');
+    expect(dockerfile).toMatch(/^\s*TSX_DISABLE_CACHE=1/m);
+    // ADD --chmod applies to created directories too; the trust directory must stay traversable.
+    expect(dockerfile).toContain('chmod 0555 /etc/himma /etc/himma/certs');
     const instructions = dockerfile.split('\n').filter((line) => !line.trimStart().startsWith('#'));
     const joined = instructions.join('\n');
     expect(joined).not.toMatch(/^COPY .*\.env/m);
@@ -65,6 +71,9 @@ describe('local container harness — production topology, no dev capability', (
     expect(compose).toContain('NODE_ENV: production');
     expect(compose).toContain('DATABASE_SSL_MODE: verify-full');
     expect(compose).toContain('PAYMENTS_MODE: disabled');
+    // Mirrors the ECS task definitions: read-only root filesystem, no tmpfs.
+    expect(compose).toMatch(/x-backend-image: &backend-image\n[\s\S]*?read_only: true/);
+    expect(compose).not.toMatch(/^\s+tmpfs:/m);
     expect(compose).not.toMatch(/PAYMENTS_MODE:\s*live/);
     const composeConfig = compose.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
     expect(composeConfig).not.toMatch(/DEV_|DevPassword|deterministic|fixture/i);

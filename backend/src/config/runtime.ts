@@ -372,5 +372,21 @@ export function loadRuntimeConfig(
   if (config.paymentsMode === 'test' && config.stripe === undefined) {
     throw new ConfigError('PAYMENTS_MODE=test requires STRIPE_SECRET_KEY (a TEST-mode key)');
   }
+  // W6-4A container certification: a production process never STARTS with a
+  // non-TEST-mode Stripe secret in its environment. Composition already
+  // refuses such a key (it never reaches a driver — docs/37 §33 "a key alone
+  // is never a mode"); the runtime contract refuses the process outright
+  // rather than starting silently without payment capability. Live enablement
+  // is the future reviewed PA-06 change, never configuration.
+  if (production && config.stripe !== undefined && !isStripeTestModeSecret(config.stripe.secretKey)) {
+    throw new ConfigError(
+      'STRIPE_SECRET_KEY must be a Stripe TEST-mode key (sk_test_/rk_test_) — a live-mode key is refused at startup; live enablement is the future PA-06 slice, not configuration',
+    );
+  }
   return config;
+}
+
+/** Same prefix rule as the payment driver (kept dependency-free for config). */
+function isStripeTestModeSecret(secretKey: string): boolean {
+  return secretKey.startsWith('sk_test_') || secretKey.startsWith('rk_test_');
 }

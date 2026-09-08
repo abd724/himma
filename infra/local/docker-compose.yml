@@ -21,6 +21,9 @@ x-backend-image: &backend-image
   build:
     context: ../../backend
     dockerfile: Dockerfile
+  # Same as the ECS task definitions: read-only root filesystem, no tmpfs,
+  # no writable location of any kind (the image needs none).
+  read_only: true
 
 x-runtime-env: &runtime-env
   NODE_ENV: production
@@ -57,7 +60,11 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
-    networks: [himma]
+    networks:
+      himma:
+        # `postgres-unlisted` is NOT in the server certificate's SAN — used only
+        # by the harness hostname-mismatch proof (verify-full must refuse it).
+        aliases: [postgres-unlisted]
 
   # One-shot: schema migrations + verify under the schema-owner credential
   # (the API/worker never migrate — source-locked).

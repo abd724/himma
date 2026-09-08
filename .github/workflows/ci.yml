@@ -161,13 +161,24 @@ jobs:
           set -euo pipefail
           user="$(docker inspect -f '{{.Config.User}}' himma-backend:ci)"; [[ "$user" == "himma:himma" ]]
           docker run --rm --entrypoint sh himma-backend:ci -c 'test ! -e /app/.env && test ! -e /app/scripts/dev-server.ts && test ! -d /app/test && test -s /etc/himma/certs/rds-global-bundle.pem && test -f /app/scripts/start-api.ts && test -f /app/scripts/start-worker.ts && test -f /app/scripts/start-maintenance.ts && test -f /app/scripts/db-migrate.ts'
-      - name: production process refuses to start without the fail-closed contract (no DATABASE_URL → exit 1, names the variable)
+      - name: every shipped invocation loads from production dependencies alone and refuses without the fail-closed contract (read-only root, no DATABASE_URL → exit 1 naming the variable)
         run: |
-          set +e
-          out="$(docker run --rm -e NODE_ENV=production -e RUNTIME_ROLE=api himma-backend:ci 2>&1)"; code=$?
-          set -e
-          echo "$out" | tail -3
-          [[ $code -eq 1 ]] && echo "$out" | grep -q DATABASE_URL
+          set -euo pipefail
+          invocation() {
+            local role="$1"; shift
+            local out code
+            set +e
+            out="$(docker run --rm --read-only -e NODE_ENV=production -e RUNTIME_ROLE="$role" himma-backend:ci "$@" 2>&1)"; code=$?
+            set -e
+            echo "[$role $*] exit=$code: $(echo "$out" | tail -1 | cut -c1-160)"
+            [[ $code -eq 1 ]] && echo "$out" | grep -q DATABASE_URL && ! echo "$out" | grep -q MODULE_NOT_FOUND
+          }
+          invocation api scripts/start-api.ts
+          invocation worker scripts/start-worker.ts
+          invocation maintenance scripts/start-maintenance.ts retention.all
+          invocation migrate scripts/db-migrate.ts
+          invocation migrate scripts/db-verify.ts
+          invocation migrate scripts/db-provision-runtime-roles.ts
       - name: vulnerability scan (docs/36 SE-03 — critical/high fail)
         uses: aquasecurity/trivy-action@0.28.0
         with:
