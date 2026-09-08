@@ -9,6 +9,7 @@ Owner ruling (docs/36 IN-01, docs/38): **AWS · `me-central-1` (UAE) · separate
 | Path | What |
 |---|---|
 | `backend/Dockerfile`, `backend/.dockerignore` | The one production artifact (Node 24, multi-stage, non-root, node as PID 1, RDS CA bundle baked in). Commands: `scripts/start-api.ts` · `scripts/start-worker.ts` · `scripts/start-maintenance.ts <job>` · `scripts/db-migrate.ts` · `scripts/db-verify.ts` · `scripts/db-provision-runtime-roles.ts` |
+| `infra/scripts/` | `tf-preflight.sh` (hard apply gate; refusal matrix proven by `backend/test/infra-preflight.test.ts`) · `bootstrap-db-secrets.sh` · `ecs-deploy.sh migrate\|provision\|rollout\|smoke` · `static-deploy.sh <env> <portal\|admin\|web>` · `staging-certify.sh` (W6-4B certification transcript against the real account) · `aws-security-review.sh <env>` (actual-state review by AWS API) |
 | `infra/local/` | Container harness: TLS PostgreSQL → migrate/verify → provision roles → api ×2 → worker ×2 → maintenance; `harness.sh` drives and checks it |
 | `infra/terraform/bootstrap/` | Remote-state bucket per workload account (local state, applied once) |
 | `infra/terraform/modules/*` | network · database · secrets · registry · compute · ingress · static_site · evidence_bucket · cognito · observability · github_oidc |
@@ -44,7 +45,7 @@ Each workload account holds its own VPC, RDS instance, Secrets Manager entries, 
 
 VPC `10.40.0.0/16`, two AZs. Public subnets: ALB (+ NAT in production). App subnets: ECS tasks (production). Database subnets: RDS, **no default route at all**. Security groups: internet → ALB (80/443 only); ALB → api (8080 only); api/worker/jobs → RDS (5432 only) and → internet 443 (Stripe, Cognito, AWS APIs); worker and jobs have **no ingress rule**. Egress that must leave AWS: Stripe and Cognito (HTTPS). In production that goes through NAT (one per AZ, ~USD 70–110/month incl. data at Tier 1); AWS-native calls (ECR pulls, secrets, logs, S3) use VPC endpoints (~USD 25–35/month for the three interface endpoints) so they never traverse NAT. Staging avoids NAT entirely by giving tasks public IPs behind the same strict security groups.
 
-## 4. Bootstrap sequence (W6-4B, per environment — staging first)
+## 4. Bootstrap sequence (W6-4B, per environment — staging first; the owner-facing version with the exact values and commands is `docs/39_STAGING_BOOTSTRAP_OWNER_RUNBOOK.md`)
 
 Prerequisites (owner): the two workload accounts exist under the Organization; an engineering IAM identity (SSO/role, no root) with administrator access in the WORKLOAD account; the company domain and, if it already exists, its Route 53 hosted zone id.
 

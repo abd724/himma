@@ -3,6 +3,9 @@
 # GitHub OIDC deploy role of ONE workload account. Three sub-commands:
 #   migrate  — register the `migrate` task definition at IMAGE_TAG, run it
 #              (db:migrate), wait, refuse on non-zero, then run db:verify;
+#   provision — run db:provision-runtime-roles on the CURRENT `migrate` task
+#              definition (schema authority + the three runtime passwords the
+#              task reads from Secrets Manager; cluster-wide lock inside);
 #   rollout  — register api/worker task definitions at IMAGE_TAG and update
 #              the services (ECS rolling deploy; circuit breaker rolls back a
 #              rollout whose readiness never turns green);
@@ -65,6 +68,11 @@ case "$CMD" in
     run_task "$td" '["scripts/db-migrate.ts"]'
     run_task "$td" '["scripts/db-verify.ts"]'
     ;;
+  provision)
+    td="$(aws ecs describe-task-definition --task-definition "$NAME-migrate" --query 'taskDefinition.taskDefinitionArn' --output text)"
+    echo "provisioning runtime roles with $td"
+    run_task "$td" '["scripts/db-provision-runtime-roles.ts"]'
+    ;;
   rollout)
     api_td="$(register "$NAME-api")"
     worker_td="$(register "$NAME-worker")"
@@ -86,5 +94,5 @@ case "$CMD" in
     echo "smoke OK"
     ;;
   *)
-    echo "usage: $0 migrate|rollout|smoke" >&2; exit 2 ;;
+    echo "usage: $0 migrate|provision|rollout|smoke" >&2; exit 2 ;;
 esac
