@@ -121,6 +121,26 @@ VERIFY_LOGS="$(docker logs "$("${COMPOSE[@]}" ps -aq verify)" 2>&1 || true)"
 grep -q 'Schema verification passed' <<<"$VERIFY_LOGS" || fail "db:verify did not pass inside the container"
 pass "migrate/verify/provision-roles ran from the image and exited 0"
 
+log "concurrent provisioning from the image: 8 simultaneous db-provision-runtime-roles one-shots (the deployment command) converge"
+for i in 1 2 3 4 5 6 7 8; do
+  docker run -d --name "himma-harness-probe-provision-$i" --network "$NET" --read-only -v "$CERTS/ca.pem:/certs/ca.pem:ro" \
+    -e NODE_ENV=production -e RUNTIME_ROLE=migrate -e LOG_LEVEL=info -e DATABASE_SSL_MODE=verify-full -e DATABASE_SSL_CA_FILE=/certs/ca.pem -e PAYMENTS_MODE=disabled \
+    -e "DATABASE_URL=$OWNER_URL" -e "HIMMA_API_DB_PASSWORD=$HARNESS_API_PASSWORD" -e "HIMMA_WORKER_DB_PASSWORD=$HARNESS_WORKER_PASSWORD" -e "HIMMA_MAINTENANCE_DB_PASSWORD=$HARNESS_MAINTENANCE_PASSWORD" \
+    "$IMAGE" scripts/db-provision-runtime-roles.ts >/dev/null
+done
+PROV_FAIL=0
+for i in 1 2 3 4 5 6 7 8; do
+  code="$(docker wait "himma-harness-probe-provision-$i")"
+  [[ "$code" == "0" ]] || { PROV_FAIL=$((PROV_FAIL+1)); docker logs "himma-harness-probe-provision-$i" 2>&1 | tail -3; }
+  docker rm -f "himma-harness-probe-provision-$i" >/dev/null
+done
+[[ $PROV_FAIL -eq 0 ]] || fail "$PROV_FAIL of 8 concurrent provisioners failed"
+MATRIX="$(psql_owner "SELECT m.rolname || '->' || r.rolname FROM pg_auth_members am JOIN pg_roles m ON m.oid=am.member JOIN pg_roles r ON r.oid=am.roleid WHERE m.rolname LIKE 'himma_%' OR r.rolname IN ('himma_app','himma_maintenance') ORDER BY 1" | tr '\n' ' ')"
+echo "memberships: $MATRIX"
+[[ "$MATRIX" == "himma_api->himma_app himma_maintenance_runner->himma_maintenance himma_worker->himma_app " ]] || fail "membership matrix drifted: $MATRIX"
+[[ "$(psql_owner "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'himma_%' AND rolname <> 'himma_owner' AND (rolsuper OR rolcreatedb OR rolcreaterole)")" == "0" ]] || fail "a runtime role gained cluster privileges"
+pass "8 concurrent provisioners from the image converged; exact memberships; no privilege broadening"
+
 log "migration head (DB clock/state) and pgmigrations count"
 HEAD="$(psql_owner "SELECT name FROM pgmigrations ORDER BY id DESC LIMIT 1")"
 EXPECTED="$(ls "$HERE/../../backend/migrations" | sort | tail -1 | sed 's/\.sql$//')"

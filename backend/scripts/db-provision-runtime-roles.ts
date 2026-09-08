@@ -9,6 +9,8 @@
  *   HIMMA_MAINTENANCE_DB_PASSWORD (W6-3, optional — provisions the
  *   `himma_maintenance_runner` login as the sole member of the migration-
  *   created `himma_maintenance` privilege role; requires 0023 applied)
+ * HIMMA_PROVISION_LOCK_DATABASE (optional) names the cluster's coordination
+ * database for the cluster-wide provisioning lock (default `postgres`).
  * Nothing secret is ever printed.
  */
 import { provisionRuntimeRoles } from '../src/db/provision-runtime-roles';
@@ -24,8 +26,10 @@ async function main(): Promise<void> {
     );
   }
   const maintenance = process.env.HIMMA_MAINTENANCE_DB_PASSWORD;
+  const coordinationDatabase = process.env.HIMMA_PROVISION_LOCK_DATABASE;
   const result = await provisionRuntimeRoles({
     admin: config.database,
+    ...(coordinationDatabase !== undefined && coordinationDatabase !== '' ? { coordinationDatabase } : {}),
     passwords: {
       himma_api: api,
       himma_worker: worker,

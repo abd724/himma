@@ -22,4 +22,13 @@ module.exports = {
   // Database tests share one local PostgreSQL server; serial execution keeps
   // runs deterministic (each file still provisions its own himma_test_* db).
   testTimeout: 30000,
+  // Parallel runs (`npx jest` without --runInBand) are bounded by the server's
+  // connection capacity, not by CPU: every suite may burst to a 10-connection
+  // pool and the process-spawning suites add their children's pools, so the
+  // default one-worker-per-core topology was MEASURED at 91–100 client
+  // backends against a default max_connections=100 (intermittent "too many
+  // clients" in unrelated suites). Four workers keep the peak well under the
+  // cap while remaining a genuinely concurrent topology (the W6-4A
+  // provisioning-concurrency proof runs alongside other suites).
+  maxWorkers: 4,
 };

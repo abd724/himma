@@ -32,6 +32,21 @@
  * Driven by an ADMIN-capable connection (the same authority that runs
  * migrations locally; the cloud provider's admin credential later). The
  * runtime processes themselves never hold this authority.
+ *
+ * Concurrency (W6-4A final correction): the roles are CLUSTER-GLOBAL but a
+ * PostgreSQL advisory lock is DATABASE-SCOPED (pg_locks records the
+ * database the session acquired it in), so a lock taken on the caller's own
+ * database serializes nothing across callers connected to different
+ * databases of the same cluster — concurrent `ALTER ROLE`/`GRANT` on the same
+ * pg_authid / pg_auth_members tuples then fail with `tuple concurrently
+ * updated` (SQLSTATE XX000). The lock is therefore taken on a SEPARATE
+ * session to ONE canonical coordination database of the cluster (default
+ * `postgres`, the maintenance database every PostgreSQL cluster and every
+ * RDS instance has; `HIMMA_PROVISION_LOCK_DATABASE` overrides), held for the
+ * whole provisioning run, and released with the session. Any number of
+ * concurrent legitimate provisioners — across any databases of the cluster —
+ * converge on the exact intended topology; if the coordination session
+ * cannot be opened the run fails closed (never a silent database-local lock).
  */
 import { Client } from 'pg';
 
@@ -50,9 +65,19 @@ export type ProvisionedLoginRole = RuntimeLoginRole | typeof MAINTENANCE_LOGIN_R
 /** Roles the API/worker logins must NEVER be members of (defense in depth). */
 const FORBIDDEN_MEMBERSHIPS = [MAINTENANCE_PRIVILEGE_ROLE] as const;
 
+/** The cluster's maintenance database — present on local PostgreSQL, CI, and RDS. */
+export const DEFAULT_PROVISION_COORDINATION_DATABASE = 'postgres';
+/** Cluster-wide advisory key (identical for every caller; one lock space via the coordination database). */
+export const PROVISION_LOCK_KEY_SQL = `hashtextextended('himma:provision-roles', 42)`;
+
 export interface ProvisionRuntimeRolesInput {
   admin: DatabaseConfig;
   passwords: Record<RuntimeLoginRole, string> & { [MAINTENANCE_LOGIN_ROLE]?: string };
+  /**
+   * Database on the SAME cluster (same host/port/admin credential) whose
+   * advisory-lock space coordinates every provisioner. Default `postgres`.
+   */
+  coordinationDatabase?: string;
 }
 
 export interface ProvisionRuntimeRolesResult {
@@ -83,15 +108,26 @@ export async function provisionRuntimeRoles(
       );
     }
   }
-  const client = new Client(clientOptionsFor(input.admin));
-  await client.connect();
+  const coordinationDatabase = input.coordinationDatabase ?? DEFAULT_PROVISION_COORDINATION_DATABASE;
+  // Cluster-wide serialization: ONE lock space for every caller, whatever
+  // database its admin connection targets (see the module comment).
+  const coordinator = new Client(clientOptionsFor({ ...input.admin, database: coordinationDatabase }));
+  try {
+    await coordinator.connect();
+  } catch (error) {
+    throw new Error(
+      `cannot open the cluster-wide provisioning coordination session on database "${coordinationDatabase}" ` +
+        `(the cluster's maintenance database; override with HIMMA_PROVISION_LOCK_DATABASE): ` +
+        (error instanceof Error ? error.message : String(error)),
+    );
+  }
   const created: ProvisionedLoginRole[] = [];
   const updated: ProvisionedLoginRole[] = [];
+  let client: Client | undefined;
   try {
-    // Serialize concurrent provisioning runs (idempotency under overlap).
-    await client.query(
-      `SELECT pg_advisory_lock(hashtextextended('himma:provision-roles', 42))`,
-    );
+    await coordinator.query(`SELECT pg_advisory_lock(${PROVISION_LOCK_KEY_SQL})`);
+    client = new Client(clientOptionsFor(input.admin));
+    await client.connect();
     const appRole = await client.query(`SELECT 1 FROM pg_roles WHERE rolname = 'himma_app'`);
     if (appRole.rowCount === 0) {
       throw new Error(
@@ -140,6 +176,10 @@ export async function provisionRuntimeRoles(
     }
     return { created, updated };
   } finally {
-    await client.end();
+    await client?.end();
+    // The session lock dies with the session; unlock explicitly anyway so a
+    // slow socket teardown never extends the critical section.
+    await coordinator.query(`SELECT pg_advisory_unlock(${PROVISION_LOCK_KEY_SQL})`).catch(() => undefined);
+    await coordinator.end();
   }
 }

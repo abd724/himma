@@ -94,6 +94,8 @@ Non-secret configuration (COGNITO_*, PORTAL_ALLOWED_ORIGINS, AUTH_COOKIE_DOMAIN,
 
 TLS: the RDS parameter group forces SSL; every process runs `DATABASE_SSL_MODE=verify-full` with the baked-in RDS global CA bundle (chain + hostname verification); plain TCP is refused by the application for any non-loopback host. Pool policy: `DB_POOL_MAX` 10 per process, connect 5 s, idle 30 s, `statement_timeout` api 15 s / worker 60 s / maintenance 300 s / migrate none.
 
+**Provisioning coordination (W6-4A final correction):** `db:provision-roles` serializes cluster-wide through an advisory lock taken on a session to the cluster's maintenance database `postgres` (present on every RDS instance; `HIMMA_PROVISION_LOCK_DATABASE` overrides) — PostgreSQL advisory locks are database-scoped while the roles are cluster-global, so the lock cannot live on the target database. Any number of concurrent provisioners (a pipeline migration task overlapping an operator run) converge on the exact topology; if the coordination session cannot be opened the run fails closed.
+
 ## 8. Deploy, rollback, and migrations
 
 - **Deploy** (`deploy.yml` → `ecs-deploy.sh`): build once, tag = git SHA (ECR tags are immutable) → `migrate` run-task (db:migrate then db:verify, schema-owner credential) must exit 0 → register api/worker/maintenance task definitions at the SHA → `UpdateService` (rolling; `deployment_circuit_breaker` rolls back automatically if readiness never turns green) → `services-stable` → smoke (`/internal/live`, `/internal/ready`, dev identity 404, forged bearer 401).
