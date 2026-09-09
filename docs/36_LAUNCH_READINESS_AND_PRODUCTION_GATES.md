@@ -137,6 +137,8 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 | PR-03 | Bulk-import live adapter (deferred by design at W2-12, structurally locked) | IMPLEMENTATION-REQUIRED | P1 | PR-01 | M7 | Engineering | HANDOFF W2-12. Proof: §8.5 batch-atomic import against the real API |
 | PR-04 | Provider media authority: real listing imagery upload/serving/moderation + ASSET_ATTRIBUTION replacement (G2 imagery rights — incl. the Expo-logo iOS icon under MR-06) | IMPLEMENTATION-REQUIRED | P0 | IN-06, IN-15 | M5 | Owner → Engineering | RI-2 closure ("media = a separate later authority"); docs/23 G2. Proof: owner-approved slice certification |
 | PR-05 | Moderation/check-in/support operating procedures + staffing (support tooling itself is CODE-COMPLETE in W3) | IMPLEMENTATION-REQUIRED | P1 | OP-08 | M7 | Ops | docs/31. Proof: written procedures + staffed queues |
+| PR-06 | **Provider Schedule, Bookings and Attendance screens** (docs/29 W2-14/15/16 — backend-gated tasks never authorized). VERIFIED at the 2026-09-09 owner walkthrough: sessions/capacity exist in the backend but a provider has NO screen to create sessions, see bookings or mark attendance beyond check-in — a real provider cannot make anything bookable | IMPLEMENTATION-REQUIRED | P0 | — | M5 | Owner → Engineering | docs/40 §3/§8. Proof: owner-approved slice certification incl. a provider creating a schedule that a customer books |
+| PR-07 | Public website (himma.app) + partner self-application ("Become a partner" → admin partner-request queue → create organization + owner invitation). VERIFIED: no marketing site and no self-application exist; onboarding starts with a Himma invitation | IMPLEMENTATION-REQUIRED | P1 | PR-04, MR-14 | M7 | Owner (content/brand) → Engineering | docs/40 §12. Proof: request submitted on the site reaches the admin queue and becomes an invited organization |
 
 ### 3.H Mobile release (MR)
 
@@ -156,6 +158,9 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 | MR-12 | Real production payment-return validation: device → external browser → real https bounce/universal link → `himma://bookings/return` | PRODUCTION-SMOKE-REQUIRED | P0 | PA-05, MR-09/10 | M5 | Engineering | docs/34 §32. Proof: recorded device journey (TEST mode) |
 | MR-13 | TestFlight/Play internal tracks, privacy manifests + data-safety forms, phased rollout config, G6 crash-free ≥ 99.8 % with zero checkout-path criticals, store review passed | PRODUCTION-SMOKE-REQUIRED | P0 | MR-04…08 | M7 | Engineering + owner | docs/23 §14.5/§15 G6. Proof: track metrics + store approval |
 | MR-14 | Customer notification channels (push/email/SMS per §18.20) — nothing sends notifications today (outbox events exist, no sender) | OWNER-DECISION | P1 | OP-03 | M7 | Owner | docs/23 §18.20. Proof: recorded ruling + authorized slice |
+| MR-15 | Multi-participant booking (booking group): several family members in ONE checkout/payment, one booking per participant underneath (schema-ready per docs/24 B9). Owner ruling 2026-09-09: LAUNCH scope (lifts the docs/09 §21.2 deferral) | IMPLEMENTATION-REQUIRED | P1 | PR-06 | M6 | Engineering | docs/40 §16. Proof: two children booked in one payment, per-child passes/attendance/cancellation |
+| MR-16 | Referral programme + Himma credits: attendance-qualified reward as credit (never cash), credits redeemable at checkout (ticked by default, untickable), credits ledger (docs/24) + checkout breakdown with the finance rulings. Pulled forward from the post-launch register (PL-02) by owner ruling 2026-09-09 | IMPLEMENTATION-REQUIRED | P1 | FI-01, FI-02, FI-03, PA-04 | M7 | Owner (amount) → Engineering | docs/40 §17; docs/09 §10/§23. Proof: referred user pays + attends → credit appears and is redeemed |
+| MR-17 | Customer App discovery restructure: Kids tab in the dock (child-focused content), Saved under Profile, Home as a listing feed with chips, Discover for browsing, area as a filter + Near me, native date picker, single-participant skip. Owner direction recorded 2026-09-09; formal design approval + docs/04 amendment pending | OWNER-DECISION | P1 | PR-06 | M6 | Owner → Engineering | docs/40 §15/§18. Proof: recorded approval + authorized design milestone |
 
 ### 3.I Security (SE)
 
@@ -188,14 +193,16 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 
 ## 4. Tallies
 
-**Open gates: 79** — the LR-0 baseline was 89 (67 P0 · 22 P1); **W6-1 closed IN-02, IN-07, IN-09** (OWNER-APPROVED at `e01af85`); **W6-2 closed OP-03** (OWNER-APPROVED at `8eb8b08`); **W6-3 closed OP-01, OP-02, OP-04, OP-05, OP-07** (OWNER-APPROVED at `d5ef107`; OP-06, PA-09, PA-10, SE-05 advanced, not closed); **the owner's infrastructure ruling closed IN-01** (at `0393601` — AWS `me-central-1`, separate staging/production workload accounts; docs/38). **W6-4A (repository-side AWS foundation; OWNER-APPROVED / CLOSED at `cba2bd8` (2026-09-08) — chain `0393601`/`6f53800`/`06e8c6e`/`cba2bd8`; container artifact + CI/provisioning concurrency CERTIFIED; W6-4B staging authorized) closes no gate**: it ADVANCES IN-04/05/06/10/11/12/13, SE-01/03, ID-01, VE-01 to IaC/code-complete — every one of them still requires the real account apply, credentials, or a deployed smoke (W6-4B). Plus the 12 CODE-COMPLETE foundations of §1 and the 10 post-launch register items of §12.
+**Open gates: 84** — the LR-0 baseline was 89 (67 P0 · 22 P1); **W6-1 closed IN-02, IN-07, IN-09** (OWNER-APPROVED at `e01af85`); **W6-2 closed OP-03** (OWNER-APPROVED at `8eb8b08`); **W6-3 closed OP-01, OP-02, OP-04, OP-05, OP-07** (OWNER-APPROVED at `d5ef107`; OP-06, PA-09, PA-10, SE-05 advanced, not closed); **the owner's infrastructure ruling closed IN-01** (at `0393601` — AWS `me-central-1`, separate staging/production workload accounts; docs/38). **W6-4A (repository-side AWS foundation; OWNER-APPROVED / CLOSED at `cba2bd8` (2026-09-08) — chain `0393601`/`6f53800`/`06e8c6e`/`cba2bd8`; container artifact + CI/provisioning concurrency CERTIFIED; W6-4B staging authorized) closes no gate**: it ADVANCES IN-04/05/06/10/11/12/13, SE-01/03, ID-01, VE-01 to IaC/code-complete — every one of them still requires the real account apply, credentials, or a deployed smoke (W6-4B). Plus the 12 CODE-COMPLETE foundations of §1 and the 10 post-launch register items of §12.
 
 **W6-4A container-certification correction (2026-09-08): no row changes, counts unchanged.** The production image is now BUILT and CERTIFIED locally (`infra/local/harness.sh` executed to green on a real OCI runtime — docs/38 correction record): IaC/code complete → container artifact certified → staging NOT deployed → staging smoke NOT performed → production NOT deployed. IN-11/SE-03 remain IMPLEMENTATION-REQUIRED (the pipeline has never run against an account); nothing here closes a gate. **Final correction (2026-09-08, provisioning concurrency): the cluster-global runtime-role provisioning now serializes cluster-wide (coordination database) and is proven in-suite under 6 simultaneous provisioners across 6 databases (16 across 12 and 10 across 10 in the standalone reproduction; 8 from the image); the normal parallel backend suite is green — no row changes, counts unchanged.**
 
+**Owner walkthrough (2026-09-09, docs/40): five rows ADDED from evidence, no closures.** PR-06 (provider Schedule/Bookings/Attendance screens — P0: a provider cannot make anything bookable today), PR-07 (public website + partner self-application), MR-15 (multi-participant booking group — owner ruling: launch scope), MR-16 (referrals + Himma credits — owner ruling; pulled forward from PL-02), MR-17 (discovery restructure — owner direction pending design approval). Counts: open 79 → 84 · P0 59 → 60 · P1 20 → 24 · IMPLEMENTATION-REQUIRED 26 → 30 · OWNER-DECISION 13 → 14. Also surfaced, already tracked: the verification loop cannot complete without VE-03/VE-04/VE-02; FI-05 commission-term administration; PR-04 media; MR-14 notifications.
+
 | Status | Count (LR-0 → now) |
 |---|---|
-| IMPLEMENTATION-REQUIRED | 35 → 32 → 31 → 26 |
-| OWNER-DECISION | 14 → 13 |
+| IMPLEMENTATION-REQUIRED | 35 → 32 → 31 → 26 → 30 |
+| OWNER-DECISION | 14 → 13 → 14 |
 | EXTERNAL-DEPENDENCY | 19 |
 | CONFIGURATION-REQUIRED | 9 |
 | PRODUCTION-SMOKE-REQUIRED | 8 |
@@ -203,8 +210,8 @@ These foundations are implemented and locally certified. A gate elsewhere in thi
 
 | Priority | Count (LR-0 → now) |
 |---|---|
-| P0 launch blockers | 67 → 64 → 63 → 60 → 59 |
-| P1 launch hardening | 22 → 20 |
+| P0 launch blockers | 67 → 64 → 63 → 60 → 59 → 60 |
+| P1 launch hardening | 22 → 20 → 24 |
 | Post-launch (register, §12) | 10 |
 
 ---
@@ -340,7 +347,7 @@ The runner-up (FI-05 commission administration) is a bounded Admin slice that ca
 | # | Item | Source |
 |---|---|---|
 | PL-01 | Recurring billing / membership auto-renew semantics | docs/09 §6; docs/23 §18.12 |
-| PL-02 | Marketplace Credit classes + gifts/rewards/referrals product surfaces | docs/09 §§8–10; docs/23 §18.13 |
+| PL-02 | Marketplace Credit classes + gifts/rewards/referrals product surfaces — referrals + the credits ledger PULLED FORWARD to MR-16 by owner ruling 2026-09-09; gifts/rewards stay here | docs/09 §§8–10; docs/23 §18.13 |
 | PL-03 | Stripe Connect automated provider payouts (FI-04 decides the launch-time manual process) | docs/33 D-W5-1 |
 | PL-04 | Waitlists | docs/09 §21.4; docs/23 §18.19 |
 | PL-05 | Multi-participant booking | docs/09 §21.2; docs/23 §18.18 |

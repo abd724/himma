@@ -325,3 +325,21 @@ These decisions change Home's content hierarchy but not the approved visual syst
 11. **Submit boundary.** No mock payment state machine. Paid CTA `Continue to payment`; free CTA `Confirm booking`. Both are production-styled, duplicate-press-protected, and inert with press feedback: no navigation, dialog, success state, failure state, reservation, booking creation, or payment request. `PaymentSubmitRequest`/`PaymentSubmitResult` stay declared for the future Payment milestone but are never invoked or logged as though a submission occurred.
 12. **Confirmation boundary and credits.** Checkout does not own payment success/failure, booking confirmed/pending, provider approval, capacity lost after submission, receipts, invoices, calendar entries, or notifications — all belong to the future Payment & Confirmation milestone. Marketplace Credit application is deferred: no credit checkbox, no subtraction of the demo balance, no ledger or redemption behavior; future price-line support stays extensible.
 13. **Staged sequence.** Four commits: 16 checkout foundation and price review · 17 payment-method contract and checkout readiness (generic `Card payment`, no saved card, no legal checkboxes, CTA readiness/gating, free-versus-paid behavior, policy summary only) · 18 revalidation states and flow hardening · 19 checkout review and milestone closeout.
+
+## 23. Product-owner decisions — 2026-09-09 (owner product walkthrough; full record in docs/40)
+
+Resolved:
+1. **Commission:** 12% (1200 bps) is the standard launch term, administered per provider (D-W5-7); never a global constant. VAT/principal-agent (D-W5-3), gateway-fee allocation, refunds and settlement remain open (docs/36 FI-01…04).
+2. **Payouts:** Himma collects the full payment; providers are paid on the cadence in their contract from dual-controlled statements; recommendation recorded: manual bank transfers at launch (FI-04 still to be formally ruled).
+3. **Listing form:** a small structured core (activity type, eligibility, branch, price options, schedule) + provider-owned free sections; every dropdown offers "Other, write your own" (taxonomy requests flow to admin); templates (after-school, summer/winter camp, term, drop-in, membership) pre-fill and never lock.
+4. **Commercial vocabulary:** "Membership" = access pass with durations (1/3/6/12 months) and a start date, shown under Passes; "Programme with a fixed timetable" = the `monthly`/`term` cohort kinds. Provider UI and app copy to follow; seed data corrected.
+5. **Program setting:** gains "not applicable" (docs/24 amendment to follow).
+6. **Multi-participant booking:** launch scope, as a booking group (one booking per participant, one payment). Lifts the §21.2 deferral.
+7. **Referrals:** reward as Himma credit in AED (amount still to be fixed; working figure ~AED 30), qualified only when the referred person pays AND attends; credits redeemable at checkout, ticked by default, untickable; never cash.
+8. **Customer App structure:** dock Home · Discover · Kids · Bookings · Profile; Saved under Profile; Home = listing feed with chips (New, Offers, Free trials, Near me); Discover = browsing; area is a filter, not a gate; native date picker; skip "who is attending" for single-participant accounts. Formal design approval of the amended docs/04 pending.
+9. **Launch taxonomy (owner list, to confirm):** Fitness & gyms · Martial arts & combat · Swimming & water · Padel & racquet · Pilates & yoga · Team & outdoor sports · Learning & languages (incl. Quran/Tajweed) · …
+10. **Admin review:** requests not statuses; one request = one readable page with inline attachments; two-round review (desk review, then site visit — "our trust with the customer is the product").
+11. **Positioning:** health and family impact first; commission never in the message; website inspired by Beanz, never copied.
+
+Still open (owner): document checklist per business type (VE-04); site-visit policy; support contact channel; referral amount and caps; location permission for "Near me"; Home redesign approval; cross-service bundles and computed per-option discounts (V1.1); QR check-in (V1.1).
+
