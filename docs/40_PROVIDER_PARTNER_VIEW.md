@@ -168,3 +168,58 @@ Sign-in used: `ops@himma.demo` (operations). Same reading rule as §1: the admin
 5. Listing form: structured core + provider-owned sections, "Other, write your own" everywhere with taxonomy requests to admin; templates as Himma-managed content.
 6. Everything above is unbuilt scope, not defects in certified behaviour; nothing starts without owner authorization; `productionChargingPossible` stays literal `false`.
 
+---
+
+## 14. Customer App — owner walkthrough findings (2026-09-09, Expo web preview against the real dev backend)
+
+| # | Owner concern | Status | What the repository says | Disposition |
+|---|---|---|---|---|
+| 1 | Home and Discover both show "New on Himma" and "Offers & free trials" | Confirmed duplication | Both feeds are built by the discovery service with the same two sections. | Redesign: Discover = categories, collections, providers only; Home = new/offers/free trials + feed (§15) |
+| 2 | A category shows nothing outside the selected area ("try nearby areas") | Confirmed; area is a gate | The category page filters by the selected area; the search API already accepts "no area"; the map already has "Show all areas". | Fix: show all of Abu Dhabi by default; "Near me" filter (selected area + its neighbours now; device location later — geolocation permission is an open docs/09 item) |
+| 3 | Quran under Learning & Languages; category list | Content | The seed has a Tajweed circle, hidden by the area gate. Categories/activity types are Himma's admin-managed taxonomy (D-S4-3). | Owner confirms the launch taxonomy: Fitness & gyms · Martial arts & combat · Swimming & water · Padel & racquet · Pilates & yoga · Team & outdoor sports · Learning & languages (incl. Quran/Tajweed) · … |
+| 4 | After-school not visible | By an earlier rule | Child-focused collections (after-school, camps, Kids & Teens) appear only when a child is on the account (docs/09 §21 child-dependent visibility). The owner's account had no child. | Superseded by the Kids tab (§15) |
+| 5 | "Monthly" on CrossFit Foundations: asked for a session; not in Passes; wanted 1/3/6/12-month memberships with a start date | Vocabulary, not a defect | The seeded option is kind `monthly` = a recurring programme with a fixed schedule (an enrolment cohort) → the app asks where to start and files it under Bookings. Kind `membership` = an access pass: bought without choosing a session, valid for a period, shown under Passes (the RI-4 acquisition path). The seed used the wrong kind for what a gym calls "monthly", and the two kinds are confusable even for the owner. | Owner ruling: merge the provider-facing vocabulary — "Membership" with durations (1/3/6/12 months, start date) vs "Programme with a fixed timetable"; app copy follows |
+| 6 | Calendar empty on the 14th | Seed gap | The booked cohort has zero schedule rows in the dev seed; the calendar derives from schedules and had nothing to expand. Calendar code is correct. | Seed fix only |
+| 7 | "Who is attending" shown when only "Me" exists | UX gap | The step preselects but never skips. | Fix: skip when the account has a single participant |
+| 8 | Saved tab does nothing | Unbuilt scope | Saved (HMA-007) was scoped and never built; the tab is inert by the "dead taps" rule. | Saving becomes a heart on listings + a "Saved" list under Profile; the dock slot goes to Kids (§15) |
+| 9 | Date of birth typed as YYYY-MM-DD | V1 shortcut | The field is text on every platform, marked "native date picker later" in code. | Fix before launch: native iOS/Android date pickers (year first), text fallback on web only |
+| 10 | Book for two children in one transaction | Deferred rule, now lifted | One participant per booking at launch (docs/09 §21.2); multi-participant deferred; the schema already reserves a booking group and a quantity column (docs/24 B9, docs/23 §18.18). | Owner ruling: launch scope (§16) |
+| 11 | Referral reward | Open decision, now ruled | Referrals screen specified (HMA-029); docs/09 §10 open items; no backend (no referral code, no credit ledger yet — the credits design exists in docs/24). | Owner ruling (§17) |
+
+## 15. Customer App direction (owner, pending formal design approval — amends docs/04)
+
+- **Dock:** Home · Discover · **Kids** · Bookings · Profile (still five). Saved moves under Profile; the heart on a listing saves it.
+- **Kids tab:** everything child-focused in one place — after-school, camps, holiday programmes, Kids & Teens — filtered by the children's ages once children exist on the account. Adults never see children's content mixed into Home; Discover keeps a "for children" filter so nothing is unreachable.
+- **Home:** a vertical feed of **listing** cards (the activity is what a family decides on; the provider comes after), Instagram-like: one card per listing, at most one card per provider in view, the provider's name opens the provider page with everything under it; chips at the top — New on Himma, Offers, Free trials, Near me, later Trending; "New on Himma" may also be a horizontal row above the feed. Providers as a browsable set stay on Discover.
+- **Discover:** categories, collections, providers, filters (area/near me, for children, ladies only, free trials, camps).
+- **Ranking** stays the recorded rule-based model (eligibility → interests → proximity/schedule/availability/rating) for launch; revisit when the catalogue grows.
+- **Sequencing:** a redesign of an approved surface → owner design approval → customer-app design milestone → implementation; not before the Provider Schedule slice (a feed with nothing bookable helps nobody).
+
+## 16. Multi-participant booking (owner ruling: launch scope)
+
+"Who is attending" becomes checkboxes. Ticking several family members (children and/or "You") produces one checkout, one payment, one confirmation, and underneath **one booking per participant inside one booking group** — each participant keeps their own pass, check-in code, attendance and cancellation, while the payment and receipt are one. Eligibility is checked per participant and stated per participant; if one is refused (age, capacity) the checkout continues with the eligible ones and says who was left out. Partial cancellation follows the ordinary per-booking policy. Placement: after the Provider Schedule slice and the membership vocabulary decision, before the design-partner sessions.
+
+## 17. Referrals and Himma credits (owner ruling)
+
+- A member shares a code or link. When the referred person creates an account with it, **pays for a booking and actually attends** (check-in), the referrer earns a fixed reward in **AED as Himma credit** (amount to be fixed by the owner; working figure ~AED 30). Payment without attendance, or paid-then-refunded, never qualifies — this is the loop defence. Add a cap per referrer per period and a minimum booking value.
+- **Credits at checkout:** a line shows "You have AED X of Himma credit", ticked by default so it is deducted from the total; the customer can untick it to keep it for later. Usable on any payment — sessions, memberships, packages.
+- **Not cash:** credit stays inside the marketplace; no payout, no bank details. The credits ledger (docs/24) must be built; redemption changes the price breakdown and the commission basis, so it is designed together with the finance rulings (FI-01…03).
+- Provider-side referral (a provider bringing existing clients onto Himma) is a separate programme for a separate decision.
+- Placement: after Stripe TEST certification and the credits ledger; before public launch.
+
+## 18. Customer App — three lists
+
+- **Fix before launch:** Home/Discover split; area as a filter with Near me; single-participant skip; native date picker; Saved built under Profile or removed from the dock; membership vocabulary applied to the provider form and app copy; seed schedules for every seeded programme.
+- **Owner rulings recorded here:** Kids tab + dock change; Home feed direction; launch taxonomy list; multi-participant booking as launch scope; referrals as Himma credit with attendance qualification; location permission still open.
+- **Not defects:** Passes/calendar behaviour for a `monthly` programme purchase; demo-seed gaps.
+
+## 19. Talking points for the senior engineer (Customer App)
+
+1. Discovery restructure (Home feed, Discover, Kids tab, Saved under Profile) as one design milestone after owner approval; keep the rule-based ranking.
+2. Area → filter + Near me; after-school/camps visibility moves to the Kids tab; taxonomy content per the owner's list.
+3. Commercial vocabulary: reconcile `monthly` (fixed-timetable programme) vs `membership` (access pass) in provider UI and app copy; memberships with durations and a start date; seed data corrected.
+4. Booking group for multi-participant checkout (schema-ready per docs/24 B9); per-participant eligibility and cancellation.
+5. Credits ledger + referral programme (code, attribution, attendance-qualified reward, checkout redemption with the finance rulings).
+6. Small fixes: native date picker; single-participant step skip.
+7. Everything here is unbuilt scope or owner direction, not defects in certified behaviour; nothing starts without authorization; `productionChargingPossible` stays literal `false`.
+
