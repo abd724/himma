@@ -71,7 +71,7 @@ Target discussed by the owner: providers onboarding in Q1 2027. Achievable if st
 ## 7. Three lists from this walkthrough
 
 - **Built today (demo it):** organization, branches, team and roles, listings and lifecycle, pricing options, offers (informational), submit/publish/pause/archive, bulk import validation, check-in by code, business profile.
-- **Fix before providers see it:** Schedule/Bookings/Attendance screens; photos; "not applicable" setting; commission-term admin; remove or hide unfinished menu items ("Soon" badges, empty Settings, support contact); decide the support channel.
+- **Fix before providers see it:** Schedule/Bookings/Attendance screens; photos; "not applicable" setting; commission-term admin; remove or hide unfinished menu items ("Soon" badges, empty Settings, support contact); decide the support channel; **listing templates + the "Other, write your own" rule (§9 below), right after the Schedule screens and before the design-partner sessions**.
 - **V1.1 ideas (captured, not built):** grouped pricing layout; cross-service bundles; computed per-option discounts with date windows; conditional approval with site visit; QR scanning at check-in; provider Finance page beyond statements.
 
 ---
@@ -95,3 +95,76 @@ Give the engineer this section with the repository. The authoritative documents 
 7. **Later (V1.1, do not build without authorization):** cross-service bundles, computed discounts, conditional approval with site visit, QR check-in.
 
 **Ground rules the engineer must keep:** no live payments (`productionChargingPossible` stays literal `false` until the PA-06 slice); commission is per provider, never a global constant; offers stay informational until ruled otherwise; production and staging are separate AWS accounts; no product behavior changes outside an authorized slice; every slice ends with tests green, `db:verify` clean, docs/36 recounted, and a clean tree.
+
+---
+
+## 9. Listing form: templates and customization (owner direction, 2026-09-09)
+
+**Principle.** Providers across health and wellness (physical, mental, children, adults) must be able to describe what they offer in their own words. The listing is a form the provider fills top to bottom, not a database screen.
+
+**Two layers in every listing**
+1. **A small structured core Himma needs to keep its promises:** activity type (Himma taxonomy, with "request a new type" built in), who it is for (ages, adults/children, gender eligibility, skill level), where (branch), how it is bought (structured price options — only these can be booked, paid, commissioned, refunded), when (schedule, once the Schedule screens exist). Structured because search, child-safety eligibility and payment depend on it.
+2. **Everything else belongs to the provider:** free sections they add, rename, reorder or remove (what a session looks like, what to bring, coach qualifications, medical notes, benefits); custom price-option names ("1 month", "10-session pack", "Family bundle"); custom offer wording; tags in their own words.
+
+**The "Other, write your own" rule.** Every dropdown offers a free-text alternative; a provider is never blocked by a missing option. Written values are accepted immediately and shown as typed. For search/safety fields (activity type, setting) the written value is also recorded as a request to the admin team, who can adopt it into the taxonomy, map it, or leave it as text — the listing is not held up.
+
+**Templates.** Starting points a provider picks: After-school activity, Summer camp, Winter camp, Term course, Drop-in class, Membership (more later: Ramadan programme, holiday camp, ladies-only class). A template pre-fills a draft (title pattern, description outline, typical age band, the right price-option kinds — camp weeks priced per week, after-school monthly or per term — eligibility, schedule pattern, sections). Everything is editable and removable; a template never locks or publishes anything; the result is an ordinary draft through the same review. Templates are Himma-managed content, tunable from what design partners actually do. Placement: right after the provider Schedule slice, before the design-partner sessions.
+
+---
+
+## 10. Admin Portal — owner walkthrough findings (2026-09-09)
+
+Sign-in used: `ops@himma.demo` (operations). Same reading rule as §1: the admin runs on demo data locally; verification downloads locally are a fictional text file named `.pdf`.
+
+| # | Owner concern | Status | What the repository says | Disposition |
+|---|---|---|---|---|
+| 1 | The dashboard is not a dashboard (just links) | Gap vs plan | docs/31 AD-02 specified a work-queue home (verifications awaiting review, listings submitted, open revisions — real counts). The queues exist as separate pages; the home never received the counts. | Build |
+| 2 | Providers list: want a directory of who is with us (joined date, live, branches, catalogue, later revenue), not a status list | Gap | The list is an operations queue keyed on verification state; the data for a directory exists. | Build |
+| 3 | "In review" page: nothing to review, cannot approve, download "damaged" | Demo artefact + fail-closed + real gap | Download: fixture text file (real S3 file in staging; retrieval blocked in production until VE-02 scanning exists). Approve disabled because a required document is missing — correct fail-closed behaviour, badly explained. **The provider side of verification is not built (VE-03, P0): providers cannot upload documents; the required-document checklist was never ruled (VE-04).** The loop cannot be completed by anyone today. | Rule VE-04; build VE-03 + VE-02; rewrite the decision guidance |
+| 4 | `Round 1: in_review` raw value on screen | Defect | Developer-facing label; violates the project's own rule. | Fix |
+| 5 | Audit: entities should be clickable | Polish | The trail is real (who/what/when/record); no links. | Fix |
+| 6 | Sign-out only; no settings; "SMS"/unfinished wording | Placeholders | Same pattern as the portal. | Remove placeholders; account menu |
+| 7 | "Looks generated, not designed" | Fair | docs/31 scoped the admin as the minimum operations console; it never had the design pass the app had. | Design pass in the admin slice |
+| 8 | How is a provider onboarded? Why documents on a listing? | Half-built loop | Intended flow (docs/29 §9, docs/31): Himma creates the org + invites the owner → owner completes basics/storefront/branch → submits → reviewer works a checklist of documents → approve → live. Exists: steps 2–3 (portal), reviewer side of 4. Missing: **an admin screen to create a provider/invite the owner** (route + script only), the provider document-upload step (VE-03), the checklist ruling (VE-04). Documents are attached to the organization's verification case, never to a listing. | Build (see §11) |
+
+**On approvals.** Each W3 slice was owner-approved at its closing commit on written evidence and tests. This walkthrough is the first operator-style use of the portal; it caught what reports cannot. Rule going forward: every portal slice includes an owner walk-through before approval.
+
+## 11. Admin operations — the target (owner direction)
+
+**Requests, not statuses.** Home shows queues with counts: partner requests (from the website, §12), verification requests, listing submissions, change requests.
+
+**One request, one page.** Clicking a request opens the whole submission as a readable form: who applied, company details, branches, team, the listing exactly as the provider wrote it (structured core + their own sections, price options, offers, photos once PR-04 exists), every attachment viewable inline. Decision at the bottom: approve, request changes with a reason the applicant reads, reject; per-attachment accept/reject where documents are involved; approval enabled only when everything required is present, stated in plain words. History of rounds and decisions on the page, with links to people and records. No raw values, no placeholders, no "Soon".
+
+**Two-round review — "our trust with the customer is the product."**
+1. Provider submits → the request appears in the queue; staff notified (in-portal badge now; email/push when the notification slice MR-14 exists — nothing sends today).
+2. **Round 1, desk review:** read the submission and attachments; approve for a visit, request changes, or reject.
+3. **Round 2, site visit:** new state "approved pending visit" with date, visitor and a short checklist (place, coach, safety, offering match what was written). Pass → live; fail → written reason back to the provider.
+4. Everything on the record, provider-visible in their words, audit-linked.
+
+**Owner decisions this needs before it starts:** VE-04 (the document checklist per business type — trade licence, operating licence, owner ID, insurance where required; counsel to confirm); the site-visit policy (who visits, checklist, per organization or per listing); the support channel.
+
+**Interim process** until VE-03/VE-04 exist: documents by email, decision recorded in the portal. Works for a handful of pilot providers, not for launch.
+
+## 12. Public website and partner acquisition (owner direction)
+
+**Positioning (the brief for the website and for marketing):** our children's and our own health are our responsibility, and Himma makes acting on it easy. Families find and join activities that make them healthier and more connected; providers get exposure, full sessions and a community; free sessions and trials open doors. The commission sustains the company and belongs in the provider agreement, never in the message. Tone: adult, warm, direct; the provisional brand system (docs/07) so site and app feel like one product; real Abu Dhabi activities and places in photography (illustrated placeholders honestly until the first partners).
+
+**Reference:** Beanz (beanz.ae) — inspiration for structure only, never copied: one page speaks to customers, partners and "already a partner → log in"; a short partner application with a promised response time; social proof by real partner logos/gallery; footer with the store-required links (terms, privacy, delete my account, support, head office); Arabic one click away.
+
+**What exists:** `portal.himma.app` (partner login) and `admin.himma.app` are already separate addresses in the infrastructure. `himma.app` is planned only as a technical surface (app links, payment return). **No marketing site and no self-application exist** — onboarding starts with a Himma invitation. This is new scope, recorded here as a launch item.
+
+**Proposed page (himma.app):** 1 Hero — the impact (a family, an activity, a healthier routine), the app as the way to act on it, store badges once live, Partner login. 2 For families — health, confidence, time together; children and adults side by side; one account, one pass. 3 For partners — "be part of it": reach families looking for exactly what you do, fill your sessions, welcome newcomers with a free session, grow your community; the portal and payouts as supporting facts; no percentage anywhere. 4 Free sessions and trials — their own visible place. 5 Partners with us — real logos and gallery only. 6 Become a partner — business name, activity type, contact name, phone, email, city, Instagram (optional); "we reply within two working days"; sales email. 7 FAQ. 8 Footer — support, head office, terms, privacy, delete my account, Arabic switch when the Arabic slice lands.
+
+**Scope to build (small):** static site on the S3/CloudFront web surface already written; one backend route storing the partner request (spam protection, rate limiting); a "Partner requests" queue and request page in the admin portal; an "accept" action that creates the organization and sends the owner invitation, after which the certified onboarding takes over.
+
+**From the owner:** brand direction and copy (marketing person), sales and support addresses, legal pages from counsel.
+
+## 13. Talking points for the senior engineer (Admin Portal and website)
+
+1. Complete the verification loop first: VE-04 ruling → provider document upload (VE-03) → scanning (VE-02) → the two-round review with the site-visit state. Without it no provider can be verified in production.
+2. Admin operations slice: work-queue home with real counts, providers directory, "one request, one page" review form with inline attachments, create-provider/invite-owner screen, partner-requests queue, plain-language decision guidance, no raw labels, linked audit entries, account menu, placeholders removed, design pass. Keep dual control (D-W3-5) exactly as certified.
+3. Notifications (MR-14): staff (new request), providers (decision, booking received), customers — email first; the outbox events exist, no sender does.
+4. Website + partner request intake as above; static hosting exists; one route + one queue.
+5. Listing form: structured core + provider-owned sections, "Other, write your own" everywhere with taxonomy requests to admin; templates as Himma-managed content.
+6. Everything above is unbuilt scope, not defects in certified behaviour; nothing starts without owner authorization; `productionChargingPossible` stays literal `false`.
+
